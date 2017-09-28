@@ -288,8 +288,10 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	traj.setAtoms(system.select('name CA'))
 	coordSets = traj.getCoordsets()
 
+	# Start a contact matrix (Kirchhoff matrix)
 	kh = np.zeros((system.numResidues(),system.numResidues()))
 
+	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
 	monitor = 0
 	for coordSet in coordSets:
@@ -303,18 +305,24 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		log.close()
 		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
+	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsFilteredFlag = np.abs(kh)/len(traj) > pairFilterCutoff*0.01
 
 	pairsFiltered = list()
-	for i in range(0,len(pairsFilteredFlag)):
-		for j in range(0,len(pairsFilteredFlag)):
-			if i == j:
+	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
+	for sourceResid in sourceResids:
+		for targetResid in targetResids:
+			if sourceResid == targetResid:
 				continue
-			elif pairsFilteredFlag[i,j]:
-				pairsFiltered.append(sorted([i,j]))
+			elif pairsFilteredFlag[sourceResid,targetResid]:
+				pairsFiltered.append(sorted([sourceResid,targetResid]))
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+	f = open('pairsFiltered.txt','w')
+	for pair in pairsFiltered:
+		f.write('%i-%i\n' % (pair[0],pair[1]))
+	f.close()
 
 	if not pairsFiltered:
 		logger.exception('Filtering step did not yield any pairs. '
@@ -325,10 +333,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	logFile.write('Number of interaction pairs selected after filtering step:\n')
 	logFile.write(str(len(pairsFiltered)))
 	logFile.close()
-
-	# temporary
-	#return
-	# temporary
 
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(list(pairsFiltered),numCores)

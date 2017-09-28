@@ -1,5 +1,6 @@
-from PyQt4 import QtGui
-from PyQt4 import QtCore
+from PyQt5 import QtGui
+from PyQt5 import QtCore
+from PyQt5 import QtWidgets
 import sys
 import design
 import subprocess
@@ -24,7 +25,7 @@ class getResIntEnParams(object):
 		self.namd2exe = None
 		self.logFile = None
 
-class DesignInteract(QtGui.QMainWindow,design.Ui_MainWindow):
+class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def __init__(self,parent=None):
 		super(DesignInteract,self).__init__(parent)
 		self.setupUi(self)
@@ -38,23 +39,23 @@ class DesignInteract(QtGui.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
 
 	def updatePDBPath(self):
-		name = QtGui.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_pdb.setText(name)
 
 	def updatePSFPath(self):
-		name = QtGui.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_psf.setText(name)
 
 	def updateDCDPath(self):
-		name = QtGui.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_dcd.setText(name)
 
 	def updateOutputFolder(self):
-		name = QtGui.QFileDialog.getExistingDirectory(self,'Select',os.getcwd())
+		name = QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd())
 		self.lineEdit_outputFolder.setText(name)
 
 	def updateNAMDPath(self):
-		name = QtGui.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_namd2.setText(name)
 
 	def incrementFilteringProgressBar(self,percent):
@@ -66,12 +67,12 @@ class DesignInteract(QtGui.QMainWindow,design.Ui_MainWindow):
 
 	def done(self):
 			self.resetProgressElements()
-			QtGui.QMessageBox.information(self,"Done!","Done with computation!")
+			QtWidgets.QMessageBox.information(self,"Done!","Done with computation!")
 
 	def error(self,message):
 			self.monitorProgressThread.exit()
 			self.resetProgressElements()
-			QtGui.QMessageBox.information(self,"Error!",message)
+			QtWidgets.QMessageBox.information(self,"Error!",message)
 
 	def resetProgressElements(self):
 		self.progressBar_filtering.setValue(0)
@@ -91,7 +92,6 @@ class DesignInteract(QtGui.QMainWindow,design.Ui_MainWindow):
 		params.sourceSel = self.lineEdit_residueGroup1.text()
 		params.targetSel = self.lineEdit_residueGroup2.text()
 		params.pairFilterPercentage = self.doubleSpinBox_filteringPercent.value()
-		params.prePairFilterCutoff = self.doubleSpinBox_preFilteringCutoff.value()
 		params.pairFilterCutoff = self.doubleSpinBox_filteringCutoff.value()
 		params.numCores = self.spinBox_numProcessors.value()
 		params.skip = self.plainTextEdit_dcdStride.toPlainText()
@@ -108,13 +108,12 @@ class DesignInteract(QtGui.QMainWindow,design.Ui_MainWindow):
 		# Start calculation in the background
 		subprocess.call('./getResIntEn.py --pdb %s \
 			--psf %s --dcd %s --numcores %s --sourcesel %s --targetsel %s \
-			--prepaircalc --prepairfiltercutoff %s --paircalc --pairfilterbasis ca \
+			--paircalc --pairfilterbasis ca \
 			--pairfiltercutoff %s \
 			--pairfilterskip 100 --pairfilterpercentage %s --skip %s --topickle \
 			--namd2exe %s --outfolder %s --logfile %s &' % \
 			(params.pdbFile,params.psfFile,params.dcdFile,params.numCores,
-				params.sourceSel,params.targetSel,params.prePairFilterCutoff,
-				params.pairFilterCutoff,str(float(params.pairFilterPercentage)*0.1),
+				params.sourceSel,params.targetSel,params.pairFilterCutoff,str(float(params.pairFilterPercentage)*0.1),
 				params.skip,params.namd2exe,params.outputFolder,params.logFile),shell=True)
 
 		self.pushButton_Stop.setEnabled(True)
@@ -215,7 +214,7 @@ class monitorLog(QtCore.QThread):
 		self.emit(QtCore.SIGNAL('error(PyQt_PyObject)'),errorLines[0])
 
 def main():
-	app = QtGui.QApplication(sys.argv)
+	app = QtWidgets.QApplication(sys.argv)
 	form = DesignInteract()
 	form.show()
 	app.exec_()
