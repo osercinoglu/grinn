@@ -121,16 +121,14 @@ def calcEnergiesSingleCore(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,dcdFilePath,skip,frameRange,
-		outputFolder,namd2exe):
+		outputFolder,namd2exe,logger):
 
 		# Construct a list of pairs (input argument string to the external tcl script)
-		pairListArgConstruct = ''
+		pairListArgConstruct = list()
 		for pair in pairsFiltered:
 			pair = list(pair)
-			pairListArgConstruct = pairListArgConstruct + ' ' + \
-			' '.join([str(pair[0]),str(pair[1])])
-
-		pairListArgConstruct.rstrip(' ')
+			pairListArgConstruct.append(str(pair[0]))
+			pairListArgConstruct.append(str(pair[1]))
 
 		# Get the path of module, necessary when providing vmd the location of calcResIntEn.tcl.
 		# (see below).
@@ -138,13 +136,16 @@ def calcEnergiesSingleCore(args):
 
 		# Start a devnull for storing vmd/namd output.
 		devnull = open(os.devnull,'w')
-		print('vmd -dispdev text -e %s/calcResIntEn.tcl -args \
-			%s %s %s %s %s %s %s %s' % (module_path,namd2exe,outputFolder,psfFilePath,dcdFilePath,skip,
-				str(frameRange[0]),str(frameRange[1]),pairListArgConstruct))
 		
-		subprocess.call('vmd -dispdev text -e %s/calcResIntEn.tcl -args \
-			%s %s %s %s %s %s %s %s' % (module_path,namd2exe,outputFolder,psfFilePath,dcdFilePath,skip,
-				str(frameRange[0]),str(frameRange[1]),pairListArgConstruct),shell=True,stdout=devnull)
+		vmdArgs = [namd2exe,outputFolder,psfFilePath,dcdFilePath,str(skip),
+				str(frameRange[0]),str(frameRange[1])]
+		
+		vmdArgs = ['vmd','-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
+
+		pid = subprocess.Popen(vmdArgs,stdout=devnull)
+		logger.info('Start a pairwise energy calculation chunk with PID: %i' % pid.pid)
+
+		pid.wait()
 
 	# Split it into ten chunks to print the progress on the screen.
 	pairsFilteredChunks = np.array_split(pairsFiltered,10)
@@ -153,9 +154,10 @@ def calcEnergiesSingleCore(args):
 
 	# Perform the calculations in chunks
 	percent = 0
+
 	for pairsFilteredChunk in pairsFilteredChunks:
 		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,dcdFilePath,skip,frameRange,
-			outputFolder,namd2exe)
+			outputFolder,namd2exe,logger)
 
 		progBar.update()
 		percent = percent + 10
@@ -236,11 +238,18 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 			os.makedirs(outputFolder)
 			#os.chdir(outputFolder)
 
-	# Load pdb with prody and get some useful numbers.
 	try:
 		system = parsePDB(pdb)
 	except:
 		logger.exception('Could not load the PDB file provided. Please check your input PDB file.\
+			 Aborting now.')
+		return
+
+	# Load psf with prody and get some useful numbers.
+	try:
+		system = parsePSF(psf)
+	except:
+		logger.exception('Could not load the PSF file provided. Please check your input PDB file.\
 			 Aborting now.')
 		return
 
@@ -250,7 +259,14 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
 		return
 
-	source = system.select(sourceSel)
+
+	# Load pdb with prody and get some useful numbers.
+	try:
+		source = system.select(sourceSel)
+	except:
+		logger.exception('Could not select Selection 1 residue group. Aborting now.')
+		return
+
 	sourceCA = source.select('calpha')
 	numSource = len(sourceCA)
 	sourceResids = sourceCA.getResindices()
@@ -267,7 +283,12 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	
 	# Get target selection residues, if provided:
 	if targetSel:
-		target = system.select(targetSel)
+		try:
+			target = system.select(targetSel)
+		except:
+			logger.exception('Could not select Selection 2 residue group. Aborting now.')
+			return
+
 		targetCA = target.select('calpha')
 		numTarget = len(targetCA)
 		targetResids = targetCA.getResindices()

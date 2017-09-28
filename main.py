@@ -1,6 +1,7 @@
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import pyqtSignal
 import sys
 import design
 import subprocess
@@ -24,7 +25,7 @@ class getResIntEnParams(object):
 		self.outputFolder = None
 		self.namd2exe = None
 		self.logFile = None
-
+	
 class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def __init__(self,parent=None):
 		super(DesignInteract,self).__init__(parent)
@@ -37,6 +38,10 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_browseDCD.clicked.connect(self.updateDCDPath)
 		self.pushButton_browseOutputFolder.clicked.connect(self.updateOutputFolder)
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
+		self.pushButton_Stop.clicked.connect(self.resetProgressElements)
+
+		# for getResIntEn process
+		self.pid = None
 
 	def updatePDBPath(self):
 		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
@@ -79,6 +84,8 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.progressBar_calculation.setValue(0)
 		self.pushButton_Stop.setEnabled(False)
 		self.pushButton_Calculate.setEnabled(True)
+		if self.pid:
+			self.pid.kill()
 
 	def startCalculation(self):
 
@@ -106,34 +113,35 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		subprocess.call('touch %s' % params.logFile,shell=True)
 		
 		# Start calculation in the background
-		subprocess.call('./getResIntEn.py --pdb %s \
-			--psf %s --dcd %s --numcores %s --sourcesel %s --targetsel %s \
-			--paircalc --pairfilterbasis ca \
-			--pairfiltercutoff %s \
-			--pairfilterskip 100 --pairfilterpercentage %s --skip %s --topickle \
-			--namd2exe %s --outfolder %s --logfile %s &' % \
-			(params.pdbFile,params.psfFile,params.dcdFile,params.numCores,
-				params.sourceSel,params.targetSel,params.pairFilterCutoff,str(float(params.pairFilterPercentage)*0.1),
-				params.skip,params.namd2exe,params.outputFolder,params.logFile),shell=True)
+		getResIntEnArgs = ['--pdb',params.pdbFile,'--psf',params.psfFile,
+		'--dcd',params.dcdFile,'--numcores',
+		str(params.numCores),'--sourcesel',params.sourceSel,'--targetsel',params.targetSel,
+		'--paircalc','--pairfiltercutoff',str(params.pairFilterCutoff),
+		'--pairfilterpercentage',str(float(params.pairFilterPercentage)*0.1),
+		'--skip',str(params.skip),'--namd2exe',params.namd2exe,
+		'--outfolder',params.outputFolder,'--logfile',params.logFile]
+		
+		self.pid = subprocess.Popen(['./getResIntEn.py']+getResIntEnArgs)
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)
 
 		# Start progress monitoring thread
 		self.monitorProgressThread = monitorProgress(self,params)
-		self.connect(self.monitorProgressThread,QtCore.SIGNAL("incrementFilteringProgressBar(int)"),
-			self.incrementFilteringProgressBar)
-		self.connect(self.monitorProgressThread,QtCore.SIGNAL("incrementCalculationProgressBar(int)"),
-			self.incrementCalculationProgressBar)
-		self.connect(self.monitorProgressThread,QtCore.SIGNAL("success()"),self.done)
+		self.monitorProgressThread.incrementFilteringProgressBar.connect(self.incrementFilteringProgressBar)
+		self.monitorProgressThread.incrementCalculationProgressBar.connect(self.incrementCalculationProgressBar)
+		self.monitorProgressThread.success.connect(self.done)
 		self.monitorProgressThread.start()
 
 		# Start error monitoring thread
 		self.monitorLogThread = monitorLog(self,params)
-		self.connect(self.monitorLogThread,QtCore.SIGNAL("error(PyQt_PyObject)"),self.error)
+		self.monitorLogThread.error.connect(self.error)
 		self.monitorLogThread.start()
 
 class monitorProgress(QtCore.QThread):
+	incrementFilteringProgressBar = pyqtSignal(int)
+	incrementCalculationProgressBar = pyqtSignal(int)
+	success = pyqtSignal()
 
 	def __init__(self,mainWindow,params):
 		QtCore.QThread.__init__(self)
@@ -149,6 +157,7 @@ class monitorProgress(QtCore.QThread):
 		self.mainWindow.progressBar_filtering.setValue(0)
 		self.mainWindow.progressBar_calculation.setValue(0)
 
+		print('Running now!')
 		# Monitor filtering steps
 		percent = 0
 		while percent != 100:
@@ -157,7 +166,7 @@ class monitorProgress(QtCore.QThread):
 				logLines = logFile.readlines()
 				if logLines:
 					percent = int(float(logLines[0]))
-					self.emit(QtCore.SIGNAL('incrementFilteringProgressBar(int)'),percent)
+					self.incrementFilteringProgressBar.emit(percent)
 
 		# Monitor calculation
 		continueFlag = False
@@ -177,11 +186,13 @@ class monitorProgress(QtCore.QThread):
 		while percent != 100:
 			numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.dat'))
 			percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
-			self.emit(QtCore.SIGNAL('incrementCalculationProgressBar(int)'),percent)
+			self.incrementCalculationProgressBar.emit(percent)
 
-		self.emit(QtCore.SIGNAL('success()'))
+		self.success.emit()
+		self.exit()
 
 class monitorLog(QtCore.QThread):
+	error = pyqtSignal(str)
 
 	def __init__(self,mainWindow,params):
 		QtCore.QThread.__init__(self)
@@ -211,9 +222,12 @@ class monitorLog(QtCore.QThread):
 			errorLines = self.parseLog(self.params.logFile)
 			#time.sleep()
 
-		self.emit(QtCore.SIGNAL('error(PyQt_PyObject)'),errorLines[0])
+		self.error.emit(errorLines[0])
+		self.exit()
 
 def main():
+	sys_argv = sys.argv
+	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
 	form = DesignInteract()
 	form.show()
