@@ -6,7 +6,7 @@ import sys, itertools, argparse, os, pyprind, subprocess
 import re, pickle, types, logging, datetime
 
 def filterPairsSingleCore(args):
-
+	#SIDELINED (DEPRECATED)
 	pairChunk = args[0]
 	pdbPath = args[1]
 	dcdPath = args[2]
@@ -138,6 +138,9 @@ def calcEnergiesSingleCore(args):
 
 		# Start a devnull for storing vmd/namd output.
 		devnull = open(os.devnull,'w')
+		print('vmd -dispdev text -e %s/calcResIntEn.tcl -args \
+			%s %s %s %s %s %s %s %s' % (module_path,namd2exe,outputFolder,psfFilePath,dcdFilePath,skip,
+				str(frameRange[0]),str(frameRange[1]),pairListArgConstruct))
 		
 		subprocess.call('vmd -dispdev text -e %s/calcResIntEn.tcl -args \
 			%s %s %s %s %s %s %s %s' % (module_path,namd2exe,outputFolder,psfFilePath,dcdFilePath,skip,
@@ -241,6 +244,12 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 			 Aborting now.')
 		return
 
+	try:
+		traj = parseDCD(dcd)
+	except:
+		logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
+		return
+
 	source = system.select(sourceSel)
 	sourceCA = source.select('calpha')
 	numSource = len(sourceCA)
@@ -263,9 +272,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		numTarget = len(targetCA)
 		targetResids = targetCA.getResindices()
 
-	# Start a pool of processors
-	pool = multiprocessing.Pool(numCores)
-
 	# Generate all possible unique pairwise residue-residue combinations
 	pairProduct = itertools.product(sourceResids,targetResids)
 	pairSet = set()
@@ -276,52 +282,39 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	# Split the pair set list into chunks according to number of cores
 	pairChunks = np.array_split(list(pairSet),numCores)
 
-	logger.info('Starting the pre pair filtering step.')
-	# If a pre-filtering is requested:
-	if prePairCalc:
-		pairsPreFilteredResults = pool.map(filterPairsSingleCore,
-		itertools.izip(pairChunks,itertools.repeat(pdb),
-			itertools.repeat(dcd),
-			itertools.repeat(prePairFilterBasis),
-			itertools.repeat(prePairFilterPercentage),
-			itertools.repeat(prePairFilterCutoff),
-			itertools.repeat(prePairFilterSkip),
-			itertools.repeat(frameRange),
-			itertools.repeat(logFile)))
-
-		pairsPreFiltered = list()
-
-		for result in pairsPreFilteredResults:
-			pairsPreFiltered = pairsPreFiltered + result
-
-		if not pairsPreFiltered:
-			logger.exception('Preliminary filtering step did not yield any pairs'
-				'Perhaps your cutoff value is too small?')
-			return
-
-		pairChunks = np.array_split(list(pairsPreFiltered),numCores)
-
-		logFile = open('getResIntEn.log','w')
-		logFile.write('Number of interaction pairs selected after pre-filtering step:\n')
-		logFile.write(str(len(pairsPreFiltered)))
-		logFile.close()
+	logger.info('Starting the filtering step.')
 
 	# Continue with filtering operation
-	#frameChunks = np.array_split(range(0,numFrames),8)
-	pairsFilteredResults = pool.map(filterPairsSingleCore,
-		itertools.izip(pairChunks,itertools.repeat(pdb),
-			itertools.repeat(dcd),
-			itertools.repeat(pairFilterBasis),
-			itertools.repeat(pairFilterPercentage),
-			itertools.repeat(pairFilterCutoff),
-			itertools.repeat(pairFilterSkip),
-			itertools.repeat(frameRange),
-			itertools.repeat(logFile)))
+	traj.setAtoms(system.select('name CA'))
+	coordSets = traj.getCoordsets()
+
+	kh = np.zeros((system.numResidues(),system.numResidues()))
+
+	calculatedPercentage = 0
+	monitor = 0
+	for coordSet in coordSets:
+		log = open('getResIntEn.log','w')
+		gnm = GNM('GNM')
+		gnm.buildKirchhoff(coordSet,cutoff=pairFilterCutoff)
+		kh = kh + gnm.getKirchhoff()
+		monitor = monitor + 1
+		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		log.write('%s' % str(calculatedPercentage))
+		log.close()
+		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+
+	pairsFilteredFlag = np.abs(kh)/len(traj) > pairFilterCutoff*0.01
 
 	pairsFiltered = list()
+	for i in range(0,len(pairsFilteredFlag)):
+		for j in range(0,len(pairsFilteredFlag)):
+			if i == j:
+				continue
+			elif pairsFilteredFlag[i,j]:
+				pairsFiltered.append(sorted([i,j]))
 
-	for result in pairsFilteredResults:
-		pairsFiltered = pairsFiltered + result
+	pairsFiltered = sorted(pairsFiltered)
+	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
 
 	if not pairsFiltered:
 		logger.exception('Filtering step did not yield any pairs. '
@@ -340,7 +333,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(list(pairsFiltered),numCores)
 
-	print frameRange
+	# Start a pool of processors
+	pool = multiprocessing.Pool(numCores)
+
 	pool.map(calcEnergiesSingleCore,
 		itertools.izip(pairsFilteredChunks,itertools.repeat(psf),
 			itertools.repeat(dcd),
