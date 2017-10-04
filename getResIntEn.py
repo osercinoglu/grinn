@@ -238,6 +238,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 			os.makedirs(outputFolder)
 			#os.chdir(outputFolder)
 
+	if pairFilterCutoff < 4:
+		logger.exception('Filtering distance cutoff value can not be smaller than 4. Aborting now.')
+
 	try:
 		system = parsePDB(pdb)
 	except:
