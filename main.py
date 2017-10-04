@@ -44,23 +44,23 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pid = None
 
 	def updatePDBPath(self):
-		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_pdb.setText(name)
 
 	def updatePSFPath(self):
-		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_psf.setText(name)
 
 	def updateDCDPath(self):
-		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_dcd.setText(name)
 
 	def updateOutputFolder(self):
-		name = QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd())
+		name,__ = QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd())
 		self.lineEdit_outputFolder.setText(name)
 
 	def updateNAMDPath(self):
-		name = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
+		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
 		self.lineEdit_namd2.setText(name)
 
 	def incrementFilteringProgressBar(self,percent):
