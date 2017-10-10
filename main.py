@@ -9,6 +9,8 @@ import os
 import glob
 import datetime
 import time
+import psutil
+import re
 
 class getResIntEnParams(object):
 	def __init__(self):
@@ -38,10 +40,11 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_browseDCD.clicked.connect(self.updateDCDPath)
 		self.pushButton_browseOutputFolder.clicked.connect(self.updateOutputFolder)
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
-		self.pushButton_Stop.clicked.connect(self.resetProgressElements)
+		self.pushButton_Stop.clicked.connect(self.stopCalculation)
 
 		# for getResIntEn process
 		self.pid = None
+		self.params = getResIntEnParams()
 
 	def updatePDBPath(self):
 		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
@@ -79,47 +82,87 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			self.resetProgressElements()
 			QtWidgets.QMessageBox.information(self,"Error!",message)
 
+	def stopCalculation(self):
+		# Parse the log file for any child PID spawned by getResIntEn.py
+		print('active now')
+		f = open(self.params.logFile,'r')
+		lines = f.readlines()
+		f.close()
+
+		# Find out all the processes started by getResIntEn.py
+		start_pids = list()
+		complete_pids = list()
+		for line in lines:
+			startpid_match = re.match('.*Started a pairwise energy calculation chunk with PID: (\d+)',line)
+			completepid_match = re.match('.*Completed a pairwise energy calculation chunk with PID: (\d+)',line)
+			if startpid_match:
+				start_pid = int(startpid_match.groups()[0])
+				start_pids.append(start_pid)
+
+			if completepid_match:
+				complete_pid = int(completepid_match.groups()[0])
+				complete_pids.append(complete_pid)
+
+		active_pids = [start_pid for start_pid in start_pids if start_pid not in complete_pids]
+		print(active_pids)
+
+		mainProcess = psutil.Process(self.pid.pid)
+		mainProcess.kill()
+		self.pid = None
+		# Find the process ids of all child processes of all child processes of getResIntEn.py
+		# and, of course, kill them.
+		for pid in active_pids:
+			parent = psutil.Process(pid)
+			for child in parent.children(recursive=True):  # or parent.children() for recursive=False
+				child.kill()
+			try:
+				parent.kill()
+			except:
+				pass
+
+		# Reset all progress elements.
+		self.resetProgressElements()
+
 	def resetProgressElements(self):
 		self.progressBar_filtering.setValue(0)
 		self.progressBar_calculation.setValue(0)
 		self.pushButton_Stop.setEnabled(False)
 		self.pushButton_Calculate.setEnabled(True)
 		if self.pid:
-			self.pid.kill()
+			mainProcess = psutil.Process(self.pid.pid)
+			mainProcess.kill()
+			self.pid = None
 
 	def startCalculation(self):
 
-		# Start a parameters object
-		params = getResIntEnParams()
-
 		# Get necessary input arguments.
-		params.psfFile = self.lineEdit_psf.text()
-		params.pdbFile = self.lineEdit_pdb.text()
-		params.dcdFile = self.lineEdit_dcd.text()
-		params.sourceSel = self.lineEdit_residueGroup1.text()
-		params.targetSel = self.lineEdit_residueGroup2.text()
-		params.pairFilterPercentage = self.doubleSpinBox_filteringPercent.value()
-		params.pairFilterCutoff = self.doubleSpinBox_filteringCutoff.value()
-		params.numCores = self.spinBox_numProcessors.value()
-		params.skip = self.plainTextEdit_dcdStride.toPlainText()
-		params.outputFolder = self.lineEdit_outputFolder.text()
-		params.namd2exe = self.lineEdit_namd2.text()
+		self.params.psfFile = self.lineEdit_psf.text()
+		self.params.pdbFile = self.lineEdit_pdb.text()
+		self.params.dcdFile = self.lineEdit_dcd.text()
+		self.params.sourceSel = self.lineEdit_residueGroup1.text()
+		self.params.targetSel = self.lineEdit_residueGroup2.text()
+		self.params.pairFilterPercentage = self.doubleSpinBox_filteringPercent.value()
+		self.params.pairFilterCutoff = self.doubleSpinBox_filteringCutoff.value()
+		self.params.numCores = self.spinBox_numProcessors.value()
+		self.params.skip = self.plainTextEdit_dcdStride.toPlainText()
+		self.params.outputFolder = self.lineEdit_outputFolder.text()
+		self.params.namd2exe = self.lineEdit_namd2.text()
 		# Date: %d.%d.%d %d:%d \n' % (now.year,now.month,now.day,now.hour,
 		now = datetime.datetime.now()
-		params.logFile = 'getResIntEnLog_%d%d%d_%d%d%d.log' % (now.year,now.month,now.day,
+		self.params.logFile = 'getResIntEnLog_%d%d%d_%d%d%d.log' % (now.year,now.month,now.day,
 			now.hour,now.minute,now.second)
 
 		# Make the log file now.
-		subprocess.call('touch %s' % params.logFile,shell=True)
+		subprocess.call('touch %s' % self.params.logFile,shell=True)
 		
 		# Start calculation in the background
-		getResIntEnArgs = ['--pdb',params.pdbFile,'--psf',params.psfFile,
-		'--dcd',params.dcdFile,'--numcores',
-		str(params.numCores),'--sourcesel',params.sourceSel,'--targetsel',params.targetSel,
-		'--paircalc','--pairfiltercutoff',str(params.pairFilterCutoff),
-		'--pairfilterpercentage',str(float(params.pairFilterPercentage)*0.1),
-		'--skip',str(params.skip),'--namd2exe',params.namd2exe,
-		'--outfolder',params.outputFolder,'--logfile',params.logFile]
+		getResIntEnArgs = ['--pdb',self.params.pdbFile,'--psf',self.params.psfFile,
+		'--dcd',self.params.dcdFile,'--numcores',
+		str(self.params.numCores),'--sourcesel',self.params.sourceSel,'--targetsel',self.params.targetSel,
+		'--paircalc','--pairfiltercutoff',str(self.params.pairFilterCutoff),
+		'--pairfilterpercentage',str(float(self.params.pairFilterPercentage)*0.1),
+		'--skip',str(self.params.skip),'--namd2exe',self.params.namd2exe,
+		'--outfolder',self.params.outputFolder,'--logfile',self.params.logFile]
 		
 		self.pid = subprocess.Popen(['./getResIntEn.py']+getResIntEnArgs)
 
@@ -127,14 +170,14 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_Calculate.setEnabled(False)
 
 		# Start progress monitoring thread
-		self.monitorProgressThread = monitorProgress(self,params)
+		self.monitorProgressThread = monitorProgress(self,self.params)
 		self.monitorProgressThread.incrementFilteringProgressBar.connect(self.incrementFilteringProgressBar)
 		self.monitorProgressThread.incrementCalculationProgressBar.connect(self.incrementCalculationProgressBar)
 		self.monitorProgressThread.success.connect(self.done)
 		self.monitorProgressThread.start()
 
 		# Start error monitoring thread
-		self.monitorLogThread = monitorLog(self,params)
+		self.monitorLogThread = monitorLog(self,self.params)
 		self.monitorLogThread.error.connect(self.error)
 		self.monitorLogThread.start()
 
