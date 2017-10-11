@@ -11,6 +11,8 @@ import datetime
 import time
 import psutil
 import re
+import pexpect
+import signal
 
 class getResIntEnParams(object):
 	def __init__(self):
@@ -29,10 +31,13 @@ class getResIntEnParams(object):
 		self.logFile = None
 	
 class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
+	stopMonitorProgressThread = pyqtSignal()
+	stopMonitorLogThread = pyqtSignal()
+	
 	def __init__(self,parent=None):
 		super(DesignInteract,self).__init__(parent)
 		self.setupUi(self)
-		
+
 		# Connect callbacks to UI elements
 		self.pushButton_Calculate.clicked.connect(self.startCalculation)
 		self.pushButton_browsePDB.clicked.connect(self.updatePDBPath)
@@ -83,61 +88,28 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			QtWidgets.QMessageBox.information(self,"Error!",message)
 
 	def stopCalculation(self):
-		f = open('getResIntEn.log','w')
-		f.write('ABORT')
-		f.close()
 		# Parse the log file for any child PID spawned by getResIntEn.py
 		if self.pid:
 
+			self.pid.send_signal(signal.SIGINT)
+			process = psutil.Process(self.pid.pid)
+			if process.children():
+				for child in process.children():
+					child.send_signal(signal.SIGINT)
+			self.pid = None
+
+			self.stopMonitorProgressThread.emit()
+			self.stopMonitorLogThread.emit()
+
+			#self.monitorProgressThread = None
+			#self.monitorLogThread = None
+			print('Great!')
 			# Reset all progress elements.
+			
 			self.resetProgressElements()
-
-			f = open(self.params.logFile,'r')
-			lines = f.readlines()
-			f.close()
-
-			# Find out all the processes started by getResIntEn.py
-			start_pids = list()
-			complete_pids = list()
-			for line in lines:
-				startpid_match = re.match(
-					'.*Started a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
-				completepid_match = re.match(
-					'.*Completed a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
-				if startpid_match:
-					start_pid = int(startpid_match.groups()[0])
-					start_pid_vmd = int(startpid_match.groups()[1])
-					start_pids.append(start_pid)
-					start_pids.append(start_pid_vmd)
-
-				if completepid_match:
-					complete_pid = int(completepid_match.groups()[0])
-					complete_pid_vmd = int(completepid_match.groups()[1])
-					complete_pids.append(complete_pid)
-					complete_pids.append(complete_pid_vmd)
-
-			active_pids = [start_pid for start_pid in start_pids if start_pid not in complete_pids]
-
-			#mainProcess = psutil.Process(self.pid.pid)
-			#mainProcess.kill()
-			#self.pid = None
-
-			if active_pids:
-				# Find the process ids of all child processes of all child processes of getResIntEn.py
-				# and, of course, kill them.
-				for pid in active_pids:
-					try:
-						parent = psutil.Process(pid)
-						for child in parent.children(recursive=True):  
-							child.kill()
-						parent.kill()
-					except:
-						continue
 
 	def resetProgressElements(self):
 
-		self.monitorProgressThread.stop()
-		self.monitorLogThread.stop()
 		self.progressBar_filtering.setValue(0)
 		self.progressBar_calculation.setValue(0)
 		self.pushButton_Stop.setEnabled(False)
@@ -151,6 +123,12 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			self.pid = None
 
 	def startCalculation(self):
+
+
+		#### TEMPORARY!!! ####
+
+		subprocess.call('rm getResIntEn_output -R',shell=True)
+		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
 		self.params.psfFile = self.lineEdit_psf.text()
@@ -183,22 +161,28 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		'--outfolder',self.params.outputFolder,'--logfile',self.params.logFile]
 		
 		self.pid = subprocess.Popen(['./getResIntEn.py']+getResIntEnArgs)
+		#Using pexpect instead
 
+		#self.pid = pexpect.spawn('./getResIntEn.py '+' '.join(getResIntEnArgs),
+		#	timeout=None,maxread=1)
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)
 
-		# Start progress monitoring thread
+		# Start progress monitoring thread and connect signals
 		self.monitorProgressThread = monitorProgress(self,self.params)
 		self.monitorProgressThread.incrementFilteringProgressBar.connect(
 			self.incrementFilteringProgressBar)
 		self.monitorProgressThread.incrementCalculationProgressBar.connect(
 			self.incrementCalculationProgressBar)
 		self.monitorProgressThread.success.connect(self.done)
+		self.stopMonitorProgressThread.connect(self.monitorProgressThread.stop)
+
 		self.monitorProgressThread.start()
 
-		# Start error monitoring thread
+		# Start error monitoring thread and connect signals
 		self.monitorLogThread = monitorLog(self,self.params)
 		self.monitorLogThread.error.connect(self.error)
+		self.stopMonitorLogThread.connect(self.monitorLogThread.stop)
 		self.monitorLogThread.start()
 
 class monitorProgress(QtCore.QThread):
@@ -216,6 +200,7 @@ class monitorProgress(QtCore.QThread):
 	#	self.wait()
 
 	def run(self):
+
 		# Start monitoring the progress of computation
 		subprocess.call('rm getResIntEn.log',shell=True)
 		self.mainWindow.progressBar_filtering.setValue(0)
@@ -225,63 +210,50 @@ class monitorProgress(QtCore.QThread):
 		print('Running now!')
 		# Monitor filtering steps
 		percent = 0
-		while percent != 100:
+		while percent != 100 and self._isRunning:
 			if os.path.isfile('getResIntEn.log'):
 				logFile = open('getResIntEn.log','r')
 				logLines = logFile.readlines()
 				logFile.close()
-				if logLines and logLines[0].startswith('ABORT'):
-					print('Here')
-					self.incrementFilteringProgressBar.emit(0)
-					self.exit()
-					return
-				elif logLines:
+				if logLines:
 					percent = int(float(logLines[0]))
 					self.incrementFilteringProgressBar.emit(percent)
 
 		# Monitor calculation
 		continueFlag = False
-		while not continueFlag:
+		while not continueFlag and self._isRunning:
 			logFile = open('getResIntEn.log','r')
 			logLines = logFile.readlines()
-			if logLines and logLines[0].startswith('ABORT'):
-				self.incrementCalculationProgressBar.emit(0)
-				self.exit()
-				return
-			elif len(logLines) < 2:
+			if len(logLines) < 2:
 				logFile.close()
 				time.sleep(1)
 			else:
 				continueFlag = True
 
-		if logLines and logLines[0].startswith('ABORT'):
-			self.incrementCalculationProgressBar.emit(0)
-			self.exit()
-			return
+		continueFlag = True
 
 		percent = 0
-		while percent != 100:
+		while percent != 100 and self._isRunning:
 			logFile = open('getResIntEn.log','r')
 			logLines = logFile.readlines()
 			logFile.close()
-			if logLines and logLines[0].startswith('ABORT'):
-				print('here again')
-				self.incrementCalculationProgressBar.emit(0)
-				self.exit()
-				return
-			elif logLines:
+			if logLines:
 				numFilteredPairs = int(logLines[1])
 				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.dat'))
 				percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
+				print('hi')
 				self.incrementCalculationProgressBar.emit(percent)
 
 		if percent == 100:
 			self.success.emit()
 
+		self.incrementCalculationProgressBar.emit(0)
+
 		self.exit()
 
 	def stop(self):
 		self._isRunning = False
+		#self.terminate()
 
 class monitorLog(QtCore.QThread):
 	error = pyqtSignal(str)
@@ -309,17 +281,20 @@ class monitorLog(QtCore.QThread):
 		return errorLines
 
 	def run(self):
+		
 		# Start monitoring the progress log file produced by getResIntEn.py
 		errorLines = list()
-		while not errorLines:
+		while not errorLines and self._isRunning:
 			errorLines = self.parseLog(self.params.logFile)
 			#time.sleep()
 
-		self.error.emit(errorLines[0])
+		if self._isRunning:
+			self.error.emit(errorLines[0])
 		self.exit()
 
 	def stop(self):
 		self._isRunning = False
+		#self.terminate()
 
 def main():
 	sys_argv = sys.argv

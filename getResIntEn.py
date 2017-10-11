@@ -375,18 +375,18 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
 	def worker_init():
-	    def sig_int(signal_num, frame):
-	        print('signal: %s' % signal_num)
-	        parent = psutil.Process(parent_id)
-	        for child in parent.children():
-	            if child.pid != os.getpid():
-	                print("killing child: %s" % child.pid)
-	                child.kill()
-	        print("killing parent: %s" % parent_id)
-	        parent.kill()
-	        print("suicide: %s" % os.getpid())
-	        psutil.Process(os.getpid()).kill()
-	    signal.signal(signal.SIGINT, sig_int)
+		def sig_int(signal_num, frame):
+			print('signal: %s' % signal_num)
+			parent = psutil.Process(parent_id)
+			for child in parent.children():
+				if child.pid != os.getpid():
+					print("killing child: %s" % child.pid)
+					child.kill()
+			print("killing parent: %s" % parent_id)
+			parent.kill()
+			print("suicide: %s" % os.getpid())
+			psutil.Process(os.getpid()).kill()
+		signal.signal(signal.SIGINT, sig_int)
 	    
 	# Start a pool of processors
 	pool = multiprocessing.Pool(numCores,worker_init)
