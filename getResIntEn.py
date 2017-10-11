@@ -3,7 +3,7 @@ from prody import *
 import multiprocessing
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
-import re, pickle, types, logging, datetime
+import re, pickle, types, logging, datetime, psutil, signal
 
 def filterPairsSingleCore(args):
 	#SIDELINED (DEPRECATED)
@@ -211,10 +211,17 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,toPickle,
 	logFile):
 	
-	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
+	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
+		filename=logFile)
 	logger = logging.getLogger(__name__)
 	
+	# Also print messages to the terminal
+	console = logging.StreamHandler()
+	console.setLevel(logging.INFO)
+	console.setFormatter(logging.Formatter(loggingFormat))
+	logger.addHandler(console)
+
 	logger.info('Started calculation.')
 
 	# ARGUMENT CHECKS
@@ -365,8 +372,24 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(list(pairsFiltered),numCores)
 
+	# Define a worker initializer for graceful exit upon ctrl+c
+	parent_id = os.getpid()
+	def worker_init():
+	    def sig_int(signal_num, frame):
+	        print('signal: %s' % signal_num)
+	        parent = psutil.Process(parent_id)
+	        for child in parent.children():
+	            if child.pid != os.getpid():
+	                print("killing child: %s" % child.pid)
+	                child.kill()
+	        print("killing parent: %s" % parent_id)
+	        parent.kill()
+	        print("suicide: %s" % os.getpid())
+	        psutil.Process(os.getpid()).kill()
+	    signal.signal(signal.SIGINT, sig_int)
+	    
 	# Start a pool of processors
-	pool = multiprocessing.Pool(numCores)
+	pool = multiprocessing.Pool(numCores,worker_init)
 
 	pool.map(calcEnergiesSingleCore,
 		itertools.izip(pairsFilteredChunks,itertools.repeat(psf),

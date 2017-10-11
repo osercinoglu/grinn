@@ -100,8 +100,10 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			start_pids = list()
 			complete_pids = list()
 			for line in lines:
-				startpid_match = re.match('.*Started a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
-				completepid_match = re.match('.*Completed a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
+				startpid_match = re.match(
+					'.*Started a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
+				completepid_match = re.match(
+					'.*Completed a pairwise energy calculation chunk with PID: (\d+),(\d+)',line)
 				if startpid_match:
 					start_pid = int(startpid_match.groups()[0])
 					start_pid_vmd = int(startpid_match.groups()[1])
@@ -126,13 +128,11 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 				for pid in active_pids:
 					try:
 						parent = psutil.Process(pid)
-						for child in parent.children(recursive=True):  # or parent.children() for recursive=False
+						for child in parent.children(recursive=True):  
 							child.kill()
 						parent.kill()
 					except:
 						continue
-
-
 
 	def resetProgressElements(self):
 
@@ -175,7 +175,8 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		# Start calculation in the background
 		getResIntEnArgs = ['--pdb',self.params.pdbFile,'--psf',self.params.psfFile,
 		'--dcd',self.params.dcdFile,'--numcores',
-		str(self.params.numCores),'--sourcesel',self.params.sourceSel,'--targetsel',self.params.targetSel,
+		str(self.params.numCores),'--sourcesel',self.params.sourceSel,
+		'--targetsel',self.params.targetSel,
 		'--paircalc','--pairfiltercutoff',str(self.params.pairFilterCutoff),
 		'--pairfilterpercentage',str(float(self.params.pairFilterPercentage)*0.1),
 		'--skip',str(self.params.skip),'--namd2exe',self.params.namd2exe,
@@ -188,8 +189,10 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		# Start progress monitoring thread
 		self.monitorProgressThread = monitorProgress(self,self.params)
-		self.monitorProgressThread.incrementFilteringProgressBar.connect(self.incrementFilteringProgressBar)
-		self.monitorProgressThread.incrementCalculationProgressBar.connect(self.incrementCalculationProgressBar)
+		self.monitorProgressThread.incrementFilteringProgressBar.connect(
+			self.incrementFilteringProgressBar)
+		self.monitorProgressThread.incrementCalculationProgressBar.connect(
+			self.incrementCalculationProgressBar)
 		self.monitorProgressThread.success.connect(self.done)
 		self.monitorProgressThread.start()
 
