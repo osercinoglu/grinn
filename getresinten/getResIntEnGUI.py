@@ -11,7 +11,6 @@ import datetime
 import time
 import psutil
 import re
-import pexpect
 import signal
 # Below only for pyinstallers compatibility
 import getResIntEn
