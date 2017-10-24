@@ -1,13 +1,17 @@
 getResIntEn: Get Residue Interaction Energies
 
 version: 0.0.1dev
+
 date: 2017/10/25
 
 Marmara University
+
 Department of Bioengineering
+
 Computational Biology and Bioinformatics Group
 
 developer: Onur Serçinoğlu
+
 contact: onursercin@gmail.com
 
 
@@ -49,6 +53,8 @@ getResIntCorr.py additionally requires SciPy.
 
 getResIntCorrGUI.py additionally requires PyQt5.
 
+After installing all dependencies, simply clone this repository to start using it.
+
 ## USAGE
 
 This package is intended for VMD/NAMD users who would like to calculate pairwise interaction energies 
@@ -62,6 +68,10 @@ freeze.
 
 After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via the terminal or the GUI.
 All of the options that can be specified via the terminal can also be specified via the GUI.
+
+Via terminal: python3 getresinten/getResIntEn.py <options>
+
+Via GUI: python3 getresinten/getResIntEnGUI.py
 
 ## TUTORIAL
 
