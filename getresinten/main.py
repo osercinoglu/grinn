@@ -190,7 +190,8 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		if self.params.interactCorr:
 			getResIntEnArgs.append('--resintcorr')
 		
-		self.pid = subprocess.Popen(['./getResIntEn.py']+getResIntEnArgs)
+		module_path = sys.path[0]
+		self.pid = subprocess.Popen([module_path+'/getResIntEn.py']+getResIntEnArgs)
 		#Using pexpect instead
 
 		#self.pid = pexpect.spawn('./getResIntEn.py '+' '.join(getResIntEnArgs),
