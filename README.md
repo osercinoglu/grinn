@@ -75,4 +75,4 @@ Via GUI: **python3 getresinten/getResIntEnGUI.py**
 
 ## TUTORIAL
 
-A tutorial is available at https://bitbucket.org/onursercinoglu/getresinten/wiki/Tutorial
+A tutorial is available at https://bitbucket.org/onursercinoglu/getresinten/wiki/Home
