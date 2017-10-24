@@ -1,4 +1,4 @@
-getResIntEn: Get Residue Interaction Energies
+# getResIntEn: Get Residue Interaction Energies
 
 version: 0.0.1dev
 
