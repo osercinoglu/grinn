@@ -13,6 +13,10 @@ import psutil
 import re
 import pexpect
 import signal
+# Below only for pyinstallers compatibility
+import getResIntEn
+import getResIntCorr
+import common
 
 class getResIntEnParams(object):
 	def __init__(self):

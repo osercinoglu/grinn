@@ -52,7 +52,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>resid 0 to 10</string>
+     <string>all</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_residueGroup2">
@@ -65,20 +65,20 @@
      </rect>
     </property>
     <property name="text">
-     <string>resid 0 to 10</string>
+     <string>all</string>
     </property>
    </widget>
    <widget class="QLabel" name="label_4">
     <property name="geometry">
      <rect>
-      <x>300</x>
+      <x>220</x>
       <y>250</y>
-      <width>151</width>
+      <width>231</width>
       <height>20</height>
      </rect>
     </property>
     <property name="text">
-     <string>Filtering distance cutoff</string>
+     <string>Filtering distance cutoff (Angstroms)</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -87,7 +87,7 @@
    <widget class="QLabel" name="label_5">
     <property name="geometry">
      <rect>
-      <x>10</x>
+      <x>-30</x>
       <y>250</y>
       <width>171</width>
       <height>21</height>
@@ -97,7 +97,7 @@
      <enum>Qt::RightToLeft</enum>
     </property>
     <property name="text">
-     <string>Percent cutoff</string>
+     <string>Percent cutoff (%)</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -109,20 +109,20 @@
    <widget class="QDoubleSpinBox" name="doubleSpinBox_filteringPercent">
     <property name="geometry">
      <rect>
-      <x>190</x>
+      <x>150</x>
       <y>250</y>
       <width>62</width>
       <height>24</height>
      </rect>
     </property>
     <property name="value">
-     <double>10.000000000000000</double>
+     <double>60.000000000000000</double>
     </property>
    </widget>
    <widget class="QLabel" name="label_6">
     <property name="geometry">
      <rect>
-      <x>20</x>
+      <x>-20</x>
       <y>290</y>
       <width>161</width>
       <height>20</height>
@@ -277,7 +277,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>test.pdb</string>
+     <string/>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_psf">
@@ -290,7 +290,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>test.psf</string>
+     <string/>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_dcd">
@@ -303,7 +303,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>test.dcd</string>
+     <string/>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_outputFolder">
@@ -329,7 +329,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>NAMD_2.12b1/namd2</string>
+     <string>namd2</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_browsePDB">
@@ -480,14 +480,14 @@
    <widget class="QLabel" name="label_PearsonCorrCutoff">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>170</x>
       <y>370</y>
-      <width>211</width>
+      <width>281</width>
       <height>20</height>
      </rect>
     </property>
     <property name="text">
-     <string>Average interaction energy cutoff</string>
+     <string>Average interaction energy cutoff (kcal/mol)</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -525,7 +525,7 @@
    <widget class="QDoubleSpinBox" name="doubleSpinBox_dcdStride">
     <property name="geometry">
      <rect>
-      <x>190</x>
+      <x>150</x>
       <y>290</y>
       <width>62</width>
       <height>24</height>
