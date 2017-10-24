@@ -1,5 +1,9 @@
 # A script to evaluate residue-based energies from a trajectory sequentially.
-# This script is actually a 
+# This script is basically a namdEnergy wrapper.
+
+# Prepare
+package require namdenergy
+package require readcharmmpar
 
 # Parse arguments
 puts "Running"
@@ -21,15 +25,19 @@ if {[llength $argv] > 4} { set skip [lindex $argv 4] } else { set skip 1}
 # frame range is by default the 6th and 7th argument
 if {[llength $argv] > 5} { set frameRange [lrange $argv 5 6] } else { set frameRange "all"}
 
+# parameter file argument is by default the 8th argument
+set defpar [file join $env(CHARMMPARDIR) par_all27_prot_lipid_na.inp]
+if {[llength $argv] > 7} { set paramFile [lindex $argv 7] } else { set paramFile $defpar}
+if { $paramFile == "False"} { set paramFile $defpar }
+
 # the rest of the arguments must be pairs for which interactions are to be calculated
-if {[llength $argv] > 7} { set pairResidues [lrange $argv 7 end]}
+if {[llength $argv] > 8} { set pairResidues [lrange $argv 8 end]}
 set numPairResidues [llength $pairResidues]
 #set halfNumPairResidues [expr{$numPairResidues/2}]
 #puts $numPairResidues
 #puts $halfNumPairResidues
 
-# Prepare
-package require namdenergy
+
 
 # Add the DCD file and wait until all frames are loaded.
 mol new $psfFile
@@ -64,7 +72,10 @@ for {set i 0} {$i < $numPairResidues} {incr i 2} {
 	# Uncomment the following three lines if you want to have output files named according to residue.
 	set oFileString $outputFolder\/$selResidue1\_$selResidue2\_energies.dat
 	#puts "Calculating the non-bonded interaction energy between $selResidue1 and $selResidue2 ..."
-	namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile $oFileString -tempname $selResidue1\_$selResidue2 -exe $namd2exe
+	
+	#namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile $oFileString -tempname $selResidue1\_$selResidue2 -exe $namd2exe
+	namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile $oFileString -tempname $selResidue1\_$selResidue2 -exe $namd2exe -par $paramFile
+	
 }
 	
 #eval runNamdEnergyPerResidue $argv

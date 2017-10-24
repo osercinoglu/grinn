@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 import scipy.stats as stats
 import numpy as np
 import pyprind
@@ -7,15 +7,21 @@ import itertools
 import multiprocessing
 import getResIntEn
 import argparse
+import datetime
+import logging
+from common import parseEnergiesSingleCore
 
-def getResIntCorr(inFolder,frameRange=False,
+def getResIntCorr(inFolder,logFile,frameRange=False,
 	numCores=1,meanIntEnCutoff=float(1),outFile='resIntCorr.dat'):
 
-	# First, filter the interaction energies amount by using the average interaction energy cutoff
-	# which should be provided by the user.
+	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	logger = logging.getLogger(__name__)
+	logger.info('Started interaction energy correlation calculation.')
 
 	# Get a list of interaction energy files in this folder.
 	fileList = os.listdir(inFolder)
+	fileList = [filename for filename in fileList if filename.endswith('energies.dat')]
 	numInteractions = len(fileList)
 
 	# For each file, determine whether the mean (average) value of the absolute interaction energy
@@ -25,7 +31,7 @@ def getResIntCorr(inFolder,frameRange=False,
 
 	progBar = pyprind.ProgBar(numInteractions)
 	for fileName in fileList:
-		en = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+fileName])
+		en = parseEnergiesSingleCore([inFolder+'/'+fileName])
 		en = en.values()[0]['Total']
 		mean_en = np.mean(np.abs(en))
 
@@ -48,7 +54,8 @@ def getResIntCorr(inFolder,frameRange=False,
 
 	# Start the correlation calculation in chunks
 	enCorrResults = pool.map(getResIntCorrSingleCore,
-		itertools.izip(intCombinsChunks,itertools.repeat(inFolder)))
+		itertools.izip(intCombinsChunks,itertools.repeat(inFolder),
+			itertools.repeat(logFile)))
 
 	# Accumulate the output
 	enCorrs = dict()
@@ -67,11 +74,18 @@ def getResIntCorrSingleCore(args):
 
 	intCombins = args[0]
 	inFolder = args[1]
+	logFile = args[2]
+	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	logger = logging.getLogger(__name__)
+	
 	numIntCombins = len(intCombins)
 	enCorr = dict()
 
 	progPercent = pyprind.ProgPercent(numIntCombins)
 
+	logger.info('Started an interaction energy correlation calculation thread.')
+	i = 0
 	for intCombin in intCombins:
 		en1 = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+intCombin[0]])
 		en1_keys = tuple(en1.keys())
@@ -82,6 +96,9 @@ def getResIntCorrSingleCore(args):
 		pearson_r,_ = stats.pearsonr(en1_values,en2_values)
 		enCorr[(en1_keys,en2_keys)] = pearson_r
 		progPercent.update()
+		i += 1
+		percent = i/float(numIntCombins)
+		logger.info('Interaction energy correlation thread calculated percentage: '+ str(percent*100))
 
 	return enCorr
 
@@ -138,6 +155,11 @@ if __name__ == '__main__':
 		help='Path of the file for storing calculation results. If not specified, the default value\
 		is resIntCorr.dat in the current working directory')
 
+	now = datetime.datetime.now()
+	logFile = 'getResIntCorrLog_%d%d%d_%d%d%d.log' % (now.year,now.month,now.day,
+			now.hour,now.minute,now.second)
+	parser.add_argument('--logfile',default=[logFile],type=str,nargs=1,help='Log file name')
+
 	# Parse input arguments
 	args = parser.parse_args()
 
@@ -145,6 +167,7 @@ if __name__ == '__main__':
 	numCores = args.numcores[0]
 	meanIntEnCutoff = args.meanintencutoff[0]
 	outFile = args.outfile[0]
+	logFile = args.logfile[0]
 
 	getResIntCorr(inFolder=inFolder,numCores=numCores,meanIntEnCutoff=meanIntEnCutoff,
-		outFile=outFile)
+		outFile=outFile,logFile=logFile)
