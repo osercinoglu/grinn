@@ -19,13 +19,13 @@ contact: onursercin@gmail.com
 
 This package contains three main programs:
 
-* getResIntEn.py is a Python command-line application for calculating pairwise amino-acid interaction
+* **getResIntEn.py** is a Python command-line application for calculating pairwise amino-acid interaction
 energies from NAMD-generated Molecular Dynamics simulation trajectories.
 
-* getResIntCorr.py is a Python command-line application for calculating equal-time linear correlation
+* **getResIntCorr.py** is a Python command-line application for calculating equal-time linear correlation
 between amino-acid interaction energy time profiles from the output of getResIntEn.py
 
-* getResIntEnGUI.py is a PyQt5-based Graphical User Interface (GUI) for getResIntEn.py and getResIntCorr.py
+* **getResIntEnGUI.py** is a PyQt5-based Graphical User Interface (GUI) for getResIntEn.py and getResIntCorr.py
 
 All of the functionality contained in this package can be accessed via command-line interface of 
 getResIntEn.py. For more help regarding the use of this command, open a terminal and type:
@@ -69,9 +69,9 @@ freeze.
 After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via the terminal or the GUI.
 All of the options that can be specified via the terminal can also be specified via the GUI.
 
-Via terminal: python3 getresinten/getResIntEn.py <options>
+Via terminal: **python3 getresinten/getResIntEn.py <options>**
 
-Via GUI: python3 getresinten/getResIntEnGUI.py
+Via GUI: **python3 getresinten/getResIntEnGUI.py**
 
 ## TUTORIAL
 
