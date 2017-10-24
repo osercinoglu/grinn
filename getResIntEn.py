@@ -1,9 +1,12 @@
-#!/usr/bin/env python2.7
+#!/usr/bin/env python
 from prody import *
 import multiprocessing
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
-import re, pickle, types, logging, datetime, psutil, signal
+import re, pickle, types, logging, datetime, psutil, signal, time
+from getResIntEnMean import getResIntEnMean
+from common import parseEnergiesSingleCore
+import getResIntCorr
 
 def filterPairsSingleCore(args):
 	#SIDELINED (DEPRECATED)
@@ -111,7 +114,8 @@ def calcEnergiesSingleCore(args):
 
 	outputFolder = args[5]
 	namd2exe = args[6]
-	logFile = args[7]
+	paramFile = args[7]
+	logFile = args[8]
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -121,7 +125,7 @@ def calcEnergiesSingleCore(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,dcdFilePath,skip,frameRange,
-		outputFolder,namd2exe,logger):
+		outputFolder,namd2exe,paramFile,logger):
 
 		# Construct a list of pairs (input argument string to the external tcl script)
 		pairListArgConstruct = list()
@@ -138,10 +142,10 @@ def calcEnergiesSingleCore(args):
 		devnull = open(os.devnull,'w')
 		
 		vmdArgs = [namd2exe,outputFolder,psfFilePath,dcdFilePath,str(skip),
-				str(frameRange[0]),str(frameRange[1])]
+				str(frameRange[0]),str(frameRange[1]),str(paramFile)]
 		
 		vmdArgs = ['vmd','-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
-
+		
 		pid_vmd = subprocess.Popen(vmdArgs,stdout=devnull)
 		pid = os.getpid()
 		#print(pid)
@@ -161,7 +165,7 @@ def calcEnergiesSingleCore(args):
 
 	for pairsFilteredChunk in pairsFilteredChunks:
 		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,dcdFilePath,skip,frameRange,
-			outputFolder,namd2exe,logger)
+			outputFolder,namd2exe,paramFile,logger)
 
 		progBar.update()
 		percent = percent + 10
@@ -169,47 +173,10 @@ def calcEnergiesSingleCore(args):
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
-def parseEnergiesSingleCore(filePaths):
-
-	# Start a dictionary for storing residue-pair energy values
-	energiesDict = dict()
-	for filePath in filePaths:
-		# Get the interaction residues
-		matches = re.search('(\d+)_(\d+)_energies.dat',filePath)
-		if not matches:
-			continue 
-
-		# Important!!! Converting from Tcl 0-based indexing to 1 based indexing (more logical.)
-		res1 = int(matches.groups()[0])+1 
-		res2 = int(matches.groups()[1])+1
-
-		# Read in the first line (header) output file and count number of total lines.
-		f = open(filePath,'r')
-		lines = f.readlines()
-		numLines = len(lines)
-		header = lines[0].split()
-		numTitles = len(header)
-
-		# Close the file and reopen it with numpy's loadtxt, which is much more practical for numeric data.
-		f.close()
-		energies = np.loadtxt(filePath,skiprows=1) # Skipping the header row.
-
-		# Assign each column into appropriate key's value in energyOutput dict.
-		energyOutput = dict()
-		for i in range(0,numTitles):
-			energyOutput[header[i]] = energies[:,i]
-
-		# Puts this energyOutput dict into energies dict with keys as residue ids
-		energiesDict[(res1,res2)] = energyOutput
-		# Also store it as res2,res2 (it is the same thing after all)
-		energiesDict[(res2,res1)] = energyOutput
-
-	return energiesDict
-
 def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilterCutoff,
 	prePairFilterBasis,prePairFilterPercentage,prePairFilterSkip,pairCalc,pairFilterCutoff,
-	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,toPickle,
-	logFile):
+	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,paramFile,
+	resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -276,19 +243,17 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	# Load pdb with prody and get some useful numbers.
 	try:
-		source = system.select(sourceSel)
+		sourceCA = system.select(sourceSel+' and name CA')
 	except:
 		logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
 
-	sourceCA = source.select('calpha')
 	numSource = len(sourceCA)
 	sourceResids = sourceCA.getResindices()
 	sourceResnums = sourceCA.getResnums()
 	sourceSegnames = sourceCA.getSegnames()
 
-	allResidues = system.select('all')
-	allResiduesCA = allResidues.select('calpha')
+	allResiduesCA = system.select('name CA')
 	numResidues = len(allResiduesCA)
 	numTarget = numResidues
 
@@ -298,12 +263,11 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	# Get target selection residues, if provided:
 	if targetSel:
 		try:
-			target = system.select(targetSel)
+			targetCA = system.select(targetSel+' and name CA')
 		except:
 			logger.exception('Could not select Selection 2 residue group. Aborting now.')
 			return
 
-		targetCA = target.select('calpha')
 		numTarget = len(targetCA)
 		targetResids = targetCA.getResindices()
 
@@ -398,8 +362,10 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 			itertools.repeat(frameRange),
 			itertools.repeat(outputFolder),
 			itertools.repeat(namd2exe),
+			itertools.repeat(paramFile),
 			itertools.repeat(logFile)))
-
+	
+	#pool.join()
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(outputFolder)
 
@@ -411,7 +377,13 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
 	parsedEnergiesResults = pool.map(parseEnergiesSingleCore,energiesFilePathsChunks)
+	
+	# while not parsedEnergiesResults.ready():
+	# 	print("num left: {}".format(parsedEnergiesResults._number_left))
+	# 	time.sleep(1)
 
+	# parsedEnergiesResults = parsedEnergiesResults.get()
+	
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
 		parsedEnergies = dict(parsedEnergies.items() + parsedEnergiesResult.items())
@@ -422,9 +394,17 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		pickle.dump(parsedEnergies,f)
 		f.close()
 
+	# Save average interaction energies as well!
+	if toPickle:
+		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=outputFolder+'/energies')
+
 	pool.close()
 	pool.join()
 
+	if resIntCorr:
+		getResIntCorr.getResIntCorr(inFolder=outputFolder,numCores=numCores,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
+			outFile=outputFolder+'/energies_IntEnCorr.dat',logFile=logFile)
+	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
 	# Credit and source: hpaulj from StackOverflow
@@ -516,6 +496,17 @@ if __name__ == '__main__':
 
 	parser.add_argument('--namd2exe',default=['namd2'],type=str,nargs=1,help='Path to the namd2 executable.')
 
+	parser.add_argument('--parameterfile',default=[False],type=str,nargs=1,help='Path to the parameter file.')
+
+	parser.add_argument('--resintcorr',action='store_true',default=False,help='When True, interaction energy correlation \
+		is also calculated following interaction energy calculation')
+
+	parser.add_argument('--resintcorraverageintencutoff',default=[1],type=float,nargs=1,help='\
+		Mean (average) interaction energy cutoff for filtering interaction energies \
+		(kcal/mol). If an interaction energy time series absolute average value is below this \
+		cutoff, that interaction energy will not be taken in correlation calculations.\
+		By default, the cutoff is 1 kcal/mol.')
+
 	parser.add_argument('--outfolder',default=[os.getcwd()],type=str,nargs=1,help='Folder path for storing \
 		calculation results. If not specified, the current working folder will be used.')
 
@@ -523,7 +514,7 @@ if __name__ == '__main__':
 		are stored into a pickle file in the current working directory for later import and analysis in python.')
 
 	now = datetime.datetime.now()
-	logFile = 'getResIntEnLog_%d%d%d_%d%d%d.log' % (now.year,now.month,now.day,
+	logFile = 'getResIntEnLog_%4d%2d%2d_%2d%2d%2d.log' % (now.year,now.month,now.day,
 			now.hour,now.minute,now.second)
 	parser.add_argument('--logfile',default=[logFile],type=str,nargs=1,help='Log file name')
 
@@ -554,6 +545,10 @@ if __name__ == '__main__':
 
 	namd2exe = args.namd2exe[0]
 
+	paramFile = args.parameterfile[0]
+	if not paramFile:
+		paramFile = False
+
 	logFile = args.logfile[0]
 
 	if len(args.sourcesel) > 1:
@@ -571,11 +566,15 @@ if __name__ == '__main__':
 	else:
 		frameRange = args.framerange[0]
 
+	resIntCorr = args.resintcorr 
+	resIntCorrAverageIntEnCutoff = args.resintcorraverageintencutoff[0]
+
 	getResIntEn(psf=psf,pdb=pdb,dcd=dcd,numCores=numCores,
 		sourceSel=sourceSel,targetSel=targetSel,prePairCalc=prePairCalc,
 		prePairFilterCutoff=prePairFilterCutoff,prePairFilterBasis=prePairFilterBasis,
 		prePairFilterPercentage=prePairFilterPercentage,prePairFilterSkip=prePairFilterSkip,
 		pairCalc=pairCalc,pairFilterCutoff=pairFilterCutoff,pairFilterBasis=pairFilterBasis,
 		pairFilterPercentage=pairFilterPercentage,pairFilterSkip=pairFilterSkip,
-		skip=skip,frameRange=frameRange,outputFolder=outputFolder,namd2exe=namd2exe,
-		toPickle=args.topickle,logFile=logFile)
+		skip=skip,frameRange=frameRange,resIntCorr=resIntCorr,
+		resIntCorrAverageIntEnCutoff=resIntCorrAverageIntEnCutoff,outputFolder=outputFolder,
+		namd2exe=namd2exe,paramFile=paramFile,toPickle=args.topickle,logFile=logFile)
