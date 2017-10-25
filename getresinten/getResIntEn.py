@@ -150,11 +150,13 @@ def calcEnergiesSingleCore(args):
 		pid_vmd = subprocess.Popen(vmdArgs,stdout=devnull)
 		pid = os.getpid()
 		#print(pid)
-		logger.info('Started a pairwise energy calculation chunk with PID: %i,%i' % (pid,pid_vmd.pid))
+		logger.info('Started a pairwise energy calculation chunk with PID: %i' % pid)
+		logger.info('Started a pairwise energy calculation chunk with VMD PID: %i' % pid_vmd.pid)
 
 		pid_vmd.wait()
 
-		logger.info('Completed a pairwise energy calculation chunk with PID: %i,%i' % (pid,pid_vmd.pid))
+		logger.info('Completed a pairwise energy calculation chunk with PID: %i' % pid)
+		logger.info('Completed a pairwise energy calculation chunk with VMD PID: %i' % pid_vmd.pid)
 
 	# Split it into ten chunks to print the progress on the screen.
 	pairsFilteredChunks = np.array_split(pairsFiltered,10)

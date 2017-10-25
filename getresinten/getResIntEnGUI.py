@@ -101,6 +101,15 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def incrementCorrelationCalculationProgressBar(self,percent):
 		self.progressBar_correlation.setValue(percent)
 
+	def updateETAfilteringLabel(self,etaString):
+		self.label_etaFiltering.setText(etaString)
+
+	def updateETAcalculationLabel(self,etaString):
+		self.label_etaCalculation.setText(etaString)
+
+	def updateETAcorrelationLabel(self,etaString):
+		self.label_etaCorrelation.setText(etaString)
+
 	def done(self):
 		self.resetProgressElements()
 		self.monitorProgressThread.exit()
@@ -118,10 +127,31 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 			self.pid.send_signal(signal.SIGINT)
 			process = psutil.Process(self.pid.pid)
-			if process.children():
+			while process.children():
 				for child in process.children():
 					child.send_signal(signal.SIGINT)
-			self.pid = None
+			process.send_signal(signal.SIGINT)
+
+			# Kill VMD PID as well via finding its pids in the log file
+			logFile = open(self.params.logFile,'r')
+			lines = logFile.readlines()
+			logFile.close()
+			vmd_active_pids = list()
+			vmd_completed_pids = list()
+			for line in lines:
+				active_matches = re.search(
+					'Started a pairwise energy calculation chunk with VMD PID: (\d+)',line)
+				if active_matches:
+					vmd_active_pids.append(active_matches.groups()[0])
+				completed_matches = re.search(
+					'Completed a pairwise energy calculation chunk with VMD PID: (\d+)',line)
+				if completed_matches:
+					vmd_completed_pids.append(completed_matches.groups()[0])
+
+			vmd_running_pids = [pid for pid in vmd_active_pids if pid not in vmd_completed_pids]
+			for pid in vmd_running_pids:
+				process = psutil.Process(int(pid))
+				process.kill()
 
 			self.stopMonitorProgressThread.emit()
 			self.stopMonitorLogThread.emit()
@@ -132,6 +162,11 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			
 			self.resetProgressElements()
 
+			# Hard kill
+			mainProcess = psutil.Process(self.pid.pid)
+			mainProcess.kill()
+			self.pid = None
+
 	def resetProgressElements(self):
 
 		self.progressBar_filtering.setValue(0)
@@ -139,6 +174,9 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.progressBar_correlation.setValue(0)
 		self.pushButton_Stop.setEnabled(False)
 		self.pushButton_Calculate.setEnabled(True)
+		self.label_etaFiltering.setText('Ready.')
+		self.label_etaCalculation.setText('Ready.')
+		self.label_etaCorrelation.setText('Ready.')
 
 		#self.progressBar_calculation.setValue(0)
 
@@ -169,7 +207,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.params.interactCorrAverageIntEnCutoff = self.doubleSpinBox_AverageIntEnCutoff.value()
 		# Date: %d.%d.%d %d:%d \n' % (now.year,now.month,now.day,now.hour,
 		now = datetime.datetime.now()
-		self.params.logFile = 'getResIntEnLog_%4d%2d%2d_%2d%2d%2d.log' % (now.year,now.month,now.day,
+		self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
 			now.hour,now.minute,now.second)
 
 		# Make the log file now.
@@ -207,6 +245,12 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			self.incrementCalculationProgressBar)
 		self.monitorProgressThread.incrementCorrelationCalculationProgressBar.connect(
 			self.incrementCorrelationCalculationProgressBar)
+		self.monitorProgressThread.updateETAfilteringLabel.connect(
+			self.updateETAfilteringLabel)
+		self.monitorProgressThread.updateETAcalculationLabel.connect(
+			self.updateETAcalculationLabel)
+		self.monitorProgressThread.updateETAcorrelationLabel.connect(
+			self.updateETAcorrelationLabel)
 		self.monitorProgressThread.success.connect(self.done)
 		self.stopMonitorProgressThread.connect(self.monitorProgressThread.stop)
 
@@ -222,6 +266,9 @@ class monitorProgress(QtCore.QThread):
 	incrementFilteringProgressBar = pyqtSignal(int)
 	incrementCalculationProgressBar = pyqtSignal(int)
 	incrementCorrelationCalculationProgressBar = pyqtSignal(int)
+	updateETAfilteringLabel = pyqtSignal(str)
+	updateETAcalculationLabel = pyqtSignal(str)
+	updateETAcorrelationLabel = pyqtSignal(str)
 	success = pyqtSignal()
 
 	def __init__(self,mainWindow,params):
@@ -242,8 +289,18 @@ class monitorProgress(QtCore.QThread):
 		self._isRunning = True
 
 		print('Running now!')
+
+		# method for ETA calculation
+		def getETAstring(start_time,current_time,percent):
+			elapsed_time = current_time - start_time
+			remaining_time = (100-percent)*elapsed_time/float(percent)
+			remaining_time_hhmm = divmod(remaining_time,60)
+			etaString = 'ETA: %i min %i sec' % (remaining_time_hhmm[0],remaining_time_hhmm[1])
+			return etaString
+
 		# Monitor filtering steps
 		percent = 0
+		start_time = time.time()
 		while percent != 100 and self._isRunning:
 			if os.path.isfile('getResIntEn.log'):
 				logFile = open('getResIntEn.log','r')
@@ -252,6 +309,9 @@ class monitorProgress(QtCore.QThread):
 				if logLines:
 					try:
 						percent = int(float(logLines[0]))
+						current_time = time.time()
+						etaString = getETAstring(start_time,current_time,percent)
+						self.updateETAfilteringLabel.emit(etaString)
 						self.incrementFilteringProgressBar.emit(percent)
 					except:
 						pass
@@ -270,6 +330,7 @@ class monitorProgress(QtCore.QThread):
 		continueFlag = True
 
 		percent = 0
+		start_time = time.time()
 		while percent != 100 and self._isRunning:
 			logFile = open('getResIntEn.log','r')
 			logLines = logFile.readlines()
@@ -278,11 +339,16 @@ class monitorProgress(QtCore.QThread):
 				numFilteredPairs = int(logLines[1])
 				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.dat'))
 				percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
+				if percent > 0:
+					current_time = time.time()
+					etaString = getETAstring(start_time,current_time,percent)
+					self.updateETAcalculationLabel.emit(etaString)
 				self.incrementCalculationProgressBar.emit(percent)
 
 		# Monitor interaction correlation calculation.
 		if self.params.interactCorr:
 			percent = 0
+			start_time = time.time()
 			while percent != 100 and self._isRunning:
 				oldpercent = percent
 				logFile = open(self.params.logFile)
@@ -295,6 +361,9 @@ class monitorProgress(QtCore.QThread):
 						newpercent = float(matches.groups()[0])
 						if newpercent > oldpercent:
 							percent = newpercent
+							current_time = time.time()
+							etaString = getETAstring(start_time,current_time,percent)
+							self.updateETAcorrelationLabel.emit(etaString)
 							self.incrementCorrelationCalculationProgressBar.emit(percent)
 							break
 
