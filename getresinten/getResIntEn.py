@@ -4,6 +4,7 @@ import multiprocessing
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
 import re, pickle, types, logging, datetime, psutil, signal, time
+import pandas
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCore
 import getResIntCorr
@@ -388,6 +389,20 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	for parsedEnergiesResult in parsedEnergiesResults:
 		parsedEnergies = dict(parsedEnergies.items() + parsedEnergiesResult.items())
 
+
+	# Prepare a pandas data table from parsed energies, write it to new files depending on type of energy
+	df_total = pandas.DataFrame()
+	df_elec = pandas.DataFrame()
+	df_vdw = pandas.DataFrame()
+	for key,value in list(parsedEnergies.items()):
+		df_total[key] = value['Total']
+		df_elec[key] = value['Elec']
+		df_vdw[key] = value['VdW']
+
+	df_total.to_csv(outputFolder+'/energies_intEnTotal.csv')
+	df_elec.to_csv(outputFolder+'/energies_intEnElec.csv')
+	df_vdw.to_csv(outputFolder+'/energies_intEnVdW.csv')
+
 	# If saving to a pickle is requested:
 	if toPickle:
 		f = open(outputFolder+'.pickle','w')
@@ -404,6 +419,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	if resIntCorr:
 		getResIntCorr.getResIntCorr(inFolder=outputFolder,numCores=numCores,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
 			outFile=outputFolder+'/energies_IntEnCorr.dat',logFile=logFile)
+
+	# Delete all namd-generated energies file from output folder.
+	subprocess.call('rm %s/*_energies.dat' % outputFolder,shell=True)
 	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
