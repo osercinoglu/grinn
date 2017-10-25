@@ -9,6 +9,7 @@ import getResIntEn
 import argparse
 import datetime
 import logging
+import signal
 from common import parseEnergiesSingleCore
 
 def getResIntCorr(inFolder,logFile,frameRange=False,
