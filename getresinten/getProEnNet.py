@@ -37,7 +37,7 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 		
 			# Only connect if the two residues are in the same chain
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(i+1,i+2,{'distance':float(maxResCorr)})
+				network.add_edge(i+1,i+2,distance=float(maxResCorr))
 
 	# Load the resIntCorrFile, get interacting residue pairs and add edges between them
 	# Load the resCorrFile and add edge weights to previously added edges by making them equal to
@@ -67,7 +67,7 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 					if resMeanIntEnFile:
 						if np.abs(resIntEnMat[res1_pair-1][res2_pair-1]) > intEnCutoff:
 							network.add_edge(res1_pair,res2_pair,
-								{'distance':float(resCorrMat[res1_pair-1,res2_pair-1])})
+								distance=float(resCorrMat[res1_pair-1,res2_pair-1]))
 
 		progbar.update()
 
@@ -115,7 +115,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 			# Only connect if the two residues are in the same chain
 			# Weights as is
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(i+1,i+2,{'distance':X[i,i+1]})
+				network.add_edge(i+1,i+2,distance=X[i,i+1])
 
 
 			# Weights with -log
@@ -146,7 +146,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 						continue
 
 					# weights as is
-					network.add_edge(i+1,j+1,{'distance':X[i,j]})
+					network.add_edge(i+1,j+1,distance=X[i,j])
 					# weights as -log
 					#network.add_edge(i+1,j+1,{'distance':-np.log(X[i,j])})
 

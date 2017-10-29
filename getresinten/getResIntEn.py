@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from prody import *
 import multiprocessing
 import numpy as np
@@ -110,7 +110,7 @@ def calcEnergiesSingleCore(args):
 	# If frameRange is False, then the user did not request a frame range and thus
 	# wants to include all frames in the analysis. In this case create an array 
 	# for frameRange [0,-1] to indicate that we want all frames to the external tcl script
-	if type(frameRange) == types.BooleanType:
+	if frameRange == False:
 		frameRange = [0,-1]
 
 	outputFolder = args[5]
@@ -201,8 +201,8 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		return
 
 	# Start a log file (some crude logging functionality!)
-	logFile = open('getResIntEn.log','w')
-	logFile.close()
+	logFile2 = open('getResIntEn.log','w')
+	logFile2.close()
 
 	# Before we start the calculation, check whether the user has specified and outputFolder.
 	# If yes, check whether it exists. If it exists, change to that directory and do calculations.
@@ -224,6 +224,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	try:
 		system = parsePDB(pdb)
+		systemCA = system.select('name CA')
 	except:
 		logger.exception('Could not load the PDB file provided. Please check your input PDB file.\
 			 Aborting now.')
@@ -287,7 +288,8 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	logger.info('Starting the filtering step.')
 
 	# Continue with filtering operation
-	traj.setAtoms(system.select('name CA'))
+	print(sourceCA)
+	traj.setAtoms(systemCA)
 	coordSets = traj.getCoordsets()
 
 	# Start a contact matrix (Kirchhoff matrix)
@@ -321,20 +323,20 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
-	f = open('pairsFiltered.txt','w')
+	file = open('pairsFiltered.txt','w')
 	for pair in pairsFiltered:
-		f.write('%i-%i\n' % (pair[0],pair[1]))
-	f.close()
+		file.write('%i-%i\n' % (pair[0],pair[1]))
+	file.close()
 
 	if not pairsFiltered:
 		logger.exception('Filtering step did not yield any pairs. '
 			'Either your cutoff value is too small or the percentage criteria is too high.')
 		return
 
-	logFile = open('getResIntEn.log','w')
-	logFile.write('Number of interaction pairs selected after filtering step:\n')
-	logFile.write(str(len(pairsFiltered)))
-	logFile.close()
+	logFile2= open('getResIntEn.log','w')
+	logFile2.write('Number of interaction pairs selected after filtering step:\n')
+	logFile2.write(str(len(pairsFiltered)))
+	logFile2.close()
 
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(list(pairsFiltered),numCores)
@@ -359,7 +361,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	pool = multiprocessing.Pool(numCores,worker_init)
 
 	pool.map(calcEnergiesSingleCore,
-		itertools.izip(pairsFilteredChunks,itertools.repeat(psf),
+		zip(pairsFilteredChunks,itertools.repeat(psf),
 			itertools.repeat(dcd),
 			itertools.repeat(skip),
 			itertools.repeat(frameRange),
@@ -389,8 +391,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
-		parsedEnergies = dict(parsedEnergies.items() + parsedEnergiesResult.items())
-
+		parsedEnergies.update(parsedEnergiesResult)
 
 	# Prepare a pandas data table from parsed energies, write it to new files depending on type of energy
 	df_total = pandas.DataFrame()
@@ -407,9 +408,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	# If saving to a pickle is requested:
 	if toPickle:
-		f = open(outputFolder+'.pickle','w')
-		pickle.dump(parsedEnergies,f)
-		f.close()
+		file = open(outputFolder+'.pickle','wb')
+		pickle.dump(parsedEnergies,file)
+		file.close()
 
 	# Save average interaction energies as well!
 	if toPickle:

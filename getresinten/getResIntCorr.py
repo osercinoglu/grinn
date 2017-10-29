@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 import scipy.stats as stats
 import numpy as np
 import pyprind
@@ -27,7 +27,7 @@ def getResCorr(enCorrs,pdb,excludeSel=False,corrCutoff=False,outName='resCorr'):
 
 	progBar = pyprind.ProgBar(len(enCorrs))
 
-	for key,value in enCorrs.iteritems():
+	for key,value in enCorrs.items():
 		# Get the four residues involved in an interaction correlation.
 		res1 = key[0][0][0]
 		res2 = key[0][0][1]
@@ -104,10 +104,10 @@ def getResIntCorrSingleCore(args):
 	for intCombin in intCombins:
 		en1 = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+intCombin[0]])
 		en1_keys = tuple(en1.keys())
-		en1_values = en1.values()[0]['Total']
+		en1_values = list(en1.values())[0]['Total']
 		en2 = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+intCombin[1]])
 		en2_keys = tuple(en2.keys())
-		en2_values = en2.values()[0]['Total']
+		en2_values = list(en2.values())[0]['Total']
 		pearson_r,_ = stats.pearsonr(en1_values,en2_values)
 		enCorr[(en1_keys,en2_keys)] = pearson_r
 		progPercent.update()
@@ -121,7 +121,7 @@ def write2file(enCorrs,outFile):
 
 	f = open(outFile,'w')
 
-	for key,value in enCorrs.iteritems():
+	for key,value in enCorrs.items():
 		# Get the four residues involved in an interaction correlation.
 		res1 = key[0][0][0]
 		res2 = key[0][0][1]
@@ -154,7 +154,7 @@ def getResIntCorr(inFolder,pdb,logFile,frameRange=False,
 	progBar = pyprind.ProgBar(numInteractions)
 	for fileName in fileList:
 		en = parseEnergiesSingleCore([inFolder+'/'+fileName])
-		en = en.values()[0]['Total']
+		en = list(en.values())[0]['Total']
 		mean_en = np.mean(np.abs(en))
 
 		if mean_en > meanIntEnCutoff:
@@ -190,13 +190,13 @@ def getResIntCorr(inFolder,pdb,logFile,frameRange=False,
 
 	# Start the correlation calculation in chunks
 	enCorrResults = pool.map(getResIntCorrSingleCore,
-		itertools.izip(intCombinsChunks,itertools.repeat(inFolder),
+		zip(intCombinsChunks,itertools.repeat(inFolder),
 			itertools.repeat(logFile)))
 
 	# Accumulate the output
 	enCorrs = dict()
 	for enCorrResult in enCorrResults:
-		enCorrs = dict(enCorrs.items() + enCorrResult.items())
+		enCorrs.update(enCorrResult)
 
 	pool.close()
 	pool.join()

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 from prody import *
 import multiprocessing
 import numpy as np
@@ -8,9 +8,9 @@ import re, pickle, types
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Load interaction energy pickle file
-	intEnFile = open(intEnPickle,'r')
+	intEnFile = open(intEnPickle,'rb')
 	intEn = pickle.load(intEnFile)
-	numFrames = len(intEn[intEn.keys()[0]]['Total'])
+	numFrames = len(intEn[list(intEn.keys())[0]]['Total'])
 
 	if not frameRange:
 		frameRange = [0,numFrames]
