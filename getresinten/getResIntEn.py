@@ -145,6 +145,7 @@ def calcEnergiesSingleCore(args):
 		vmdArgs = [namd2exe,outputFolder,psfFilePath,dcdFilePath,str(skip),
 				str(frameRange[0]),str(frameRange[1]),str(paramFile)]
 		
+		print(module_path)
 		vmdArgs = ['vmd','-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
 		
 		pid_vmd = subprocess.Popen(vmdArgs,stdout=devnull)
@@ -231,12 +232,14 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 		return
 
 	# Load psf with prody and get some useful numbers.
-	try:
-		system = parsePSF(psf)
-	except:
-		logger.exception('Could not load the PSF file provided. Please check your input PDB file.\
-			 Aborting now.')
-		return
+	### COMMENTING THIS OUT DUE TO INCOMPATIBILITY PROBLEMS WITH python3.6
+	### WE DON'T NEED TO USE PSF IN PYTHON ANYWAY
+	# try:
+	# 	system = parsePSF(psf)
+	# except:
+	# 	logger.exception('Could not load the PSF file provided. Please check your input PDB file.\
+	# 		 Aborting now.')
+	# 	return
 
 	try:
 		traj = parseDCD(dcd)
@@ -323,10 +326,10 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
-	file = open('pairsFiltered.txt','w')
-	for pair in pairsFiltered:
-		file.write('%i-%i\n' % (pair[0],pair[1]))
-	file.close()
+	# file = open('pairsFiltered.txt','w')
+	# for pair in pairsFiltered:
+	# 	file.write('%i-%i\n' % (pair[0],pair[1]))
+	# file.close()
 
 	if not pairsFiltered:
 		logger.exception('Filtering step did not yield any pairs. '

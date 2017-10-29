@@ -10,6 +10,7 @@ import seaborn
 import matplotlib
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 
 class viewResultsParams(object):
@@ -32,6 +33,7 @@ class MyMplCanvas(FigureCanvas):
 
         #
         FigureCanvas.__init__(self, fig)
+        self.toolbar = NavigationToolbar(fig.canvas, self)
         self.setParent(parent)
 
         FigureCanvas.setSizePolicy(self,
@@ -51,6 +53,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 
     def update_figure(self,viewResultsParams,type='time-series'):
     	intEnTotal = viewResultsParams.intEnTotal
+    	intEnMeanTotal = viewResultsParams.intEnMeanTotal
     	selectedSourceRes = viewResultsParams.selectedSourceRes
     	selectedTargetRes = viewResultsParams.selectedTargetRes
     	key = str((selectedSourceRes+1,selectedTargetRes+1))
@@ -70,6 +73,16 @@ class MyStaticMplCanvas(MyMplCanvas):
     		seaborn.kdeplot(s,ax=self.axes)
     		self.axes.set_xlabel('Total Non-bonded IE [kcal/mol]')
     		self.axes.set_ylabel('Kernel Density')
+
+    	elif type=='iem':
+    		if len(intEnMeanTotal) > 100:
+    			annot = False
+    		else:
+    			annot = True
+    		seaborn.heatmap(intEnMeanTotal,vmax=10,vmin=-10,square=True,
+                        cmap=seaborn.color_palette("BrBG", 10),annot=annot,ax=self.axes)
+    		self.axes.set_xlabel('Residue')
+    		self.axes.set_ylabel('Residue')
 
     	self.draw()
 
@@ -100,14 +113,16 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairwiseEnergiesPlots,width=5,height=4,
 			dpi=100)
 		self.verticalLayout_3.addWidget(self.intEnDistributions)
+		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100)
+		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
 		# Connect callbacks to UI elements
 
-		self.populateTable()
+		self.populateGUI()
 
 		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updateTable)
 
-	def populateTable(self):
+	def populateGUI(self):
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 		self.tableWidget_sourceTargetResEnergies.setRowCount(numResidues)
 		self.tableWidget_sourceTargetResEnergies.setColumnCount(3)
@@ -119,6 +134,8 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 
 		self.updateTable(0,0)
 
+		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
+
 	def updateTable(self,row,column):
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 
@@ -126,14 +143,19 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		# if the cell is a source residue
 		if column == 0:
 			selectedSourceRes = row
+
 			self.viewResultsParams.selectedSourceRes = selectedSourceRes
 			for i in range(0,numResidues):
 				self.tableWidget_sourceTargetResEnergies.setItem(
 					i,2,QtWidgets.QTableWidgetItem(
 						str(self.viewResultsParams.intEnMeanTotal[
 							self.viewResultsParams.selectedSourceRes,i])))
+				self.tableWidget_sourceTargetResEnergies.item(i,0).setBackground(QtGui.QColor(255,255,255))
+
+			# change background color to let user remember which sourceres was selected
+			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(QtGui.QColor(100,100,150))
 		# if the cell is a target residue
-		elif column == 1:
+		elif column in [1,2]:
 			selectedTargetRes = row
 			self.viewResultsParams.selectedTargetRes = selectedTargetRes
 			self.intEnTimeSeries.update_figure(self.viewResultsParams,'time-series')

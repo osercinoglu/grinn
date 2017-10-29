@@ -20,7 +20,7 @@
      <verstretch>0</verstretch>
     </sizepolicy>
    </property>
-   <layout class="QVBoxLayout" name="verticalLayout">
+   <layout class="QHBoxLayout" name="horizontalLayout_3">
     <item>
      <widget class="QFrame" name="frame">
       <property name="sizePolicy">
@@ -75,7 +75,6 @@
           </item>
          </layout>
          <zorder>pushButton_selectOutputFolder</zorder>
-         <zorder>pushButton_selectOutputFolder</zorder>
          <zorder>lineEdit_selectOutputFolder</zorder>
         </widget>
        </item>
@@ -88,7 +87,7 @@
           </sizepolicy>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>1</number>
          </property>
          <widget class="QWidget" name="tab_PairwiseEnergies">
           <property name="sizePolicy">
@@ -167,8 +166,32 @@
           <attribute name="title">
            <string>IEM</string>
           </attribute>
-          <layout class="QVBoxLayout" name="verticalLayout_2"/>
-          <zorder>text_outputFolder</zorder>
+          <layout class="QVBoxLayout" name="verticalLayout_2">
+           <property name="sizeConstraint">
+            <enum>QLayout::SetMaximumSize</enum>
+           </property>
+           <item>
+            <widget class="QFrame" name="frame_tabIEM">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>0</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Raised</enum>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout_5">
+              <property name="sizeConstraint">
+               <enum>QLayout::SetDefaultConstraint</enum>
+              </property>
+             </layout>
+            </widget>
+           </item>
+          </layout>
          </widget>
         </widget>
        </item>
