@@ -71,7 +71,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.lineEdit_dcd.setText(name)
 
 	def updateOutputFolder(self):
-		name,__ = QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd())
+		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
 		self.lineEdit_outputFolder.setText(name)
 
 	def updateNAMDPath(self):

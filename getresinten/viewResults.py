@@ -8,6 +8,7 @@ import pandas
 import numpy as np
 import seaborn
 import matplotlib
+import os
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
@@ -29,7 +30,7 @@ class MyMplCanvas(FigureCanvas):
         # We want the axes cleared every time plot() is called
         self.axes.hold(False)
 
-        self.compute_initial_figure()
+        #self.compute_initial_figure()
 
         #
         FigureCanvas.__init__(self, fig)
@@ -92,20 +93,11 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		super(DesignInteract,self).__init__(parent)
 		self.setupUi(self)
 
+		#Ppopulate viewResultsParams object
 		self.viewResultsParams = viewResultsParams()
-		self.viewResultsParams.outputFolder = \
-		'/home/onur/Dropbox/experiments/getResIntEnPlugin/2017_10_26_ChemViaCompSymposium/getResIntEn_1K5N_ABC_1'
-		self.viewResultsParams.intEnMeanTotal = np.loadtxt(
-			self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
-		self.viewResultsParams.intEnTotal = pandas.read_csv(
-			self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
 
-		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderItem(0,
-			QtWidgets.QTableWidgetItem('Residue'))
-		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderItem(1,
-			QtWidgets.QTableWidgetItem('Residue'))
-		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderItem(2,
-			QtWidgets.QTableWidgetItem('IE [kcal/mol]'))
+		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
+		
 		# Creating matplotlib canvases 
 		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairwiseEnergiesPlots,width=5,height=4,
 			dpi=100)
@@ -117,15 +109,29 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
 		# Connect callbacks to UI elements
-
-		self.populateGUI()
+		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
+		#self.populateGUI()
 
 		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updateTable)
 
+	def updateOutputFolder(self):
+		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
+
+		self.lineEdit_selectOutputFolder.setText(name)
+		self.viewResultsParams.outputFolder = name
+		self.viewResultsParams.intEnMeanTotal = np.loadtxt(
+			self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
+		self.viewResultsParams.intEnTotal = pandas.read_csv(
+			self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
+		self.populateGUI()
+
 	def populateGUI(self):
+
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 		self.tableWidget_sourceTargetResEnergies.setRowCount(numResidues)
 		self.tableWidget_sourceTargetResEnergies.setColumnCount(3)
+		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
+		self.tableWidget_sourceTargetResEnergies.setSortingEnabled(False)
 		for i in range(0,numResidues):
 			self.tableWidget_sourceTargetResEnergies.setItem(
 				i,0,QtWidgets.QTableWidgetItem(str(i+1)))

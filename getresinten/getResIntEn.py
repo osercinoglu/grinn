@@ -145,8 +145,9 @@ def calcEnergiesSingleCore(args):
 		vmdArgs = [namd2exe,outputFolder,psfFilePath,dcdFilePath,str(skip),
 				str(frameRange[0]),str(frameRange[1]),str(paramFile)]
 		
-		print(module_path)
-		vmdArgs = ['vmd','-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
+		vmdPath = '/Applications/vmd.app/Contents/Resources/VMD.app/Contents/MacOS/VMD' #TEMPORARY FOR MACOSX USAGE
+		# vmdPath = 'vmd'
+		vmdArgs = [vmdPath,'-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
 		
 		pid_vmd = subprocess.Popen(vmdArgs,stdout=devnull)
 		pid = os.getpid()
