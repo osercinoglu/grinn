@@ -116,14 +116,14 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
-
-		self.lineEdit_selectOutputFolder.setText(name)
-		self.viewResultsParams.outputFolder = name
-		self.viewResultsParams.intEnMeanTotal = np.loadtxt(
-			self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
-		self.viewResultsParams.intEnTotal = pandas.read_csv(
-			self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
-		self.populateGUI()
+		if name:
+			self.lineEdit_selectOutputFolder.setText(name)
+			self.viewResultsParams.outputFolder = name
+			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
+				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
+			self.viewResultsParams.intEnTotal = pandas.read_csv(
+				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
+			self.populateGUI()
 
 	def populateGUI(self):
 
