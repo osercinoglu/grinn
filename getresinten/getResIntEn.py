@@ -79,7 +79,7 @@ def calcEnergiesSingleCore(args):
 			vmd.evaltcl('set selResidue2 [$selEnergyCA2 get residue]')
 
 			oFileString = outputFolder+'/'+str(resid1)+'_'+str(resid2)+'_energies.dat'
-			tempname = '.'+str(resid1)+'_'+str(resid2)
+			tempname = os.path.abspath(str(resid1)+'_'+str(resid2))
 
 			vmd.evaltcl('namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile \
 				%s -tempname %s -exe %s -par $paramFile' % (oFileString,tempname,namd2exe))
@@ -470,9 +470,9 @@ if __name__ == '__main__':
 	# Parsing input arguments
 	args = parser.parse_args()
 
-	psf = args.psf[0]
-	pdb = args.pdb[0]
-	dcd = args.dcd[0]
+	psf = os.path.abspath(args.psf[0])
+	pdb = os.path.abspath(args.pdb[0])
+	dcd = os.path.abspath(args.dcd[0])
 	
 	numCores = args.numcores[0]
 	frameRange = args.framerange
@@ -490,15 +490,17 @@ if __name__ == '__main__':
 	pairFilterPercentage = args.pairfilterpercentage[0]
 	pairFilterSkip = args.pairfilterskip[0]
 
-	outputFolder = args.outfolder[0]
+	outputFolder = os.path.abspath(args.outfolder[0])
 
-	namd2exe = args.namd2exe[0]
+	namd2exe = os.path.abspath(args.namd2exe[0])
 
 	paramFile = args.parameterfile[0]
 	if not paramFile:
 		paramFile = False
+	else:
+		paramFile = os.path.abspath(paramFile)
 
-	logFile = args.logfile[0]
+	logFile = os.path.abspath(args.logfile[0])
 
 	if len(args.sourcesel) > 1:
 		sourceSel = ' '.join(args.sourcesel)

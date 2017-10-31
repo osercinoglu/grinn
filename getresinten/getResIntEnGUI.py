@@ -132,26 +132,26 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 					child.send_signal(signal.SIGINT)
 			process.send_signal(signal.SIGINT)
 
-			# Kill VMD PID as well via finding its pids in the log file
-			logFile = open(self.params.logFile,'r')
-			lines = logFile.readlines()
-			logFile.close()
-			vmd_active_pids = list()
-			vmd_completed_pids = list()
-			for line in lines:
-				active_matches = re.search(
-					'Started a pairwise energy calculation chunk with VMD PID: (\d+)',line)
-				if active_matches:
-					vmd_active_pids.append(active_matches.groups()[0])
-				completed_matches = re.search(
-					'Completed a pairwise energy calculation chunk with VMD PID: (\d+)',line)
-				if completed_matches:
-					vmd_completed_pids.append(completed_matches.groups()[0])
+			# # Kill VMD PID as well via finding its pids in the log file
+			# logFile = open(self.params.logFile,'r')
+			# lines = logFile.readlines()
+			# logFile.close()
+			# vmd_active_pids = list()
+			# vmd_completed_pids = list()
+			# for line in lines:
+			# 	active_matches = re.search(
+			# 		'Started a pairwise energy calculation chunk with VMD PID: (\d+)',line)
+			# 	if active_matches:
+			# 		vmd_active_pids.append(active_matches.groups()[0])
+			# 	completed_matches = re.search(
+			# 		'Completed a pairwise energy calculation chunk with VMD PID: (\d+)',line)
+			# 	if completed_matches:
+			# 		vmd_completed_pids.append(completed_matches.groups()[0])
 
-			vmd_running_pids = [pid for pid in vmd_active_pids if pid not in vmd_completed_pids]
-			for pid in vmd_running_pids:
-				process = psutil.Process(int(pid))
-				process.kill()
+			# vmd_running_pids = [pid for pid in vmd_active_pids if pid not in vmd_completed_pids]
+			# for pid in vmd_running_pids:
+			# 	process = psutil.Process(int(pid))
+			# 	process.kill()
 
 			self.stopMonitorProgressThread.emit()
 			self.stopMonitorLogThread.emit()
