@@ -8,95 +8,7 @@ import pandas
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCore
 import getResIntCorr
-
-def filterPairsSingleCore(args):
-	#SIDELINED (DEPRECATED)
-	pairChunk = args[0]
-	pdbPath = args[1]
-	dcdPath = args[2]
-	pairFilterBasis = args[3]
-	pairFilterPercentage = args[4]
-	pairFilterCutoff = args[5]
-	skip = args[6]
-	frameRange = args[7]
-	logFile = args[8]
-
-	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
-	logger = logging.getLogger(__name__)
-
-	logger.info('Started a filtering thread.')
-	pdb = parsePDB(pdbPath)
-
-	if type(frameRange) == types.BooleanType:
-		traj = parseDCD(dcdPath,step=skip)
-	elif len(frameRange) == 2:
-		traj = parseDCD(dcdPath,step=skip,start=frameRange[0],stop=frameRange[1])	
-
-	traj.setAtoms(pdb)
-	numFrames = len(traj)
-
-	pairsFiltered = list()
-
-	progbar = pyprind.ProgBar(len(pairChunk))
-	monitor = 0
-	for pair in pairChunk:
-
-		logFile = open('getResIntEn.log','w')
-		pairDistances = np.zeros(numFrames)
-		
-		for i in xrange(0,numFrames):
-			conformation = traj[i]
-			atoms = conformation.getAtoms()
-			atoms.setCoords(conformation.getCoords())
-			
-			if pairFilterBasis == 'com':
-				res1atoms = atoms.select('resindex %i' % list(pair)[0])
-				res2atoms = atoms.select('resindex %i' % list(pair)[1])
-				res1atomsCOM = calcCenter(res1atoms,weights=res1atoms.getMasses())
-				res2atomsCOM = calcCenter(res2atoms,weights=res2atoms.getMasses())
-
-				distance = calcDistance(res1atomsCOM,res2atomsCOM)
-				pairDistances[i] = distance
-
-			elif pairFilterBasis == 'ca':
-				res1CA = atoms.select('name CA and resindex %i' % list(pair)[0])
-				res2CA = atoms.select('name CA and resindex %i' % list(pair)[1])
-
-				distance = calcDistance(res1CA,res2CA)
-				pairDistances[i] = distance
-
-		# Further filter according to pairFilterPercentage.
-		if not pairFilterPercentage:
-			minPairDistance = np.min(pairDistances)
-
-			if minPairDistance <= pairFilterCutoff:
-				pairsFiltered.append(pair)
-
-		elif pairFilterPercentage:
-			#it is possible that it has str type, force it to be converted to a float.
-			pairFilterPercentage = float(pairFilterPercentage)
-			pairDistances = np.asarray(pairDistances)
-			numAbovePercentage = len(np.where(pairDistances < pairFilterCutoff)[0])
-			#print numAbovePercentage, numFrames, float(numAbovePercentage)/float(numFrames),type(pairFilterPercentage), pairFilterPercentage
-
-			if float(numAbovePercentage)/float(len(pairDistances)) >= pairFilterPercentage:
-				#print 'adding this pair'
-				pairsFiltered.append(pair)
-
-		progbar.update()
-
-		monitor = monitor + 1
-
-		calculatedPercentage = float(monitor)/float(len(pairChunk))*100
-		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
-		logFile.write('%s' % str(calculatedPercentage))
-		logFile.close()
-
-	logger.info('Completed a filtering thread.')
-	return pairsFiltered
-
-	sys.stdout.flush()
+import vmd
 
 def calcEnergiesSingleCore(args):
 
@@ -125,40 +37,52 @@ def calcEnergiesSingleCore(args):
 	logger.info('Started a pairwise energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
-	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,dcdFilePath,skip,frameRange,
-		outputFolder,namd2exe,paramFile,logger):
+	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,dcdFilePath,skip,frameRange,outputFolder,namd2exe,paramFile,logger):
+		# Adapting to the use of vmd-python
+		vmd.evaltcl("package require namdenergy")
+		vmd.evaltcl("package require readcharmmpar")
+		vmd.evaltcl("set namdexe "+namd2exe)
+		vmd.evaltcl("set outputFolder "+outputFolder)
+		vmd.evaltcl("set psfFile "+psfFilePath)
+		vmd.evaltcl("set dcdFile "+dcdFilePath)
+		vmd.evaltcl("set skip "+str(skip))
 
-		# Construct a list of pairs (input argument string to the external tcl script)
-		pairListArgConstruct = list()
-		for pair in pairsFiltered:
-			pair = list(pair)
-			pairListArgConstruct.append(str(pair[0]))
-			pairListArgConstruct.append(str(pair[1]))
+		vmd.evaltcl("set defpar [file join $env(CHARMMPARDIR) par_all27_prot_lipid_na.inp]")
+		if paramFile:
+			vmd.evaltcl("set paramFile "+paramFile)
+		else:
+			vmd.evaltcl("set paramFile $defpar")
 
-		# Get the path of module, necessary when providing vmd the location of calcResIntEn.tcl.
-		# (see below).
-		module_path = sys.path[0]
+		vmd.evaltcl("mol new $psfFile")
 
-		# Start a devnull for storing vmd/namd output.
-		devnull = open(os.devnull,'w')
-		
-		vmdArgs = [namd2exe,outputFolder,psfFilePath,dcdFilePath,str(skip),
-				str(frameRange[0]),str(frameRange[1]),str(paramFile)]
-		
-		vmdPath = '/Applications/vmd.app/Contents/Resources/VMD.app/Contents/MacOS/VMD' #TEMPORARY FOR MACOSX USAGE
-		# vmdPath = 'vmd'
-		vmdArgs = [vmdPath,'-dispdev','text','-e','%s/calcResIntEn.tcl' % module_path,'-args'] + vmdArgs + pairListArgConstruct
-		
-		pid_vmd = subprocess.Popen(vmdArgs,stdout=devnull)
-		pid = os.getpid()
-		#print(pid)
-		logger.info('Started a pairwise energy calculation chunk with PID: %i' % pid)
-		logger.info('Started a pairwise energy calculation chunk with VMD PID: %i' % pid_vmd.pid)
+		if frameRange:
+			vmd.evaltcl("mol addfile $dcdFile waitfor all step $skip")
+		else:
+			vmd.evaltcl("mol addfile $dcdFile waitfor all step $skip first %i last %i" % 
+				(frameRange[0],frameRange[1]))
 
-		pid_vmd.wait()
+		numPairResidues = len(pairsFiltered)
 
-		logger.info('Completed a pairwise energy calculation chunk with PID: %i' % pid)
-		logger.info('Completed a pairwise energy calculation chunk with VMD PID: %i' % pid_vmd.pid)
+		for i in range(0,numPairResidues):
+			pair = list(pairsFiltered[i])
+			resid1 = pair[0]
+			resid2 = pair[1]
+
+			vmd.evaltcl('set selEnergy1 [atomselect top "residue %i"]' % resid1)
+			vmd.evaltcl('set selEnergyCA1 [atomselect top "residue %i and name CA"]' % resid1)
+			vmd.evaltcl('set selResid1 [$selEnergyCA1 get resid]')
+			vmd.evaltcl('set selResidue1 [$selEnergyCA1 get residue]')
+
+			vmd.evaltcl('set selEnergy2 [atomselect top "residue %i"]' % resid2)
+			vmd.evaltcl('set selEnergyCA2 [atomselect top "residue %i and name CA"]' % resid2)
+			vmd.evaltcl('set selResid2 [$selEnergyCA2 get resid]')
+			vmd.evaltcl('set selResidue2 [$selEnergyCA2 get residue]')
+
+			oFileString = outputFolder+'/'+str(resid1)+'_'+str(resid2)+'_energies.dat'
+			tempname = '.'+str(resid1)+'_'+str(resid2)
+
+			vmd.evaltcl('namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile \
+				%s -tempname %s -exe %s -par $paramFile' % (oFileString,tempname,namd2exe))
 
 	# Split it into ten chunks to print the progress on the screen.
 	pairsFilteredChunks = np.array_split(pairsFiltered,10)
