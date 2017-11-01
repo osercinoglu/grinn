@@ -8,16 +8,16 @@ import pandas
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCore
 import getResIntCorr
-import vmd
 
 def calcEnergiesSingleCore(args):
 
 	# Input arguments
 	pairsFiltered = args[0]
 	psfFilePath = args[1]
-	dcdFilePath = args[2]
-	skip = args[3]
-	frameRange = args[4]
+	pdbFilePath = args[2]
+	dcdFilePath = args[3]
+	skip = args[4]
+	frameRange = args[5]
 
 	# If frameRange is False, then the user did not request a frame range and thus
 	# wants to include all frames in the analysis. In this case create an array 
@@ -25,10 +25,10 @@ def calcEnergiesSingleCore(args):
 	if frameRange == False:
 		frameRange = [0,-1]
 
-	outputFolder = args[5]
-	namd2exe = args[6]
-	paramFile = args[7]
-	logFile = args[8]
+	outputFolder = args[6]
+	namd2exe = args[7]
+	paramFile = args[8]
+	logFile = args[9]
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -37,55 +37,71 @@ def calcEnergiesSingleCore(args):
 	logger.info('Started a pairwise energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
-	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,dcdFilePath,skip,frameRange,outputFolder,namd2exe,paramFile,logger):
-		# Adapting to the use of vmd-python
-		vmd.evaltcl("package require namdenergy")
-		vmd.evaltcl("package require readcharmmpar")
-		vmd.evaltcl("set namdexe "+namd2exe)
-		vmd.evaltcl("set outputFolder "+outputFolder)
-		vmd.evaltcl("set psfFile "+psfFilePath)
-		vmd.evaltcl("set dcdFile "+dcdFilePath)
-		vmd.evaltcl("set skip "+str(skip))
+	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
+		outputFolder,namd2exe,paramFile,logger):
+		for pair in pairsFiltered:
 
-		vmd.evaltcl("set defpar [file join $env(CHARMMPARDIR) par_all27_prot_lipid_na.inp]")
-		if paramFile:
-			vmd.evaltcl("set paramFile "+paramFile)
-		else:
-			vmd.evaltcl("set paramFile $defpar")
+			# Write PDB files for pairInteractionGroup specification
+			system = parsePDB(pdb)
+			sel1 = system.select('resindex %i' % int(pair[0]))
+			sel2 = system.select('resindex %i' % int(pair[1]))
+			# Changing the values of B-factor columns so that they can be recognized by
+			# pairInteractionGroup1 parameter in NAMD configuration file.
+			sel1.setBetas([1]*sel1.numAtoms())
+			sel2.setBetas([2]*sel2.numAtoms())
+			pairIntPDB = '%i_%i-temp.pdb' % (pair[0],pair[1])
+			writePDB(pairIntPDB,system)
 
-		vmd.evaltcl("mol new $psfFile")
+			# SAVING ON THE TWO RESIDUE PAIR TO DO LATER ON(NEEDS TESTING)
+			#traj = Trajectory(dcdFilePath)
+			#traj.link(system)
+			
+			#traj.setAtoms(system.select('resindex %i %i' % (pair[0],pair[1])))
+			#writeDCD('%i_%i-temp.dcd' % (pair[0],pair[1]),traj)
+			
+			namdConf = '%s_%s-temp.namd' % (pair[0],pair[1])
+			f = open(namdConf,'w')
+			f.write('structure %s\n' % psf)
+			f.write('paraTypeCharmm on\n')
+			if paramFile:
+				f.write('parameters %s\n' % paramFile)
+			else:
+				f.write('parameters %s\n' % (sys.path[0]+'/par_all27_prot_lipid_na.inp'))
+			f.write('numsteps 1\n')
+			f.write('exclude scaled1-4\n')
+			f.write('outputname %i_%i-temp\n' % (pair[0],pair[1]))
+			f.write('temperature 0\n')
+			f.write('COMmotion yes\n')
+			f.write('cutoff 12\n')
+			f.write('dielectric 1.0\n')
+			f.write('switchdist 1.0\n')
+			f.write('pairInteraction on\n')
+			f.write('pairInteractionGroup1 1\n')
+			f.write('pairInteractionFile %s\n' % pairIntPDB)
+			f.write('pairInteractionGroup2 2\n')
+			f.write('coordinates %s\n' % pairIntPDB)
+			f.write('set ts 0\n')
+			#f.write('coorfile open dcd %i_%i-temp.dcd\n' % (pair[0],pair[1]))
+			f.write('coorfile open dcd %s\n' % dcdFilePath)
+			f.write('while { ![coorfile read] } {\n')
+			f.write('\tfirstTimeStep $ts\n')
+			f.write('\trun 0\n')
+			f.write('\tincr ts 1\n')
+			f.write('}\n')
+			f.write('coorfile close')
+			f.close()
 
-		if frameRange:
-			vmd.evaltcl("mol addfile $dcdFile waitfor all step $skip")
-		else:
-			vmd.evaltcl("mol addfile $dcdFile waitfor all step $skip first %i last %i" % 
-				(frameRange[0],frameRange[1]))
+			# Run namd2 to compute the energies
+			pid_namd2 = subprocess.Popen([namd2exe,namdConf],
+				stdout=open(outputFolder+'/%i_%i_energies.log' % (pair[0],pair[1]),'w'))
+			pid_namd2.wait()
+			#raise SystemExit(0)
+		# Parse the log file and extract necessary energy values
 
-		numPairResidues = len(pairsFiltered)
-
-		for i in range(0,numPairResidues):
-			pair = list(pairsFiltered[i])
-			resid1 = pair[0]
-			resid2 = pair[1]
-
-			vmd.evaltcl('set selEnergy1 [atomselect top "residue %i"]' % resid1)
-			vmd.evaltcl('set selEnergyCA1 [atomselect top "residue %i and name CA"]' % resid1)
-			vmd.evaltcl('set selResid1 [$selEnergyCA1 get resid]')
-			vmd.evaltcl('set selResidue1 [$selEnergyCA1 get residue]')
-
-			vmd.evaltcl('set selEnergy2 [atomselect top "residue %i"]' % resid2)
-			vmd.evaltcl('set selEnergyCA2 [atomselect top "residue %i and name CA"]' % resid2)
-			vmd.evaltcl('set selResid2 [$selEnergyCA2 get resid]')
-			vmd.evaltcl('set selResidue2 [$selEnergyCA2 get residue]')
-
-			oFileString = outputFolder+'/'+str(resid1)+'_'+str(resid2)+'_energies.dat'
-			tempname = os.path.abspath(str(resid1)+'_'+str(resid2))
-
-			vmd.evaltcl('namdenergy -nonb -sel $selEnergy1 $selEnergy2 -ofile \
-				%s -tempname %s -exe %s -par $paramFile' % (oFileString,tempname,namd2exe))
+		# Done.
 
 	# Split it into ten chunks to print the progress on the screen.
-	pairsFilteredChunks = np.array_split(pairsFiltered,10)
+	pairsFilteredChunks = np.array_split(list(pairsFiltered),10)
 
 	progBar = pyprind.ProgBar(10)
 
@@ -93,7 +109,7 @@ def calcEnergiesSingleCore(args):
 	percent = 0
 
 	for pairsFilteredChunk in pairsFilteredChunks:
-		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,dcdFilePath,skip,frameRange,
+		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
 			outputFolder,namd2exe,paramFile,logger)
 
 		progBar.update()
@@ -251,6 +267,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+	
 	# file = open('pairsFiltered.txt','w')
 	# for pair in pairsFiltered:
 	# 	file.write('%i-%i\n' % (pair[0],pair[1]))
@@ -267,7 +284,8 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	logFile2.close()
 
 	# Start energy calculation in chunks
-	pairsFilteredChunks = np.array_split(list(pairsFiltered),numCores)
+	pairsFilteredChunks = np.array_split(np.asarray(pairsFiltered),numCores)
+	print(pairsFilteredChunks)
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -290,6 +308,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	pool.map(calcEnergiesSingleCore,
 		zip(pairsFilteredChunks,itertools.repeat(psf),
+			itertools.repeat(pdb),
 			itertools.repeat(dcd),
 			itertools.repeat(skip),
 			itertools.repeat(frameRange),
@@ -304,7 +323,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	energiesFilePaths = list()
 	for fileName in outFolderFileList:
-		if fileName.endswith('energies.dat'):
+		if fileName.endswith('energies.log'):
 			energiesFilePaths.append(outputFolder+'/'+fileName)
 
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
@@ -352,7 +371,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 			outFile=outputFolder+'/energies_IntEnCorr.dat',logFile=logFile)
 
 	# Delete all namd-generated energies file from output folder.
-	subprocess.call('rm %s/*_energies.dat' % outputFolder,shell=True)
+	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
 	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
