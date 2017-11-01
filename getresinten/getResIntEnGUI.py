@@ -337,7 +337,7 @@ class monitorProgress(QtCore.QThread):
 			logFile.close()
 			if logLines:
 				numFilteredPairs = int(logLines[1])
-				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.dat'))
+				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.log'))
 				percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
 				if percent > 0:
 					current_time = time.time()

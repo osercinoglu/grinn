@@ -143,7 +143,7 @@ def getResIntCorr(inFolder,pdb,logFile,frameRange=False,
 
 	# Get a list of interaction energy files in this folder.
 	fileList = os.listdir(inFolder)
-	fileList = [filename for filename in fileList if filename.endswith('energies.dat')]
+	fileList = [filename for filename in fileList if filename.endswith('energies.log')]
 	numInteractions = len(fileList)
 
 	# For each file, determine whether the mean (average) value of the absolute interaction energy

@@ -285,7 +285,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(np.asarray(pairsFiltered),numCores)
-	print(pairsFilteredChunks)
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()

@@ -8,7 +8,7 @@ def parseEnergiesSingleCore(filePaths):
 	energiesDict = dict()
 	for filePath in filePaths:
 		# Get the interaction residues
-		matches = re.search('(\d+)_(\d+)_energies.dat',filePath)
+		matches = re.search('(\d+)_(\d+)_energies.log',filePath)
 		if not matches:
 			continue 
 
@@ -19,18 +19,22 @@ def parseEnergiesSingleCore(filePaths):
 		# Read in the first line (header) output file and count number of total lines.
 		f = open(filePath,'r')
 		lines = f.readlines()
-		numLines = len(lines)
-		header = lines[0].split()
-		numTitles = len(header)
 
-		# Close the file and reopen it with numpy's loadtxt, which is much more practical for numeric data.
+		# Ignore lines not starting with ENERGY:
+		lines = [line for line in lines if line.startswith('ENERGY:')]
 		f.close()
-		energies = np.loadtxt(filePath,skiprows=1) # Skipping the header row.
 
+		lines = [line.strip('\n').split() for line in lines if line.startswith('ENERGY:')]
+		lines = [[float(integer) for integer in line[1:]] for line in lines]
+
+		headers = ['Frame','Elec','VdW','Total']
+		headerColumns = [0,5,6,10] # Order in which the headers appear in NAMD2 log
+		# Frame: 0, Elec: 5, VdW: 6, Total: 10
+		numTitles = len(headers)
 		# Assign each column into appropriate key's value in energyOutput dict.
 		energyOutput = dict()
 		for i in range(0,numTitles):
-			energyOutput[header[i]] = energies[:,i]
+			energyOutput[headers[i]] = [line[headerColumns[i]] for line in lines]
 
 		# Puts this energyOutput dict into energies dict with keys as residue ids
 		energiesDict[(res1,res2)] = energyOutput

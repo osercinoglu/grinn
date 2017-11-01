@@ -23,7 +23,6 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	intEnDict = dict()
 	intEnDict['Elec'] = np.zeros((numResidues,numResidues))
 	intEnDict['Frame'] = np.zeros((numResidues,numResidues))
-	intEnDict['Nonbond'] = np.zeros((numResidues,numResidues))
 	intEnDict['Total'] = np.zeros((numResidues,numResidues))
 	intEnDict['VdW'] = np.zeros((numResidues,numResidues))
 
@@ -34,8 +33,6 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 			if (i+1,j+1) in intEn or (j+1,i+1) in intEn:
 				intEnDict['Elec'][i,j] = np.mean(intEn[(i+1,j+1)]['Elec'][frameRange[0]:frameRange[1]])
 				intEnDict['Elec'][j,i] = np.mean(intEn[(j+1,i+1)]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Nonbond'][i,j] = np.mean(intEn[(i+1,j+1)]['Nonbond'][frameRange[0]:frameRange[1]])
-				intEnDict['Nonbond'][j,i] = np.mean(intEn[(j+1,i+1)]['Nonbond'][frameRange[0]:frameRange[1]])
 				intEnDict['Total'][i,j] = np.mean(intEn[(i+1,j+1)]['Total'][frameRange[0]:frameRange[1]])
 				intEnDict['Total'][j,i] = np.mean(intEn[(j+1,i+1)]['Total'][frameRange[0]:frameRange[1]])
 				intEnDict['VdW'][i,j] = np.mean(intEn[(i+1,j+1)]['VdW'][frameRange[0]:frameRange[1]])
@@ -44,8 +41,6 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 			else:
 				intEnDict['Elec'][i,j] = 0
 				intEnDict['Elec'][j,i] = 0
-				intEnDict['Nonbond'][i,j] = 0
-				intEnDict['Nonbond'][j,i] = 0
 				intEnDict['Total'][i,j] = 0
 				intEnDict['Total'][j,i] = 0
 				intEnDict['VdW'][i,j] = 0
@@ -55,7 +50,6 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Save to text
 	np.savetxt('%s_intEnMeanTotal.dat' % prefix,intEnDict['Total'])
-	np.savetxt('%s_intEnMeanNonbond.dat' % prefix,intEnDict['Nonbond'])
 	np.savetxt('%s_intEnMeanVdW.dat' % prefix,intEnDict['VdW'])
 	np.savetxt('%s_intEnMeanElec.dat' % prefix,intEnDict['Elec'])
 
