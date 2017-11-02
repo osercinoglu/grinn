@@ -20,7 +20,10 @@
      <verstretch>0</verstretch>
     </sizepolicy>
    </property>
-   <layout class="QHBoxLayout" name="horizontalLayout_3">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <property name="sizeConstraint">
+     <enum>QLayout::SetMaximumSize</enum>
+    </property>
     <item>
      <widget class="QFrame" name="frame">
       <property name="sizePolicy">
@@ -36,6 +39,9 @@
        <enum>QFrame::Raised</enum>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout_4">
+       <property name="sizeConstraint">
+        <enum>QLayout::SetMaximumSize</enum>
+       </property>
        <item>
         <widget class="QFrame" name="frame_2">
          <property name="minimumSize">
@@ -57,6 +63,9 @@
           <enum>QFrame::Raised</enum>
          </property>
          <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMaximumSize</enum>
+          </property>
           <item>
            <widget class="QLineEdit" name="lineEdit_selectOutputFolder"/>
           </item>
@@ -87,7 +96,7 @@
           </sizepolicy>
          </property>
          <property name="currentIndex">
-          <number>1</number>
+          <number>0</number>
          </property>
          <widget class="QWidget" name="tab_PairwiseEnergies">
           <property name="sizePolicy">
@@ -105,14 +114,14 @@
           <attribute name="title">
            <string>Pairwise Energies</string>
           </attribute>
-          <layout class="QHBoxLayout" name="horizontalLayout">
+          <layout class="QHBoxLayout" name="horizontalLayout_3">
            <property name="sizeConstraint">
             <enum>QLayout::SetMaximumSize</enum>
            </property>
            <item>
             <widget class="QTableWidget" name="tableWidget_sourceTargetResEnergies">
              <property name="sizePolicy">
-              <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                <horstretch>1</horstretch>
                <verstretch>1</verstretch>
               </sizepolicy>
@@ -132,12 +141,24 @@
             </widget>
            </item>
            <item>
-            <widget class="QFrame" name="frame_tabPairwiseEnergiesPlots">
+            <widget class="QFrame" name="frame_tabPairWiseEnergiesBarPlot">
              <property name="sizePolicy">
               <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-               <horstretch>0</horstretch>
-               <verstretch>0</verstretch>
+               <horstretch>1</horstretch>
+               <verstretch>1</verstretch>
               </sizepolicy>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>200</width>
+               <height>0</height>
+              </size>
+             </property>
+             <property name="maximumSize">
+              <size>
+               <width>400</width>
+               <height>16777215</height>
+              </size>
              </property>
              <property name="frameShape">
               <enum>QFrame::StyledPanel</enum>
@@ -146,6 +167,23 @@
               <enum>QFrame::Raised</enum>
              </property>
              <layout class="QVBoxLayout" name="verticalLayout_3"/>
+            </widget>
+           </item>
+           <item>
+            <widget class="QFrame" name="frame_tabPairWiseEnergiesPlots">
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+               <horstretch>1</horstretch>
+               <verstretch>1</verstretch>
+              </sizepolicy>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="frameShadow">
+              <enum>QFrame::Raised</enum>
+             </property>
+             <layout class="QVBoxLayout" name="verticalLayout"/>
             </widget>
            </item>
           </layout>

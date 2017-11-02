@@ -75,6 +75,17 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Total Non-bonded IE [kcal/mol]')
     		self.axes.set_ylabel('Kernel Density')
 
+    	elif type=='bar-plot':
+    		data = pandas.DataFrame(columns=['res','en'])
+    		data['res'] = np.arange(0,len(intEnMeanTotal),1)
+    		data['en'] = intEnMeanTotal[selectedSourceRes,:]
+    		data_nonzero = data[data['en'] != np.float64(0)]
+    		res = data_nonzero['res'].values
+    		en = data_nonzero['en'].values
+    		self.axes.barh(y=np.arange(0,len(res),1),width=en,color="b")
+    		self.axes.set_yticks(np.arange(0,len(res),1))
+    		self.axes.set_yticklabels(map(str,res))
+
     	elif type=='iem':
     		if len(intEnMeanTotal) > 100:
     			annot = False
@@ -98,13 +109,17 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 
 		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
 		
-		# Creating matplotlib canvases 
-		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairwiseEnergiesPlots,width=5,height=4,
+		# Creating matplotlib canvases
+		self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
 			dpi=100)
-		self.verticalLayout_3.addWidget(self.intEnTimeSeries)
-		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairwiseEnergiesPlots,width=5,height=4,
+		self.verticalLayout_3.addWidget(self.intEnBarPlot)
+
+		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
 			dpi=100)
-		self.verticalLayout_3.addWidget(self.intEnDistributions)
+		self.verticalLayout.addWidget(self.intEnTimeSeries)
+		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+			dpi=100)
+		self.verticalLayout.addWidget(self.intEnDistributions)
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
@@ -160,6 +175,9 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 
 			# change background color to let user remember which sourceres was selected
 			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(QtGui.QColor(100,100,150))
+
+			# plot bar plot of all other interactions with this residue
+			self.intEnBarPlot.update_figure(self.viewResultsParams,'bar-plot')
 		# if the cell is a target residue
 		elif column in [1,2]:
 			selectedTargetRes = row
