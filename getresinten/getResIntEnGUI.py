@@ -12,6 +12,7 @@ import time
 import psutil
 import re
 import signal
+import threading
 # Below only for pyinstallers compatibility
 import getResIntEn
 import getResIntCorr
@@ -55,7 +56,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
 		# for getResIntEn process
-		self.pid = None
+		self.thread = None
 		self.params = getResIntEnParams()
 
 	def updatePDBPath(self):
@@ -123,14 +124,9 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
-		if self.pid:
+		if self.thread:
 
-			self.pid.send_signal(signal.SIGINT)
-			process = psutil.Process(self.pid.pid)
-			while process.children():
-				for child in process.children():
-					child.send_signal(signal.SIGINT)
-			process.send_signal(signal.SIGINT)
+			self.thread.send_signal(signal.SIGINT)
 
 			# # Kill VMD PID as well via finding its pids in the log file
 			# logFile = open(self.params.logFile,'r')
@@ -163,9 +159,8 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			self.resetProgressElements()
 
 			# Hard kill
-			mainProcess = psutil.Process(self.pid.pid)
-			mainProcess.kill()
-			self.pid = None
+
+			self.thread = None
 
 	def resetProgressElements(self):
 
@@ -214,25 +209,22 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		subprocess.call('touch %s' % self.params.logFile,shell=True)
 		
 		# Start calculation in the background
-		getResIntEnArgs = ['--pdb',self.params.pdbFile,'--psf',self.params.psfFile,
-		'--dcd',self.params.dcdFile,'--numcores',
-		str(self.params.numCores),'--sourcesel',self.params.sourceSel,
-		'--targetsel',self.params.targetSel,
-		'--paircalc','--pairfiltercutoff',str(self.params.pairFilterCutoff),
-		'--pairfilterpercentage',str(float(self.params.pairFilterPercentage)*0.1),
-		'--skip',str(self.params.skip),'--namd2exe',self.params.namd2exe,
-		'--parameterfile',self.params.paramFile,'--outfolder',self.params.outputFolder,
-		'--logfile',self.params.logFile,'--topickle']
 
-		if self.params.interactCorr:
-			getResIntEnArgs.append('--resintcorr')
-		
-		module_path = sys.path[0]
-		self.pid = subprocess.Popen([module_path+'/getResIntEn.py']+getResIntEnArgs)
-		#Using pexpect instead
+		getResIntEnThread = threading.Thread(target=getResIntEn.getResIntEn,
+			kwargs={'psf': self.params.psfFile,'pdb': self.params.pdbFile,
+			'dcd': self.params.dcdFile,'numCores':self.params.numCores,
+			'sourceSel': self.params.sourceSel, 'targetSel': self.params.targetSel,
+			'pairCalc': True, 'pairFilterCutoff': self.params.pairFilterCutoff,
+			'pairFilterPercentage': self.params.pairFilterPercentage*0.1,
+			'skip': self.params.skip, 'namd2exe': self.params.namd2exe,
+			'paramFile': self.params.paramFile, 'outputFolder': self.params.outputFolder,
+			'logFile': self.params.logFile, 'toPickle': True,
+			'resIntCorr': self.params.interactCorr,'pairFilterBasis': 'com',
+			'pairFilterSkip': 1, 'frameRange': [False], 
+			'resIntCorrAverageIntEnCutoff': 1})
 
-		#self.pid = pexpect.spawn('./getResIntEn.py '+' '.join(getResIntEnArgs),
-		#	timeout=None,maxread=1)
+		self.thread = getResIntEnThread
+		self.thread.start()
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)

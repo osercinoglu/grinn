@@ -42,7 +42,7 @@ def calcEnergiesSingleCore(args):
 		for pair in pairsFiltered:
 
 			# Write PDB files for pairInteractionGroup specification
-			system = parsePDB(pdb)
+			system = parsePDB(pdbFilePath)
 			sel1 = system.select('resindex %i' % int(pair[0]))
 			sel2 = system.select('resindex %i' % int(pair[1]))
 			# Changing the values of B-factor columns so that they can be recognized by
@@ -61,7 +61,7 @@ def calcEnergiesSingleCore(args):
 			
 			namdConf = '%s_%s-temp.namd' % (pair[0],pair[1])
 			f = open(namdConf,'w')
-			f.write('structure %s\n' % psf)
+			f.write('structure %s\n' % psfFilePath)
 			f.write('paraTypeCharmm on\n')
 			if paramFile:
 				f.write('parameters %s\n' % paramFile)
@@ -118,8 +118,7 @@ def calcEnergiesSingleCore(args):
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
-def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilterCutoff,
-	prePairFilterBasis,prePairFilterPercentage,prePairFilterSkip,pairCalc,pairFilterCutoff,
+def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCutoff,
 	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,paramFile,
 	resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
@@ -137,6 +136,28 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,prePairCalc,prePairFilt
 	logger.info('Started calculation.')
 
 	# ARGUMENT CHECKS
+
+	paramFile = paramFile
+	if paramFile:
+		paramFile = os.path.abspath(paramFile)
+
+	if not type(sourceSel) == str:
+		if len(sourceSel) > 1:
+			sourceSel = ' '.join(sourceSel)
+		else:
+			sourceSel = sourceSel[0]
+
+	if not type(targetSel) == str:
+		if len(targetSel) > 1:
+			targetSel = ' '.join(targetSel)
+		else:
+			targetSel = False
+
+	if len(frameRange) > 1:
+		frameRange = np.asarray(frameRange)
+	else:
+		frameRange = frameRange[0]
+
 	if targetSel == False and pairCalc == True:
 		logger.error("You must also specify a --targetsel for --paircalc to be executed,\
 		 or vice versa. Aborting now.",exc_info=True)
@@ -415,25 +436,6 @@ if __name__ == '__main__':
 	parser.add_argument('--targetsel',default=False,type=str,nargs='+',help='A ProDy atom selection string \
 		which determines the second group of selected residues.')
 
-	parser.add_argument('--prepaircalc',action='store_true',default=True,help='When given, a preliminary filtering operation is\
-		done to yield residues for further energy evaluation.')
-
-	parser.add_argument('--prepairfiltercutoff',type=float,default=[20],nargs=1,help='Cutoff distance (angstroms) \
-		for preliminary filtering of pairwise amino acids. If not specified, it defaults to 20. \
-		Only those residues that are within the PREPAIRFILTERCUTOFF distance of each other for at least once \
-		throughout the trajectory will the taken into account for further evaluation.')
-
-	parser.add_argument('--prepairfilterbasis',type=str,default=['com'],nargs=1,help='Basis for filtering of residues\
-		pairs. It not specified, it defaults to "com" (residue center of mass). Possible values: "com", "ca"')
-
-	parser.add_argument('--prepairfilterpercentage',type=float,default=[False],nargs=1,help='When given, residues that\
-		are within the PREPAIRFILTERCUTOFF distance from each other for at least PREPAIRFILTERPERCENTAGE percent of \
-		the trajectory will be taken into account in further evaluations. When not given, it defaults to False \
-		(residues that are within PREPAIRFILTERPERCENTAGE from each other for at least once are taken).')
-
-	parser.add_argument('--prepairfilterskip',type=int,default=[1],nargs=1,help='If specified, only PREPAIRFILTERSKIPth\
-		frame will be evaluated during the preliminary filtering stage.')
-
 	parser.add_argument('--paircalc',action='store_true',default=True,help='When given, this argument enables pairwise \
 		nonbonded interaction energy calculation between sourcesel and targetsel residues. When not given, \
 		total energy of each residue in sourcesel will be calculated.')
@@ -496,12 +498,6 @@ if __name__ == '__main__':
 	frameRange = args.framerange
 	skip = args.skip[0]
 
-	prePairCalc = args.prepaircalc
-	prePairFilterCutoff = args.prepairfiltercutoff[0]
-	prePairFilterBasis = args.prepairfilterbasis[0]
-	prePairFilterPercentage = args.prepairfilterpercentage[0]
-	prePairFilterSkip = args.prepairfilterskip[0]
-
 	pairCalc = args.paircalc
 	pairFilterCutoff = args.pairfiltercutoff[0]
 	pairFilterBasis = args.pairfilterbasis[0]
@@ -512,36 +508,20 @@ if __name__ == '__main__':
 
 	namd2exe = os.path.abspath(args.namd2exe[0])
 
-	paramFile = args.parameterfile[0]
-	if not paramFile:
-		paramFile = False
-	else:
-		paramFile = os.path.abspath(paramFile)
-
 	logFile = os.path.abspath(args.logfile[0])
 
-	if len(args.sourcesel) > 1:
-		sourceSel = ' '.join(args.sourcesel)
-	else:
-		sourceSel = args.sourcesel[0]
+	frameRange = args.framerange
 
-	if args.targetsel:
-		targetSel = ' '.join(args.targetsel)
-	else:
-		targetSel = False
+	sourceSel = args.sourcesel
+	targetSel = args.targetsel
 
-	if len(args.framerange) > 1:
-		frameRange = np.asarray(args.framerange)
-	else:
-		frameRange = args.framerange[0]
+	paramFile = args.parameterfile
 
 	resIntCorr = args.resintcorr 
 	resIntCorrAverageIntEnCutoff = args.resintcorraverageintencutoff[0]
 
 	getResIntEn(psf=psf,pdb=pdb,dcd=dcd,numCores=numCores,
-		sourceSel=sourceSel,targetSel=targetSel,prePairCalc=prePairCalc,
-		prePairFilterCutoff=prePairFilterCutoff,prePairFilterBasis=prePairFilterBasis,
-		prePairFilterPercentage=prePairFilterPercentage,prePairFilterSkip=prePairFilterSkip,
+		sourceSel=sourceSel,targetSel=targetSel,prePairFilterSkip=prePairFilterSkip,
 		pairCalc=pairCalc,pairFilterCutoff=pairFilterCutoff,pairFilterBasis=pairFilterBasis,
 		pairFilterPercentage=pairFilterPercentage,pairFilterSkip=pairFilterSkip,
 		skip=skip,frameRange=frameRange,resIntCorr=resIntCorr,
