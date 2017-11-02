@@ -4,10 +4,11 @@ from PyQt5 import QtWidgets
 from PyQt5.QtCore import pyqtSignal
 import sys
 import design
-import subprocess
+import multiprocessing
 import os
 import glob
 import datetime
+import subprocess
 import time
 import psutil
 import re
@@ -56,7 +57,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
 		# for getResIntEn process
-		self.thread = None
+		self.processGetResIntEn = None
 		self.params = getResIntEnParams()
 
 	def updatePDBPath(self):
@@ -124,43 +125,20 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
-		if self.thread:
+		if self.processGetResIntEn:
 
-			self.thread.send_signal(signal.SIGINT)
+			# Stop the calculation
+			os.kill(self.processGetResIntEn.pid,signal.SIGINT)
 
-			# # Kill VMD PID as well via finding its pids in the log file
-			# logFile = open(self.params.logFile,'r')
-			# lines = logFile.readlines()
-			# logFile.close()
-			# vmd_active_pids = list()
-			# vmd_completed_pids = list()
-			# for line in lines:
-			# 	active_matches = re.search(
-			# 		'Started a pairwise energy calculation chunk with VMD PID: (\d+)',line)
-			# 	if active_matches:
-			# 		vmd_active_pids.append(active_matches.groups()[0])
-			# 	completed_matches = re.search(
-			# 		'Completed a pairwise energy calculation chunk with VMD PID: (\d+)',line)
-			# 	if completed_matches:
-			# 		vmd_completed_pids.append(completed_matches.groups()[0])
-
-			# vmd_running_pids = [pid for pid in vmd_active_pids if pid not in vmd_completed_pids]
-			# for pid in vmd_running_pids:
-			# 	process = psutil.Process(int(pid))
-			# 	process.kill()
-
+			# Stop monitoring
 			self.stopMonitorProgressThread.emit()
 			self.stopMonitorLogThread.emit()
 
-			#self.monitorProgressThread = None
-			#self.monitorLogThread = None
 			# Reset all progress elements.
-			
 			self.resetProgressElements()
 
-			# Hard kill
-
-			self.thread = None
+			# Reset calculation thread
+			self.processGetResIntEn = None
 
 	def resetProgressElements(self):
 
@@ -184,6 +162,10 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		#### TEMPORARY!!! ####
 		subprocess.call('rm getResIntEn_output -R',shell=True)
+		self.lineEdit_namd2.setText('/home/onur/repos/getResIntEn/NAMD_2.12b1/namd2')
+		self.lineEdit_pdb.setText('/home/onur/repos/getResIntEn/test/test.pdb')
+		self.lineEdit_psf.setText('/home/onur/repos/getResIntEn/test/test.psf')
+		self.lineEdit_dcd.setText('/home/onur/repos/getResIntEn/test/test.dcd')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
@@ -209,22 +191,20 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		subprocess.call('touch %s' % self.params.logFile,shell=True)
 		
 		# Start calculation in the background
+		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
+			kwargs={'psf':self.params.psfFile,'pdb':self.params.pdbFile,
+			'dcd':self.params.dcdFile,'numCores':self.params.numCores,
+			'sourceSel':self.params.sourceSel,'targetSel':self.params.targetSel,
+			'pairCalc':True,'pairFilterCutoff':self.params.pairFilterCutoff,
+			'pairFilterPercentage':self.params.pairFilterPercentage*0.1,
+			'skip':self.params.skip,'namd2exe':self.params.namd2exe,
+			'paramFile':self.params.paramFile,'outputFolder':self.params.outputFolder,
+			'logFile':self.params.logFile,'toPickle':True,
+			'resIntCorr':self.params.interactCorr,'pairFilterBasis':'com',
+			'pairFilterSkip':1,'frameRange':[False],
+			'resIntCorrAverageIntEnCutoff':1})
 
-		getResIntEnThread = threading.Thread(target=getResIntEn.getResIntEn,
-			kwargs={'psf': self.params.psfFile,'pdb': self.params.pdbFile,
-			'dcd': self.params.dcdFile,'numCores':self.params.numCores,
-			'sourceSel': self.params.sourceSel, 'targetSel': self.params.targetSel,
-			'pairCalc': True, 'pairFilterCutoff': self.params.pairFilterCutoff,
-			'pairFilterPercentage': self.params.pairFilterPercentage*0.1,
-			'skip': self.params.skip, 'namd2exe': self.params.namd2exe,
-			'paramFile': self.params.paramFile, 'outputFolder': self.params.outputFolder,
-			'logFile': self.params.logFile, 'toPickle': True,
-			'resIntCorr': self.params.interactCorr,'pairFilterBasis': 'com',
-			'pairFilterSkip': 1, 'frameRange': [False], 
-			'resIntCorrAverageIntEnCutoff': 1})
-
-		self.thread = getResIntEnThread
-		self.thread.start()
+		self.processGetResIntEn.start()
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)
@@ -338,7 +318,7 @@ class monitorProgress(QtCore.QThread):
 				self.incrementCalculationProgressBar.emit(percent)
 
 		# Monitor interaction correlation calculation.
-		if self.params.interactCorr:
+		if self.params.interactCorr and self._isRunning:
 			percent = 0
 			start_time = time.time()
 			while percent != 100 and self._isRunning:

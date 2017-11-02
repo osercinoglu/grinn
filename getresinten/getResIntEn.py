@@ -138,6 +138,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	# ARGUMENT CHECKS
 
 	paramFile = paramFile
+	if paramFile and not type(paramFile) == str:
+		paramFile = paramFile[0]
+
 	if paramFile:
 		paramFile = os.path.abspath(paramFile)
 
@@ -521,7 +524,7 @@ if __name__ == '__main__':
 	resIntCorrAverageIntEnCutoff = args.resintcorraverageintencutoff[0]
 
 	getResIntEn(psf=psf,pdb=pdb,dcd=dcd,numCores=numCores,
-		sourceSel=sourceSel,targetSel=targetSel,prePairFilterSkip=prePairFilterSkip,
+		sourceSel=sourceSel,targetSel=targetSel,
 		pairCalc=pairCalc,pairFilterCutoff=pairFilterCutoff,pairFilterBasis=pairFilterBasis,
 		pairFilterPercentage=pairFilterPercentage,pairFilterSkip=pairFilterSkip,
 		skip=skip,frameRange=frameRange,resIntCorr=resIntCorr,
