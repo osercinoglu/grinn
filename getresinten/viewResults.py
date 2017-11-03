@@ -9,6 +9,7 @@ import numpy as np
 import seaborn
 import matplotlib
 import os
+import py3Dmol
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
@@ -85,6 +86,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.barh(y=np.arange(0,len(res),1),width=en,color="b")
     		self.axes.set_yticks(np.arange(0,len(res),1))
     		self.axes.set_yticklabels(map(str,res))
+    		matplotlib.pyplot.tight_layout()
 
     	elif type=='iem':
     		if len(intEnMeanTotal) > 100:

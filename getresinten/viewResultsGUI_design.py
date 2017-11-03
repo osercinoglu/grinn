@@ -11,7 +11,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(711, 600)
+        MainWindow.resize(707, 592)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
@@ -93,8 +93,8 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.frame_tabPairWiseEnergiesBarPlot.sizePolicy().hasHeightForWidth())
         self.frame_tabPairWiseEnergiesBarPlot.setSizePolicy(sizePolicy)
-        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(200, 0))
-        self.frame_tabPairWiseEnergiesBarPlot.setMaximumSize(QtCore.QSize(400, 16777215))
+        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(300, 0))
+        self.frame_tabPairWiseEnergiesBarPlot.setMaximumSize(QtCore.QSize(200, 16777215))
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_tabPairWiseEnergiesBarPlot.setObjectName("frame_tabPairWiseEnergiesBarPlot")
