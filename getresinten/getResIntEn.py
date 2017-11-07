@@ -407,6 +407,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 
 	# Delete all namd-generated energies file from output folder.
 	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
+	subprocess.call('rm %s/*temp*' % outputFolder,shell=True)
 	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)

@@ -162,12 +162,12 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def startCalculation(self):
 
 		#### TEMPORARY!!! ####
-		subprocess.call('rm getResIntEn_output -R',shell=True)
-		self.lineEdit_namd2.setText('/home/onur/repos/getResIntEn/NAMD_2.12b1/namd2')
-		self.lineEdit_pdb.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.pdb')
-		self.lineEdit_psf.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.psf')
-		self.lineEdit_dcd.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/min_20ns_dry_aligned_noh.dcd')
-		self.lineEdit_parameterFile.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_carb.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_cgenff.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_lipid.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_na.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_prot.prm')
+		#subprocess.call('rm getResIntEn_output -R',shell=True)
+		#self.lineEdit_namd2.setText('/home/onur/repos/getResIntEn/NAMD_2.12b1/namd2')
+		#self.lineEdit_pdb.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.pdb')
+		#self.lineEdit_psf.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.psf')
+		#self.lineEdit_dcd.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/min_20ns_dry_aligned_noh.dcd')
+		#self.lineEdit_parameterFile.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_carb.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_cgenff.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_lipid.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_na.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_prot.prm')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
