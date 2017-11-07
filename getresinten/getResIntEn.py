@@ -40,7 +40,6 @@ def calcEnergiesSingleCore(args):
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
 		outputFolder,namd2exe,paramFile,logger):
 		for pair in pairsFiltered:
-
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
 			sel1 = system.select('resindex %i' % int(pair[0]))
@@ -49,7 +48,8 @@ def calcEnergiesSingleCore(args):
 			# pairInteractionGroup1 parameter in NAMD configuration file.
 			sel1.setBetas([1]*sel1.numAtoms())
 			sel2.setBetas([2]*sel2.numAtoms())
-			pairIntPDB = '%i_%i-temp.pdb' % (pair[0],pair[1])
+			pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
+			pairIntPDB = os.path.abspath(pairIntPDB)
 			writePDB(pairIntPDB,system)
 
 			# SAVING ON THE TWO RESIDUE PAIR TO DO LATER ON(NEEDS TESTING)
@@ -59,12 +59,14 @@ def calcEnergiesSingleCore(args):
 			#traj.setAtoms(system.select('resindex %i %i' % (pair[0],pair[1])))
 			#writeDCD('%i_%i-temp.dcd' % (pair[0],pair[1]),traj)
 			
-			namdConf = '%s_%s-temp.namd' % (pair[0],pair[1])
+			namdConf = '%s/%s_%s-temp.namd' % (outputFolder,pair[0],pair[1])
 			f = open(namdConf,'w')
 			f.write('structure %s\n' % psfFilePath)
 			f.write('paraTypeCharmm on\n')
 			if paramFile:
-				f.write('parameters %s\n' % paramFile)
+				for file in paramFile:
+					#raise SystemExit(0)
+					f.write('parameters %s\n' % file)
 			else:
 				f.write('parameters %s\n' % (sys.path[0]+'/par_all27_prot_lipid_na.inp'))
 			f.write('numsteps 1\n')
@@ -95,6 +97,10 @@ def calcEnergiesSingleCore(args):
 			pid_namd2 = subprocess.Popen([namd2exe,namdConf],
 				stdout=open(outputFolder+'/%i_%i_energies.log' % (pair[0],pair[1]),'w'))
 			pid_namd2.wait()
+
+			#subprocess.call('rm %s' % namdConf,shell=True)
+			#subprocess.call('rm %s' % pairIntPDB,shell=True)
+			#subprocess.call('rm %i_%i-temp*' % (pair[0],pair[1]),shell=True)
 			#raise SystemExit(0)
 		# Parse the log file and extract necessary energy values
 
@@ -121,6 +127,8 @@ def calcEnergiesSingleCore(args):
 def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCutoff,
 	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,paramFile,
 	resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
+	print(paramFile)
+	#raise SystemExit(0)
 	
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -136,13 +144,16 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	logger.info('Started calculation.')
 
 	# ARGUMENT CHECKS
+	# TEMP
+	pairFilterSkip = skip
 
 	paramFile = paramFile
 	if paramFile and not type(paramFile) == str:
 		paramFile = paramFile[0]
 
 	if paramFile:
-		paramFile = os.path.abspath(paramFile)
+		paramFile = paramFile.split(' ')
+		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
 
 	if not type(sourceSel) == str:
 		if len(sourceSel) > 1:
@@ -256,7 +267,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	logger.info('Starting the filtering step.')
 
 	# Continue with filtering operation
-	print(sourceCA)
 	traj.setAtoms(systemCA)
 	coordSets = traj.getCoordsets()
 
@@ -266,19 +276,21 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
 	monitor = 0
-	for coordSet in coordSets:
+
+	for i in range(0,len(coordSets),pairFilterSkip):
+		coordSet = coordSets[i]
 		log = open('getResIntEn.log','w')
 		gnm = GNM('GNM')
 		gnm.buildKirchhoff(coordSet,cutoff=pairFilterCutoff)
 		kh = kh + gnm.getKirchhoff()
-		monitor = monitor + 1
+		monitor = monitor + pairFilterSkip
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
 		log.write('%s' % str(calculatedPercentage))
 		log.close()
 		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsFilteredFlag = np.abs(kh)/len(traj) > pairFilterCutoff*0.01
+	pairsFilteredFlag = np.abs(kh)/(len(traj)/float(pairFilterSkip)) > pairFilterCutoff*0.01
 
 	pairsFiltered = list()
 	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
@@ -468,7 +480,7 @@ if __name__ == '__main__':
 
 	parser.add_argument('--namd2exe',default=['namd2'],type=str,nargs=1,help='Path to the namd2 executable.')
 
-	parser.add_argument('--parameterfile',default=[False],type=str,nargs=1,help='Path to the parameter file.')
+	parser.add_argument('--parameterfile',default=[False],type=str,nargs='+',help='Path to the parameter file.')
 
 	parser.add_argument('--resintcorr',action='store_true',default=False,help='When True, interaction energy correlation \
 		is also calculated following interaction energy calculation')
