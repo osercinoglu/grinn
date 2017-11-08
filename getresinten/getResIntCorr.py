@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import scipy.stats as stats
+from natsort import natsorted
 import numpy as np
 import pyprind
 import os
+import math
 import itertools
 import multiprocessing
 import getResIntEn
@@ -10,113 +12,60 @@ import argparse
 import datetime
 import logging
 import signal
+import pyximport
+import pandas
+import psutil
+pyximport.install()
+import getResCorr
+import re
 from prody import *
 from common import parseEnergiesSingleCore
 
-def getResCorr(enCorrs,pdb,excludeSel=False,corrCutoff=False,outName='resCorr'):
-
-	# Load the pdb and get residue numbers.
-	sys = parsePDB(pdb)
-	numResidues = sys.numResidues()
-
-	# Will accumulate correlations in two separate matrices:
-	# one for average correlation and one for total correlation (sum)
-	resCorrCountMat = np.zeros((numResidues,numResidues),dtype=int)
-	resCorrMeanMat = np.zeros((numResidues,numResidues))
-	resCorrSumMat = np.zeros((numResidues,numResidues))
-
-	progBar = pyprind.ProgBar(len(enCorrs))
-
-	for key,value in enCorrs.items():
-		# Get the four residues involved in an interaction correlation.
-		res1 = key[0][0][0]
-		res2 = key[0][0][1]
-		res3 = key[1][0][0]
-		res4 = key[1][0][1]
-		corr = value
-		corr_abs = np.abs(corr)
-
-		# If a correlation cutoff is specified, then leave those interactions
-		# which don't pass the cutoff filter!
-		if corrCutoff:
-			if np.abs(corr) < corrCutoff:
-				continue
-
-		# Start filling in the correlation matrices
-		# Warning: back from 1 based indexing to 0 based indexing
-		resCorrSumMat[res1-1,res3-1] += corr_abs
-		resCorrSumMat[res1-1,res4-1] += corr_abs
-		resCorrSumMat[res3-1,res1-1] += corr_abs
-		resCorrSumMat[res4-1,res1-1] += corr_abs
-
-		resCorrSumMat[res2-1,res3-1] += corr_abs
-		resCorrSumMat[res2-1,res4-1] += corr_abs
-		resCorrSumMat[res3-1,res2-1] += corr_abs
-		resCorrSumMat[res4-1,res2-1] += corr_abs
-
-		# For the mean correlation matrix, we cannot accumulate all correlations as this
-		# skyrockets the RAM demand, instead we will average on-the-fly by counting how many
-		# we calculated, then dividing by the sum.
-		resCorrCountMat[res1-1,res3-1] += float(1)
-		resCorrCountMat[res1-1,res4-1] += float(1)
-		resCorrCountMat[res3-1,res1-1] += float(1)
-		resCorrCountMat[res4-1,res1-1] += float(1)
-
-		resCorrCountMat[res2-1,res3-1] += float(1)
-		resCorrCountMat[res2-1,res4-1] += float(1)
-		resCorrCountMat[res3-1,res2-1] += float(1)
-		resCorrCountMat[res4-1,res2-1] += float(1)
-		
-		progBar.update()
-
-	# It is possible that resCorr* matrices above may have some zero values, so we ignore them
-	# when dividing matrices. We are fully aware of this.
-	np.seterr(divide='ignore', invalid='ignore')
-
-	resCorrMeanMat = np.divide(resCorrSumMat,resCorrCountMat)
-	# Many values in resCorrMeanMat will be NaN, due to division by zero.
-	# Convert these to zero (by default)
-	resCorrMeanMat = np.nan_to_num(resCorrMeanMat)
-
-	# Write to matrix files
-	np.savetxt(outName+'_resCorrMean.dat',resCorrMeanMat)
-	np.savetxt(outName+'_resCorrSum.dat',resCorrSumMat)
-	np.savetxt(outName+'_resCorrCount.dat',resCorrCountMat)
-
-	return resCorrSumMat, resCorrMeanMat, resCorrCountMat
-
 def getResIntCorrSingleCore(args):
 
-	intCombins = args[0]
-	inFolder = args[1]
-	logFile = args[2]
+	e_combins = args[0]
+	sliceIndices = args[1]
+	# Generate all possible unique combinations between filtered interaction energy files
+	intCombins = itertools.combinations(e_combins,2)
+	intCombins_slice = itertools.islice(intCombins,sliceIndices[0],sliceIndices[1])
+	df_energies = args[2]
+	logFile = args[3]
+	corrCutoff = 0.4
+
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)
+
+	logger.info('Starting interaction energy correlation calculation thread...')
+	# Get pearson correlation between all energy combinations
+	progbar = pyprind.ProgBar(sliceIndices[1]-sliceIndices[0],monitor=True)
+
+	#e_corrs = np.zeros([len(e_combins),5],dtype=np.float)
+	e_corrs = list()
+
+	for combin in intCombins_slice:
+		
+		combin = combin[0]
+		matches1 = re.search('(\d+), (\d+)',combin[0])
+		matches2 = re.search('(\d+), (\d+)',combin[1])
+		combin1 = list(map(int,[matches1.groups()[0],matches1.groups()[1]]))
+		combin2 = list(map(int,[matches2.groups()[0],matches2.groups()[1]]))
+		i = combin1[0]
+		j = combin1[1]
+		k = combin2[0]
+		l = combin2[1]
+		
+		pearson_r,_ = stats.pearsonr(df_energies[combin[0]].values,df_energies[combin[1]].values)
+		
+		if pearson_r >= corrCutoff:
+			e_corrs.append([i,j,k,l,pearson_r])
+
+		progbar.update()
+
+	logger.info('Starting interaction energy correlation calculation thread... completed.')
+
+	return e_corrs
 	
-	numIntCombins = len(intCombins)
-	enCorr = dict()
-
-	progPercent = pyprind.ProgPercent(numIntCombins)
-
-	logger.info('Started an interaction energy correlation calculation thread.')
-	i = 0
-	for intCombin in intCombins:
-		en1 = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+intCombin[0]])
-		en1_keys = tuple(en1.keys())
-		en1_values = list(en1.values())[0]['Total']
-		en2 = getResIntEn.parseEnergiesSingleCore([inFolder+'/'+intCombin[1]])
-		en2_keys = tuple(en2.keys())
-		en2_values = list(en2.values())[0]['Total']
-		pearson_r,_ = stats.pearsonr(en1_values,en2_values)
-		enCorr[(en1_keys,en2_keys)] = pearson_r
-		progPercent.update()
-		i += 1
-		percent = i/float(numIntCombins)
-		logger.info('Interaction energy correlation thread calculated percentage: '+ str(percent*100))
-
-	return enCorr
-
 def write2file(enCorrs,outFile):
 
 	f = open(outFile,'w')
@@ -133,38 +82,65 @@ def write2file(enCorrs,outFile):
 
 	f.close()
 
-def getResIntCorr(inFolder,pdb,logFile,frameRange=False,
+def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 	numCores=1,meanIntEnCutoff=float(1),outFile='resIntCorr.dat'):
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)
-	logger.info('Started interaction energy correlation calculation.')
+	logger.info('Started residue interaction energy calculation.')
 
-	# Get a list of interaction energy files in this folder.
-	fileList = os.listdir(inFolder)
-	fileList = [filename for filename in fileList if filename.endswith('energies.log')]
-	numInteractions = len(fileList)
+	# Load previously computed interaction energy values (from previously saved pickle files)
+	logger.info('Reading input CSV...')
+	df_energies = pandas.read_csv(inFile)
+	logger.info('Reading input CSV... completed.')
 
-	# For each file, determine whether the mean (average) value of the absolute interaction energy
-	# is above the cutoff value. If it is above the value, include that file name in the filtered
-	# list.
-	filesFiltered = list()
+	numResPairs = len(df_energies.columns[1:]) # Beware: first column is the frame
 
-	progBar = pyprind.ProgBar(numInteractions)
-	for fileName in fileList:
-		en = parseEnergiesSingleCore([inFolder+'/'+fileName])
-		en = list(en.values())[0]['Total']
-		mean_en = np.mean(np.abs(en))
+	# Take absolute average interaction energy pairs above energyCutoff
+	logger.info('Filtering out interaction below energy threshold...')
+	progbar = pyprind.ProgBar(numResPairs,monitor=True)
 
-		if mean_en > meanIntEnCutoff:
-			filesFiltered.append(fileName)
+	valid_e = list()
+	for column in df_energies.columns[1:]:
+		if np.abs(np.mean(df_energies[column].values)) > meanIntEnCutoff:
+			if natsorted(column) not in valid_e:
+				valid_e.append(column)
+		progbar.update()
 
-		progBar.update()
+	logger.info('Filtering out interaction below energy threshold... completed.')
+	logger.info('A total of %i interaction energies will enter interaction energy correlation calculation.' 
+		% len(valid_e))
 
-	# For each file which passed the filtering step, generate pairwise combinations list and
-	# compute pearson's correlation between each pairwise combination
+	logger.info('Getting dual combinations betweel all interaction energy pairs...')
+	# Get dual combinations between these interaction energy pairs
+	e_combins = list(itertools.combinations(valid_e,2))
+	logger.info('Getting dual combinations betweel all interaction energy pairs... completed.')
+	logger.info('A total of %i interaction energy correlations will be computed.' % len(e_combins))
+	logger.info('Starting interaction energy correlation calculation...')
 
+	# Get the number of possible unique combinations between filtered interacton energy files
+
+	numIntCombins = len(e_combins)**2
+
+	logger.info('Splitting interaction energy correlation dual combinations into chunks...')
+	# Generate start stop indices for each chunk in iterator
+	stepIntCombins = math.ceil(numIntCombins/24)
+
+	sliceIndex = 0
+	sliceIndices = list()
+	sliceIndices.append(sliceIndex)
+	for i in range(0,numCores):
+		sliceIndex += stepIntCombins
+		sliceIndices.append(sliceIndex)
+
+	sliceIndices[-1] = numIntCombins
+	# Split this list into chunks according to the number of cores.
+	sliceIndexChunks = [[sliceIndices[i],sliceIndices[i+1]] for i in range(0,len(sliceIndices)-1)]
+
+	logger.info('Splitting interaction energy correlation dual combinations into chunks... completed.')
+
+	parent_id = os.getpid()
 	def worker_init():
 		def sig_int(signal_num, frame):
 			print('signal: %s' % signal_num)
@@ -182,33 +158,30 @@ def getResIntCorr(inFolder,pdb,logFile,frameRange=False,
 	# Start a pool of processors
 	pool = multiprocessing.Pool(numCores,worker_init)
 
-	# Generate all possible unique combinations between filtered interaction energy files
-	intCombins = list(itertools.combinations(filesFiltered,2))
-
-	# Split this list into chunks according to the number of cores.
-	intCombinsChunks = np.array_split(intCombins,numCores)
-
 	# Start the correlation calculation in chunks
-	enCorrResults = pool.map(getResIntCorrSingleCore,
-		zip(intCombinsChunks,itertools.repeat(inFolder),
+	e_corrsMap = pool.map(getResIntCorrSingleCore,
+		zip(itertools.repeat(e_combins),sliceIndexChunks,itertools.repeat(df_energies),
 			itertools.repeat(logFile)))
 
-	# Accumulate the output
-	enCorrs = dict()
-	for enCorrResult in enCorrResults:
-		enCorrs.update(enCorrResult)
+	e_corrs = list()
+	for result in e_corrsMap:
+		e_corrs += result
 
 	pool.close()
 	pool.join()
 
+	del df_energies # Save RAM
+	del intCombins # Save RAM
+
+	raise SystemExit(0)
 	# Write the results to the outFile 
-	write2file(enCorrs,outFile)
+	#write2file(enCorrs,outFile)
 
 	# Calculate residue correlation matrix (based on Kong & Karplus, 2008)
 	# as well.
-	_,_,_ = getResCorr(enCorrs,pdb,corrCutoff=0.4,outName=outFile)
+	getResCorr.getResCorr(e_corrs,pdb,corrCutoff=0.4,outName=outFile,logFile=logFile)
 	
-	return enCorrs
+	return e_corrs
 
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
@@ -229,7 +202,7 @@ if __name__ == '__main__':
 	# Overriding convert_arg_line_to_args in the input parser with our own function.
 	parser.convert_arg_line_to_args = convert_arg_line_to_args
 
-	parser.add_argument('--infolder',type=str,nargs=1,help='Path to the folder where interaction\
+	parser.add_argument('--infile',type=str,nargs=1,help='Path to the CSV file where interaction\
 		energies are located in')
 
 	parser.add_argument('--pdb',type=str,nargs=1,help='Path to the PDB file of the protein system')
@@ -257,12 +230,12 @@ if __name__ == '__main__':
 	# Parse input arguments
 	args = parser.parse_args()
 
-	inFolder = args.infolder[0]
+	inFolder = args.infile[0]
 	pdb = args.pdb[0]
 	numCores = args.numcores[0]
 	meanIntEnCutoff = args.meanintencutoff[0]
 	outFile = args.outfile[0]
 	logFile = args.logfile[0]
 
-	getResIntCorr(inFolder=inFolder,pdb=pdb,numCores=numCores,meanIntEnCutoff=meanIntEnCutoff,
+	getResIntCorr(inFile=inFolder,pdb=pdb,numCores=numCores,meanIntEnCutoff=meanIntEnCutoff,
 		outFile=outFile,logFile=logFile)
