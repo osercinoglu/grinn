@@ -52,6 +52,7 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 				intEnMat[j,i] = np.zeros(len(df))
 				continue
 
+			# Only take interactions whose average is above meanIntEnCutoff
 			if np.mean(df[df_col].values) >= meanIntEnCutoff:
 				intEnMat[i,j] = df[df_col1].values
 				intEnMat[j,i] = df[df_col1].values
@@ -97,10 +98,44 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
 
-
+		logger.info('Calculating interaction energy correlations... completed.')
 		#logger.info('Interaction energy correlation thread calculated percentage: %f' % int(i)/numResidues*100)
 
 		progbar.update()
+
+	# Constructing the residue correlation matrix
+	logger.info('Constructing the residue correlation matrix...')
+	rc = np.zeros((numResidues,numResidues))
+
+	progbar = pyprind.ProgBar(len(sigcorrs))
+	for key in list(sigcorrs.keys()):
+		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
+		rc_key = np.zeros((numResidues,numResidues))
+		if matches:
+			res11 = int(matches.groups()[0])
+			res12 = int(matches.groups()[1])
+			res21 = int(matches.groups()[2])
+			res22 = int(matches.groups()[3])
+
+			corr = np.abs(sigcorrs[key])
+
+			rc_key[res11,res21] = corr
+			rc_key[res11,res22] = corr
+			rc_key[res12,res21] = corr
+			rc_key[res12,res22] = corr
+			rc_key[res21,res11] = corr
+			rc_key[res21,res12] = corr
+			rc_key[res22,res11] = corr
+			rc_key[res22,res12] = corr
+
+			rc = rc + rc_key
+
+		progbar.update()
+
+	logger.info('Constructing the residue correlation matrix... completed.')
+
+	np.savetxt(outFile,rc)
+
 
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
@@ -126,11 +161,6 @@ if __name__ == '__main__':
 
 	parser.add_argument('--pdb',type=str,nargs=1,help='Path to the PDB file of the protein system')
 
-	parser.add_argument('--numcores',type=int,nargs=1,default=[1],help='Number of CPU cores to be\
-		employed for energy calculation. If not specified, it defaults to 1 (no parallel \
-		computation will be done). If specified, e.g. NUMCORES=n, then the computational \
-		workloading will be distributed among n cores.')
-
 	parser.add_argument('--meanintencutoff',type=float,nargs=1,default=[1],
 		help='Mean (average) interaction energy cutoff for filtering interaction energies \
 		(kcal/mol). If an interaction energy time series absolute average value is below this \
@@ -151,10 +181,9 @@ if __name__ == '__main__':
 
 	inFile = args.infile[0]
 	pdb = args.pdb[0]
-	numCores = args.numcores[0]
 	meanIntEnCutoff = args.meanintencutoff[0]
 	outFile = args.outfile[0]
 	logFile = args.logfile[0]
 
-	getResIntCorr(inFile=inFile,pdb=pdb,numCores=numCores,meanIntEnCutoff=meanIntEnCutoff,
+	getResIntCorr(inFile=inFile,pdb=pdb,meanIntEnCutoff=meanIntEnCutoff,
 		outFile=outFile,logFile=logFile)
