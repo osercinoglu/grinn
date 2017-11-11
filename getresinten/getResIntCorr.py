@@ -28,7 +28,7 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 
 	logger.info('Reading input CSV...')
 	# Read in interaction energy time series from the getResIntEn csv output.
-	df = pandas.read_csv(inFile)
+	df = pandas.read_csv(inFile,nrows=10)
 	logger.info('Reading input CSV... completed.')
 
 	# Get number of residues
@@ -98,10 +98,11 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
 
-		logger.info('Calculating interaction energy correlations... completed.')
-		#logger.info('Interaction energy correlation thread calculated percentage: %f' % int(i)/numResidues*100)
+		logger.info('Interaction energy correlation calculated percentage: %i' % (int(i+1)/numResidues*100))
 
 		progbar.update()
+
+	logger.info('Calculating interaction energy correlations... completed.')
 
 	# Constructing the residue correlation matrix
 	logger.info('Constructing the residue correlation matrix...')

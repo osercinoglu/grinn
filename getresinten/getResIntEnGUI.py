@@ -329,7 +329,7 @@ class monitorProgress(QtCore.QThread):
 				lines = logFile.readlines()
 				logFile.close()
 				for line in lines:
-					matches = re.search('.*Interaction energy correlation thread calculated percentage:\s(\d+)',
+					matches = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',
 						line)
 					if matches:
 						newpercent = float(matches.groups()[0])

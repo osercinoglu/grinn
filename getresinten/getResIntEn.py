@@ -402,8 +402,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	pool.join()
 
 	if resIntCorr:
-		getResIntCorr.getResIntCorr(inFolder=outputFolder,pdb=pdb,numCores=numCores,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
-			outFile=outputFolder+'/energies_IntEnCorr.dat',logFile=logFile)
+		getResIntCorr.getResIntCorr(inFile=outputFolder+'/'+'energies_intEnTotal.csv',
+			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
+			outFile=outputFolder+'/energies_ResCorr.dat',logFile=logFile)
 
 	# Delete all namd-generated energies file from output folder.
 	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
