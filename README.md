@@ -1,4 +1,4 @@
-# getResIntEn: Get Residue Interaction Energies
+# gRINN: Get Residue Interaction eNergies and Networks
 
 version: 0.0.1dev
 
