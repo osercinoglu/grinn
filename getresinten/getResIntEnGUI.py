@@ -162,12 +162,12 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def startCalculation(self):
 
 		#### TEMPORARY!!! ####
-		#subprocess.call('rm getResIntEn_output -R',shell=True)
-		#self.lineEdit_namd2.setText('/home/onur/repos/getResIntEn/NAMD_2.12b1/namd2')
-		#self.lineEdit_pdb.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.pdb')
-		#self.lineEdit_psf.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/tryp_nw_psf_formatted_autopsf.psf')
-		#self.lineEdit_dcd.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/min_20ns_dry_aligned_noh.dcd')
-		#self.lineEdit_parameterFile.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_carb.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_cgenff.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_lipid.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_na.prm /media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_07_metinBPTItrypsin/trypsin_only/par_all36_prot.prm')
+		subprocess.call('rm -R getResIntEn_output',shell=True)
+		self.lineEdit_namd2.setText('/Users/onur/repos/getResIntEn/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
+		self.lineEdit_pdb.setText('/Users/onur/repos/getResIntEn/test/test.pdb')
+		self.lineEdit_psf.setText('/Users/onur/repos/getResIntEn/test/test.psf')
+		self.lineEdit_dcd.setText('/Users/onur/repos/getResIntEn/test/test.dcd')
+		self.lineEdit_parameterFile.setText('/Users/onur/repos/getResIntEn/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
@@ -276,36 +276,38 @@ class monitorProgress(QtCore.QThread):
 		percent = 0
 		start_time = time.time()
 		while percent != 100 and self._isRunning:
-			if os.path.isfile('getResIntEn.log'):
-				logFile = open('getResIntEn.log','r')
-				logLines = logFile.readlines()
-				logFile.close()
-				if logLines:
-					try:
-						percent = int(float(logLines[0]))
+			oldpercent = percent
+			logFile = open(self.params.logFile)
+			lines = logFile.readlines()
+			logFile.close()
+			for line in lines:
+				matches = re.search('.*Filtered pairs percentage:\s(\d+)',line)
+				if matches:
+					newpercent = float(matches.groups()[0])
+					if newpercent > oldpercent:
+						percent = newpercent
 						current_time = time.time()
 						etaString = getETAstring(start_time,current_time,percent)
 						self.updateETAfilteringLabel.emit(etaString)
 						self.incrementFilteringProgressBar.emit(percent)
-					except:
-						pass
+						break
 
 		# Monitor calculation
 		continueFlag = False
 		while not continueFlag and self._isRunning:
-			logFile = open('getResIntEn.log','r')
-			logLines = logFile.readlines()
-			if len(logLines) < 2:
-				logFile.close()
-				time.sleep(1)
-			else:
-				continueFlag = True
-
-		continueFlag = True
+			logFile = open(self.params.logFile)
+			lines = logFile.readlines()
+			logFile.close()
+			for line in lines:
+				matches = re.search('.*Started a pairwise energy calculation thread.',line)
+				if matches:
+					continueFlag = True
+					break
 
 		percent = 0
 		start_time = time.time()
 		while percent != 100 and self._isRunning:
+			oldpercent = percent
 			logFile = open('getResIntEn.log','r')
 			logLines = logFile.readlines()
 			logFile.close()
@@ -313,11 +315,11 @@ class monitorProgress(QtCore.QThread):
 				numFilteredPairs = int(logLines[1])
 				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.log'))
 				percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
-				if percent > 0:
+				if percent > oldpercent:
 					current_time = time.time()
 					etaString = getETAstring(start_time,current_time,percent)
 					self.updateETAcalculationLabel.emit(etaString)
-				self.incrementCalculationProgressBar.emit(percent)
+					self.incrementCalculationProgressBar.emit(percent)
 
 		# Monitor interaction correlation calculation.
 		if self.params.interactCorr and self._isRunning:

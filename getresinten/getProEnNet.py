@@ -178,13 +178,13 @@ if __name__ == '__main__':
 
 	parser.add_argument('--pdb',type=str,nargs=1,help='Path to the PDB file of the protein system')
 
-	parser.add_argument('--resmeanintenfile',type=str,nargs=1,
+	parser.add_argument('--resmeanintenfile',type=str,default=[False],nargs=1,
 		help='Path to the average interaction energy matrix produced by getResIntEn.py')
 
-	parser.add_argument('--resintcorrfile',type=str,nargs=1,
+	parser.add_argument('--resintcorrfile',type=str,default=[False],nargs=1,
 		help='Residue interaction correlation list file produced by getResIntEn.py')
 
-	parser.add_argument('--rescorrfile',type=str,nargs=1,
+	parser.add_argument('--rescorrfile',type=str,default=[False],nargs=1,
 		help='Residue correlation matrix produced by getResIntEn.py')
 
 	parser.add_argument('--includecovalents',action='store_true',default=False,
@@ -214,12 +214,20 @@ if __name__ == '__main__':
 	resCorrFile = args.rescorrfile[0]
 	outPrefix = args.outprefix[0]
 
+	if not resMeanIntEnFile:
+		print('You have to provide the mean interaction energy file.')
+		raise SystemExit(0)
+
 	print('Constructing the Ribeiro-Ortiz network using average residue interaction energies.')
 	getRibeiroOrtizNetwork(pdb=pdb,resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,
 		intEnCutoff=intEnCutoff,outName=outPrefix)
 
-	print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
-	getKongKarplusNetwork(resIntCorrFile=resIntCorrFile,resCorrFile=resCorrFile,pdb=pdb,
-		resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
-		intEnCutoff=intEnCutoff,outName=outPrefix)
-	print('Done. Please find your networks as gml files.')
+	if not resIntCorrFile or not resCorrFile:
+		print('Skipping construction of the Kong-Karplus network.')
+	else:
+		print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
+		getKongKarplusNetwork(resIntCorrFile=resIntCorrFile,resCorrFile=resCorrFile,pdb=pdb,
+			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
+			intEnCutoff=intEnCutoff,outName=outPrefix)
+	
+	print('Done.')

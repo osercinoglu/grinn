@@ -9,7 +9,6 @@ import numpy as np
 import seaborn
 import matplotlib
 import os
-import py3Dmol
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
