@@ -80,11 +80,11 @@ This can be used separately or used when calling **getResIntEn.py**
 
 Interaction energies and Interaction Energy Matrices (IEM) can be viewed with: 
 
-`python3 getresinten/viewResults.py``
+`python3 getresinten/viewResults.py`
 
 IEM and Residue Correlation (RC) matrices can be used to construct "Protein Energy Networks" by calling:
 
-`python3 getresinten/getProEnNet.py``
+`python3 getresinten/getProEnNet.py`
 
 type `python3 getresinten/getProEnNet.py --help` to see the full list of options.
 
