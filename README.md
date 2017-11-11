@@ -1,14 +1,8 @@
 # gRINN: Get Residue Interaction eNergies and Networks
 
-version: 0.0.1dev
+version: 0.0.2dev, date: 2017/11/11
 
-date: 2017/10/25
-
-Marmara University
-
-Department of Bioengineering
-
-Computational Biology and Bioinformatics Group
+Marmara University, Department of Bioengineering, Computational Biology and Bioinformatics Group
 
 developer: Onur Serçinoğlu
 
@@ -69,24 +63,24 @@ freeze.
 After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via the terminal or the GUI.
 All of the options that can be specified via the terminal can also be specified via the GUI.
 
-Via terminal: **python3 getresinten/getResIntEn.py <options>**
+Via terminal: `$ python3 getresinten/getResIntEn.py <options>`
 
-type `python3 getresinten/getResIntEn.py --help` to see the full list of options.
+type `$ python3 getresinten/getResIntEn.py --help` to see the full list of options.
 
-Via GUI: **python3 getresinten/getResIntEnGUI.py**
+Via GUI: `$ python3 getresinten/getResIntEnGUI.py`
 
-The package includes a program to calculate residue interaction energy correlations as well: **getResIntCorr**. 
-This can be used separately or used when calling **getResIntEn.py**
+The package includes a program to calculate residue interaction energy correlations as well: `getResIntCorr.py`. 
+This can be used separately following the call to `getResIntEn.py`.
 
 Interaction energies and Interaction Energy Matrices (IEM) can be viewed with: 
 
-`python3 getresinten/viewResults.py`
+`$ python3 getresinten/viewResults.py`
 
 IEM and Residue Correlation (RC) matrices can be used to construct "Protein Energy Networks" by calling:
 
-`python3 getresinten/getProEnNet.py`
+`$ python3 getresinten/getProEnNet.py`
 
-type `python3 getresinten/getProEnNet.py --help` to see the full list of options.
+type `$ python3 getresinten/getProEnNet.py --help` to see the full list of options.
 
 ## TUTORIAL
 
