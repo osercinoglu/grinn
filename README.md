@@ -70,9 +70,23 @@ After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via
 All of the options that can be specified via the terminal can also be specified via the GUI.
 
 Via terminal: **python3 getresinten/getResIntEn.py <options>**
+
 type `python3 getresinten/getResIntEn.py --help` to see the full list of options.
 
 Via GUI: **python3 getresinten/getResIntEnGUI.py**
+
+The package includes a program to calculate residue interaction energy correlations as well: **getResIntCorr**. 
+This can be used separately or used when calling **getResIntEn.py**
+
+Interaction energies and Interaction Energy Matrices (IEM) can be viewed with: 
+
+`python3 getresinten/viewResults.py``
+
+IEM and Residue Correlation (RC) matrices can be used to construct "Protein Energy Networks" by calling:
+
+`python3 getresinten/getProEnNet.py``
+
+type `python3 getresinten/getProEnNet.py --help` to see the full list of options.
 
 ## TUTORIAL
 
