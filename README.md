@@ -21,6 +21,13 @@ between amino-acid interaction energy time profiles from the output of getResInt
 
 * **getResIntEnGUI.py** is a PyQt5-based Graphical User Interface (GUI) for getResIntEn.py and getResIntCorr.py
 
+Additional programs:
+
+* **viewResults.py** is a PyQt5-based GUI for viewing the results of getResIntEn.py
+
+* **getProEnNet.py** is a small script for constructing Protein Energy Networks using results from getResIntEn.py and/or 
+getResIntCorr.py
+
 All of the functionality contained in this package can be accessed via command-line interface of 
 getResIntEn.py. For more help regarding the use of this command, open a terminal and type:
 python3 getResIntEn.py --help
