@@ -170,12 +170,12 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def startCalculation(self):
 
 		#### TEMPORARY!!! ####
-		subprocess.call('rm -R getResIntEn_output',shell=True)
-		self.lineEdit_namd2.setText('/Users/onur/repos/gRINN/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
-		self.lineEdit_pdb.setText('/Users/onur/repos/gRINN/test/test.pdb')
-		self.lineEdit_psf.setText('/Users/onur/repos/gRINN/test/test.psf')
-		self.lineEdit_dcd.setText('/Users/onur/repos/gRINN/test/test.dcd')
-		self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
+		# subprocess.call('rm -R getResIntEn_output',shell=True)
+		# self.lineEdit_namd2.setText('/Users/onur/repos/gRINN/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
+		# self.lineEdit_pdb.setText('/Users/onur/repos/gRINN/test/test.pdb')
+		# self.lineEdit_psf.setText('/Users/onur/repos/gRINN/test/test.psf')
+		# self.lineEdit_dcd.setText('/Users/onur/repos/gRINN/test/test.dcd')
+		# self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.

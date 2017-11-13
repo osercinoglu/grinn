@@ -19,7 +19,7 @@ from prody import *
 from common import parseEnergiesSingleCore
 
 def getResIntCorr(inFile,pdb,logFile,frameRange=False,
-	numCores=1,meanIntEnCutoff=float(1),outFile='resIntCorr.dat'):
+	numCores=1,meanIntEnCutoff=float(1),outPrefix=''):
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -79,7 +79,7 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 		for m in range(0,len(sigindices[0])):
 			row = sigindices[0][m]
 			col = sigindices[1][m]
-			if row != col:
+			if row != col and i != row and i != col:
 				key = '-'.join(list(map(str,natsorted([i,row])+natsorted([i,col]))))
 				if key not in list(sigcorrs.keys()):
 					sigcorrs[key] = corrs[row,col]
@@ -93,8 +93,8 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 			for m in range(0,len(sigindices[0])):
 				row = sigindices[0][m]
 				col = sigindices[1][m]
-				if row != col:
-					key = '-'.join(list(map(str,natsorted([i,row])+natsorted([i,col]))))
+				if row != col and i != row and j != col:
+					key = '-'.join(list(map(str,natsorted([i,row])+natsorted([j,col]))))
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
 
@@ -103,6 +103,20 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 		progbar.update()
 
 	logger.info('Calculating interaction energy correlations... completed.')
+
+	logger.info('Saving correlations to file...')
+	df_corr = pandas.DataFrame(columns=['res11','res12','res21','res22','corr'])
+
+	for i in range(0,len(sigcorrs)):
+		key = list(sigcorrs.keys())[i]
+		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
+		res11 = int(matches.groups()[0])
+		res12 = int(matches.groups()[1])
+		res21 = int(matches.groups()[2])
+		res22 = int(matches.groups()[3])
+		df_corr.loc[i] = [res11,res12,res21,res22,sigcorrs[key]]
+
+	df_corr.to_csv(outPrefix+'_resIntCorr.csv')
 
 	# Constructing the residue correlation matrix
 	logger.info('Constructing the residue correlation matrix...')
@@ -135,7 +149,7 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 
 	logger.info('Constructing the residue correlation matrix... completed.')
 
-	np.savetxt(outFile,rc)
+	np.savetxt(outPrefix+'_resCorr.dat',rc)
 
 
 def convert_arg_line_to_args(arg_line):
@@ -168,7 +182,7 @@ if __name__ == '__main__':
 		cutoff, that interaction energy will not be taken in correlation calculations.\
 		By default, the cutoff is 1 kcal/mol.')
 
-	parser.add_argument('--outfile',type=str,nargs=1,default=['resIntCorr.dat'],
+	parser.add_argument('--outprefix',type=str,nargs=1,default=[''],
 		help='Path of the file for storing calculation results. If not specified, the default value\
 		is resIntCorr.dat in the current working directory')
 
@@ -183,8 +197,8 @@ if __name__ == '__main__':
 	inFile = args.infile[0]
 	pdb = args.pdb[0]
 	meanIntEnCutoff = args.meanintencutoff[0]
-	outFile = args.outfile[0]
+	outPrefix = args.outprefix[0]
 	logFile = args.logfile[0]
 
 	getResIntCorr(inFile=inFile,pdb=pdb,meanIntEnCutoff=meanIntEnCutoff,
-		outFile=outFile,logFile=logFile)
+		outPrefix=outPrefix,logFile=logFile)

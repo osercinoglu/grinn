@@ -1,10 +1,11 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import networkx as nx 
 from prody import *
 import numpy as np
 import pyprind
 import argparse
+import pandas
 
 def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,includeCovalents=True,
 	corrCutoff=0,intEnCutoff=0,outName='resNetwork'):
@@ -17,7 +18,7 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 	network = nx.Graph()
 
 	for i in range(0,numResidues):
-		network.add_node(i+1)
+		network.add_node(int(i))
 
 	# Load the resCorrFile and determine the maximum edge weight
 	resCorrMat = np.loadtxt(resCorrFile)
@@ -37,37 +38,32 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 		
 			# Only connect if the two residues are in the same chain
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(i+1,i+2,distance=float(maxResCorr))
+				network.add_edge(int(i),int(i+1),weight=float(maxResCorr))
 
 	# Load the resIntCorrFile, get interacting residue pairs and add edges between them
 	# Load the resCorrFile and add edge weights to previously added edges by making them equal to
 	# absolute correlation values. (This only works if includeCovalents is True)
-	f = open(resIntCorrFile,'r')
-	lines = f.readlines()
+	df_resIntCorr = pandas.read_csv(resIntCorrFile)
+	
+	progbar = pyprind.ProgBar(len(df_resIntCorr))
 
-	progbar = pyprind.ProgBar(len(lines))
-
-	for i in range(0,len(lines)):
-		line = lines[i].split()
-		
-		res1 = int(line[0])
-		res2 = int(line[1])
-		res3 = int(line[2])
-		res4 = int(line[3])
+	for i in range(0,len(df_resIntCorr)):
+		res1 = int(df_resIntCorr.get_value(i,'res11'))
+		res2 = int(df_resIntCorr.get_value(i,'res12'))
+		res3 = int(df_resIntCorr.get_value(i,'res21'))
+		res4 = int(df_resIntCorr.get_value(i,'res22'))
 
 		# Check whether edges exist between these residues.
 		for [res1_pair,res2_pair] in [[res1,res2],[res3,res4]]:
-			if not network.has_edge(res1_pair,res2_pair):
-
-			# Check whether the correlation between the two residues is above corrCutoff.
-				if float(resCorrMat[res1_pair-1,res2_pair-1]) >= float(abs(corrCutoff)):
-
-					# Check wheter the user also requested an energy cutoff.
-					# If yes, then add an edge only if the mean interaction energy is above the cutoff.
-					if resMeanIntEnFile:
-						if np.abs(resIntEnMat[res1_pair-1][res2_pair-1]) > intEnCutoff:
-							network.add_edge(res1_pair,res2_pair,
-								distance=float(resCorrMat[res1_pair-1,res2_pair-1]))
+			if not network.has_edge(res1_pair-1,res2_pair-1):
+				
+				# Check wheter the user also requested an energy cutoff.
+				# If yes, then add an edge only if the mean interaction energy is above the cutoff.
+				if resMeanIntEnFile:
+					if np.abs(resIntEnMat[res1_pair-1][res2_pair-1]) > intEnCutoff:
+						print('adding a non-covalent edge')
+						network.add_edge(res1_pair-1,res2_pair-1,
+							weight=float(resCorrMat[res1_pair-1,res2_pair-1]))
 
 		progbar.update()
 
@@ -87,7 +83,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 	network = nx.Graph()
 
 	for i in range(0,numResidues):
-		network.add_node(i+1)
+		network.add_node(str(i+1))
 
 	# Load average residue interaction matrix.
 	resIntEnMat = np.loadtxt(resMeanIntEnFile)
@@ -115,7 +111,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 			# Only connect if the two residues are in the same chain
 			# Weights as is
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(i+1,i+2,distance=X[i,i+1])
+				network.add_edge(str(i+1),str(i+2),weight=X[i,i+1])
 
 
 			# Weights with -log
@@ -146,7 +142,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 						continue
 
 					# weights as is
-					network.add_edge(i+1,j+1,distance=X[i,j])
+					network.add_edge(str(i+1),str(j+1),weight=X[i,j])
 					# weights as -log
 					#network.add_edge(i+1,j+1,{'distance':-np.log(X[i,j])})
 
@@ -207,10 +203,10 @@ if __name__ == '__main__':
 
 	pdb = args.pdb[0]
 	resMeanIntEnFile = args.resmeanintenfile[0]
-	intEnCutoff = args.intencutoff[0]
+	intEnCutoff = float(args.intencutoff[0])
 	includeCovalents = args.includecovalents
 	resIntCorrFile = args.resintcorrfile[0]
-	resCorrCutoff = args.rescorrcutoff[0]
+	resCorrCutoff = float(args.rescorrcutoff[0])
 	resCorrFile = args.rescorrfile[0]
 	outPrefix = args.outprefix[0]
 
