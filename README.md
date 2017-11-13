@@ -1,14 +1,8 @@
-# getResIntEn: Get Residue Interaction Energies
+# gRINN: Get Residue Interaction eNergies and Networks
 
-version: 0.0.1dev
+version: 0.0.2dev, date: 2017/11/11
 
-date: 2017/10/25
-
-Marmara University
-
-Department of Bioengineering
-
-Computational Biology and Bioinformatics Group
+Marmara University, Department of Bioengineering, Computational Biology and Bioinformatics Group
 
 developer: Onur Serçinoğlu
 
@@ -26,6 +20,13 @@ energies from NAMD-generated Molecular Dynamics simulation trajectories.
 between amino-acid interaction energy time profiles from the output of getResIntEn.py
 
 * **getResIntEnGUI.py** is a PyQt5-based Graphical User Interface (GUI) for getResIntEn.py and getResIntCorr.py
+
+Additional programs:
+
+* **viewResults.py** is a PyQt5-based GUI for viewing the results of getResIntEn.py
+
+* **getProEnNet.py** is a small script for constructing Protein Energy Networks using results from getResIntEn.py and/or 
+getResIntCorr.py
 
 All of the functionality contained in this package can be accessed via command-line interface of 
 getResIntEn.py. For more help regarding the use of this command, open a terminal and type:
@@ -69,9 +70,24 @@ freeze.
 After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via the terminal or the GUI.
 All of the options that can be specified via the terminal can also be specified via the GUI.
 
-Via terminal: **python3 getresinten/getResIntEn.py <options>**
+Via terminal: `$ python3 getresinten/getResIntEn.py <options>`
 
-Via GUI: **python3 getresinten/getResIntEnGUI.py**
+type `$ python3 getresinten/getResIntEn.py --help` to see the full list of options.
+
+Via GUI: `$ python3 getresinten/getResIntEnGUI.py`
+
+The package includes a program to calculate residue interaction energy correlations as well: `getResIntCorr.py`. 
+This can be used separately following the call to `getResIntEn.py`.
+
+Interaction energies and Interaction Energy Matrices (IEM) can be viewed with: 
+
+`$ python3 getresinten/viewResults.py`
+
+IEM and Residue Correlation (RC) matrices can be used to construct "Protein Energy Networks" by calling:
+
+`$ python3 getresinten/getProEnNet.py`
+
+type `$ python3 getresinten/getProEnNet.py --help` to see the full list of options.
 
 ## TUTORIAL
 
