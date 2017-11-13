@@ -127,8 +127,6 @@ def calcEnergiesSingleCore(args):
 def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCutoff,
 	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,paramFile,
 	resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
-	print(paramFile)
-	#raise SystemExit(0)
 	
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -279,14 +277,11 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 
 	for i in range(0,len(coordSets),pairFilterSkip):
 		coordSet = coordSets[i]
-		log = open('getResIntEn.log','w')
 		gnm = GNM('GNM')
 		gnm.buildKirchhoff(coordSet,cutoff=pairFilterCutoff)
 		kh = kh + gnm.getKirchhoff()
 		monitor = monitor + pairFilterSkip
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
-		log.write('%s' % str(calculatedPercentage))
-		log.close()
 		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
@@ -314,10 +309,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 			'Either your cutoff value is too small or the percentage criteria is too high.')
 		return
 
-	logFile2= open('getResIntEn.log','w')
-	logFile2.write('Number of interaction pairs selected after filtering step:\n')
-	logFile2.write(str(len(pairsFiltered)))
-	logFile2.close()
+	logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
 
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(np.asarray(pairsFiltered),numCores)

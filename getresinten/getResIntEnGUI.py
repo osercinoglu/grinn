@@ -54,6 +54,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
 		self.pushButton_BrowseParameterFile.clicked.connect(self.updateParameterFilePath)
 		self.pushButton_Stop.clicked.connect(self.stopCalculation)
+		self.pushButton_viewResults.clicked.connect(self.viewResults)
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
 		# for getResIntEn process
@@ -105,13 +106,19 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.progressBar_correlation.setValue(percent)
 
 	def updateETAfilteringLabel(self,etaString):
-		self.label_etaFiltering.setText(etaString)
+		self.labelFiltering.setText(etaString)
 
 	def updateETAcalculationLabel(self,etaString):
-		self.label_etaCalculation.setText(etaString)
+		self.labelCalculation.setText(etaString)
 
 	def updateETAcorrelationLabel(self,etaString):
-		self.label_etaCorrelation.setText(etaString)
+		self.labelCorrelation.setText(etaString)
+
+	def updateStatusBar(self,string):
+		self.statusbar.showMessage(string)
+
+	def viewResults(self):
+		subprocess.call(sys.path[0]+'/viewResults.py &',shell=True)
 
 	def done(self):
 		self.resetProgressElements()
@@ -148,9 +155,10 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.progressBar_correlation.setValue(0)
 		self.pushButton_Stop.setEnabled(False)
 		self.pushButton_Calculate.setEnabled(True)
-		self.label_etaFiltering.setText('Ready.')
-		self.label_etaCalculation.setText('Ready.')
-		self.label_etaCorrelation.setText('Ready.')
+		self.pushButton_viewResults.setEnabled(True)
+		self.labelFiltering.setText('Filtering progress')
+		self.labelCalculation.setText('Calculation progress')
+		self.labelCorrelation.setText('Correlation progress')
 
 		#self.progressBar_calculation.setValue(0)
 
@@ -163,11 +171,11 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		#### TEMPORARY!!! ####
 		subprocess.call('rm -R getResIntEn_output',shell=True)
-		self.lineEdit_namd2.setText('/Users/onur/repos/getResIntEn/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
-		self.lineEdit_pdb.setText('/Users/onur/repos/getResIntEn/test/test.pdb')
-		self.lineEdit_psf.setText('/Users/onur/repos/getResIntEn/test/test.psf')
-		self.lineEdit_dcd.setText('/Users/onur/repos/getResIntEn/test/test.dcd')
-		self.lineEdit_parameterFile.setText('/Users/onur/repos/getResIntEn/par_all27_prot_lipid_na.inp')
+		self.lineEdit_namd2.setText('/Users/onur/repos/gRINN/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
+		self.lineEdit_pdb.setText('/Users/onur/repos/gRINN/test/test.pdb')
+		self.lineEdit_psf.setText('/Users/onur/repos/gRINN/test/test.psf')
+		self.lineEdit_dcd.setText('/Users/onur/repos/gRINN/test/test.dcd')
+		self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
@@ -210,6 +218,7 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)
+		self.pushButton_viewResults.setEnabled(False)
 
 		# Start progress monitoring thread and connect signals
 		self.monitorProgressThread = monitorProgress(self,self.params)
@@ -225,6 +234,8 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			self.updateETAcalculationLabel)
 		self.monitorProgressThread.updateETAcorrelationLabel.connect(
 			self.updateETAcorrelationLabel)
+		self.monitorProgressThread.updateStatusBar.connect(
+			self.updateStatusBar)
 		self.monitorProgressThread.success.connect(self.done)
 		self.stopMonitorProgressThread.connect(self.monitorProgressThread.stop)
 
@@ -243,6 +254,7 @@ class monitorProgress(QtCore.QThread):
 	updateETAfilteringLabel = pyqtSignal(str)
 	updateETAcalculationLabel = pyqtSignal(str)
 	updateETAcorrelationLabel = pyqtSignal(str)
+	updateStatusBar = pyqtSignal(str)
 	success = pyqtSignal()
 
 	def __init__(self,mainWindow,params):
@@ -262,8 +274,6 @@ class monitorProgress(QtCore.QThread):
 		self.mainWindow.progressBar_calculation.setValue(0)
 		self._isRunning = True
 
-		print('Running now!')
-
 		# method for ETA calculation
 		def getETAstring(start_time,current_time,percent):
 			elapsed_time = current_time - start_time
@@ -275,22 +285,28 @@ class monitorProgress(QtCore.QThread):
 		# Monitor filtering steps
 		percent = 0
 		start_time = time.time()
+		lastLogLine = 0
 		while percent != 100 and self._isRunning:
 			oldpercent = percent
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
 			logFile.close()
-			for line in lines:
+			for i in range(0,len(lines)):
+				line = lines[i]
+				if 'DEBUG' in line: continue
 				matches = re.search('.*Filtered pairs percentage:\s(\d+)',line)
 				if matches:
 					newpercent = float(matches.groups()[0])
 					if newpercent > oldpercent:
 						percent = newpercent
 						current_time = time.time()
-						etaString = getETAstring(start_time,current_time,percent)
+						etaString = 'Filtering progress: ' + getETAstring(start_time,current_time,percent)
 						self.updateETAfilteringLabel.emit(etaString)
 						self.incrementFilteringProgressBar.emit(percent)
 						break
+				if i > lastLogLine:
+					self.updateStatusBar.emit(line)
+					lastLogLine = i
 
 		# Monitor calculation
 		continueFlag = False
@@ -298,28 +314,42 @@ class monitorProgress(QtCore.QThread):
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
 			logFile.close()
-			for line in lines:
+			for i in range(0,len(lines)):
+				line = lines[i]
+				if 'DEBUG' in line: continue
 				matches = re.search('.*Started a pairwise energy calculation thread.',line)
 				if matches:
 					continueFlag = True
+					self.updateStatusBar.emit(line)
 					break
+				if i > lastLogLine:
+					self.updateStatusBar.emit(line)
+					lastLogLine = i
+				self.updateStatusBar.emit(line)
 
 		percent = 0
 		start_time = time.time()
 		while percent != 100 and self._isRunning:
 			oldpercent = percent
-			logFile = open('getResIntEn.log','r')
-			logLines = logFile.readlines()
+			logFile = open(self.params.logFile)
+			lines = logFile.readlines()
 			logFile.close()
-			if logLines:
-				numFilteredPairs = int(logLines[1])
-				numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.log'))
-				percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
-				if percent > oldpercent:
-					current_time = time.time()
-					etaString = getETAstring(start_time,current_time,percent)
-					self.updateETAcalculationLabel.emit(etaString)
-					self.incrementCalculationProgressBar.emit(percent)
+			for i in range(0,len(lines)):
+				line = lines[i]
+				if 'DEBUG' in line: continue
+				matches = re.search('.*Number of interaction pairs selected after filtering step:\s(\d+)',line)
+				if matches:
+					numFilteredPairs = int(matches.groups()[0])
+					numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.log'))
+					percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
+					if percent > oldpercent:
+						current_time = time.time()
+						etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
+						self.updateETAcalculationLabel.emit(etaString)
+						self.incrementCalculationProgressBar.emit(percent)
+				if i > lastLogLine:
+					self.updateStatusBar.emit(line)
+					lastLogLine = i
 
 		# Monitor interaction correlation calculation.
 		if self.params.interactCorr and self._isRunning:
@@ -330,18 +360,21 @@ class monitorProgress(QtCore.QThread):
 				logFile = open(self.params.logFile)
 				lines = logFile.readlines()
 				logFile.close()
-				for line in lines:
-					matches = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',
-						line)
+				for i in range(0,len(lines)):
+					line = lines[i]
+					if 'DEBUG' in line: continue
+					matches = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',line)
 					if matches:
 						newpercent = float(matches.groups()[0])
 						if newpercent > oldpercent:
 							percent = newpercent
 							current_time = time.time()
-							etaString = getETAstring(start_time,current_time,percent)
+							etaString = 'Correlation progress: ' + getETAstring(start_time,current_time,percent)
 							self.updateETAcorrelationLabel.emit(etaString)
 							self.incrementCorrelationCalculationProgressBar.emit(percent)
-							break
+					if i > lastLogLine:
+						self.updateStatusBar.emit(line)
+						lastLogLine = i
 
 		if percent == 100:
 			self.success.emit()
@@ -400,6 +433,7 @@ def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
+	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
 	form = DesignInteract()
 	form.show()
 	app.exec_()
