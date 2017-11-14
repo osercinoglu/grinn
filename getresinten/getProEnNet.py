@@ -7,7 +7,7 @@ import pyprind
 import argparse
 import pandas
 
-def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,includeCovalents=True,
+def getKongKarplusNetwork(resCorrFile,pdb,resMeanIntEnFile=False,includeCovalents=True,
 	corrCutoff=0,intEnCutoff=0,outName='resNetwork'):
 
 	# Get the number of residues
@@ -18,7 +18,7 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 	network = nx.Graph()
 
 	for i in range(0,numResidues):
-		network.add_node(int(i))
+		network.add_node(int(i+1))
 
 	# Load the resCorrFile and determine the maximum edge weight
 	resCorrMat = np.loadtxt(resCorrFile)
@@ -28,6 +28,9 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 	# Load average residue interaction matrix, if provided.
 	if resMeanIntEnFile:
 		resIntEnMat = np.loadtxt(resMeanIntEnFile)
+		if len(resIntEnMat) != numResidues:
+			print('Critical error: number of residues in PDB file does not match the size of mean interaction \
+				energy matrix')
 
 	# If covalent bonds are also requested, then
 	# Connect covalently bound residues with edge distance of -log(maxResCorr)
@@ -38,34 +41,16 @@ def getKongKarplusNetwork(resIntCorrFile,resCorrFile,pdb,resMeanIntEnFile=False,
 		
 			# Only connect if the two residues are in the same chain
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(int(i),int(i+1),weight=float(maxResCorr))
+				network.add_edge(int(i+1),int(i+2),weight=float(maxResCorr))
 
-	# Load the resIntCorrFile, get interacting residue pairs and add edges between them
-	# Load the resCorrFile and add edge weights to previously added edges by making them equal to
-	# absolute correlation values. (This only works if includeCovalents is True)
-	df_resIntCorr = pandas.read_csv(resIntCorrFile)
-	
-	progbar = pyprind.ProgBar(len(df_resIntCorr))
-
-	for i in range(0,len(df_resIntCorr)):
-		res1 = int(df_resIntCorr.get_value(i,'res11'))
-		res2 = int(df_resIntCorr.get_value(i,'res12'))
-		res3 = int(df_resIntCorr.get_value(i,'res21'))
-		res4 = int(df_resIntCorr.get_value(i,'res22'))
-
-		# Check whether edges exist between these residues.
-		for [res1_pair,res2_pair] in [[res1,res2],[res3,res4]]:
-			if not network.has_edge(res1_pair-1,res2_pair-1):
-				
-				# Check wheter the user also requested an energy cutoff.
-				# If yes, then add an edge only if the mean interaction energy is above the cutoff.
-				if resMeanIntEnFile:
-					if np.abs(resIntEnMat[res1_pair-1][res2_pair-1]) > intEnCutoff:
-						print('adding a non-covalent edge')
-						network.add_edge(res1_pair-1,res2_pair-1,
-							weight=float(resCorrMat[res1_pair-1,res2_pair-1]))
-
-		progbar.update()
+	# Add edges between significant interactions. (above intEnCutoff)
+	# Assign weights from resCorrMat!
+	if resMeanIntEnFile:
+		for i in range(0,numResidues):
+			for j in range(0,numResidues):
+				if not network.has_edge(i+1,j+1):
+					if np.abs(resIntEnMat[i][j]) > intEnCutoff:
+						network.add_edge(i+1,j+1,weight=float(resCorrMat[i,j]))
 
 	# Write the network to several file formats readable by network analysis packages?
 	nx.write_gml(network,outName+'KongKarplus'+'.gml')
@@ -83,7 +68,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 	network = nx.Graph()
 
 	for i in range(0,numResidues):
-		network.add_node(str(i+1))
+		network.add_node(i+1)
 
 	# Load average residue interaction matrix.
 	resIntEnMat = np.loadtxt(resMeanIntEnFile)
@@ -101,6 +86,9 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 			if X[i,j] > 0.99:
 				X[i,j] = 0.99
 
+			if X[i,j] < 0:
+				print('alert: negative weight')
+
 	# If covalent bonds are also requested, then
 	# Connect covalently bound residues with edge weight of 0.99
 	if includeCovalents:
@@ -111,7 +99,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 			# Only connect if the two residues are in the same chain
 			# Weights as is
 			if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[1]):
-				network.add_edge(str(i+1),str(i+2),weight=X[i,i+1])
+				network.add_edge(i+1,i+2,weight=X[i,i+1])
 
 
 			# Weights with -log
@@ -142,7 +130,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 						continue
 
 					# weights as is
-					network.add_edge(str(i+1),str(j+1),weight=X[i,j])
+					network.add_edge(i+1,j+1,weight=X[i,j])
 					# weights as -log
 					#network.add_edge(i+1,j+1,{'distance':-np.log(X[i,j])})
 
@@ -177,9 +165,6 @@ if __name__ == '__main__':
 	parser.add_argument('--resmeanintenfile',type=str,default=[False],nargs=1,
 		help='Path to the average interaction energy matrix produced by getResIntEn.py')
 
-	parser.add_argument('--resintcorrfile',type=str,default=[False],nargs=1,
-		help='Residue interaction correlation list file produced by getResIntEn.py')
-
 	parser.add_argument('--rescorrfile',type=str,default=[False],nargs=1,
 		help='Residue correlation matrix produced by getResIntEn.py')
 
@@ -205,7 +190,6 @@ if __name__ == '__main__':
 	resMeanIntEnFile = args.resmeanintenfile[0]
 	intEnCutoff = float(args.intencutoff[0])
 	includeCovalents = args.includecovalents
-	resIntCorrFile = args.resintcorrfile[0]
 	resCorrCutoff = float(args.rescorrcutoff[0])
 	resCorrFile = args.rescorrfile[0]
 	outPrefix = args.outprefix[0]
@@ -218,11 +202,11 @@ if __name__ == '__main__':
 	getRibeiroOrtizNetwork(pdb=pdb,resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,
 		intEnCutoff=intEnCutoff,outName=outPrefix)
 
-	if not resIntCorrFile or not resCorrFile:
+	if not resCorrFile:
 		print('Skipping construction of the Kong-Karplus network.')
 	else:
 		print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
-		getKongKarplusNetwork(resIntCorrFile=resIntCorrFile,resCorrFile=resCorrFile,pdb=pdb,
+		getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
 			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
 			intEnCutoff=intEnCutoff,outName=outPrefix)
 	
