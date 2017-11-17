@@ -1,20 +1,47 @@
 #!/usr/bin/env python
 import re
 import numpy as np
+from prody import *
 
-def parseEnergiesSingleCore(filePaths):
+def getChainResnameResnum(pdb,resIndex):
+	# Get a string for chain+resid+resnum when supplied the residue index.
+	selection = pdb.select('resindex %i' % resIndex)
+	chain = selection.getChids()[0]
+	resName = selection.getResnames()[0]
+	resNum = selection.getResnums()[0]
+	string = chain+resName+str(resNum)
+	return string
+
+def getResindex(pdb,chainResnameResnum):
+	# Get the residue index of a chain resname resnum string.
+	matches = re.search('(\D+)(\D{3})(\d+)',chainResNameResnum)
+	if matches:
+		chain = matches.groups()[0]
+		resName = matches.groups()[1]
+		resNum = int(matches.groups()[2])
+		selection = pdb.select('chain %s and resnum %i' % (chain,resNum))
+		resIndex = selection.getResindices()[0]
+		return resIndex
+
+def parseEnergiesSingleCore(filePaths,pdb):
 
 	# Start a dictionary for storing residue-pair energy values
 	energiesDict = dict()
 	for filePath in filePaths:
+		print('parsing: ',filePath)
 		# Get the interaction residues
 		matches = re.search('(\d+)_(\d+)_energies.log',filePath)
 		if not matches:
 			continue 
 
-		# Important!!! Converting from Tcl 0-based indexing to 1 based indexing (more logical.)
-		res1 = int(matches.groups()[0])+1 
-		res2 = int(matches.groups()[1])+1
+		# Get residue indices
+		res1 = int(matches.groups()[0])
+		res2 = int(matches.groups()[1])
+
+		system = parsePDB(pdb)
+		# Get chain-resname-resnum strings
+		res1_string = getChainResnameResnum(system,res1)
+		res2_string = getChainResnameResnum(system,res2)
 
 		# Read in the first line (header) output file and count number of total lines.
 		f = open(filePath,'r')
@@ -37,8 +64,8 @@ def parseEnergiesSingleCore(filePaths):
 			energyOutput[headers[i]] = [line[headerColumns[i]] for line in lines]
 
 		# Puts this energyOutput dict into energies dict with keys as residue ids
-		energiesDict[(res1,res2)] = energyOutput
+		energiesDict[res1_string+'-'+res2_string] = energyOutput
 		# Also store it as res2,res2 (it is the same thing after all)
-		energiesDict[(res2,res1)] = energyOutput
+		energiesDict[res2_string+'-'+res1_string] = energyOutput
 
 	return energiesDict

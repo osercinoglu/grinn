@@ -7,6 +7,7 @@ import re, pickle, types, logging, datetime, psutil, signal, time
 import pandas
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCore
+from common import getChainResnameResnum
 import getResIntCorr
 
 def calcEnergiesSingleCore(args):
@@ -355,14 +356,16 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
-	parsedEnergiesResults = pool.map(parseEnergiesSingleCore,energiesFilePathsChunks)
+	parsedEnergiesResults = pool.starmap(parseEnergiesSingleCore,
+		zip(energiesFilePathsChunks,itertools.repeat(pdb)))
 	
 	# while not parsedEnergiesResults.ready():
 	# 	print("num left: {}".format(parsedEnergiesResults._number_left))
 	# 	time.sleep(1)
 
 	# parsedEnergiesResults = parsedEnergiesResults.get()
-	
+	logger.info('Collecting results...')
+
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
 		parsedEnergies.update(parsedEnergiesResult)
@@ -376,16 +379,21 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 		df_elec[key] = value['Elec']
 		df_vdw[key] = value['VdW']
 
+	logger.info('Saving results to '+outputFolder+'/energies_intEnTotal.csv')
 	df_total.to_csv(outputFolder+'/energies_intEnTotal.csv')
+	logger.info('Saving results to '+outputFolder+'/energies_intEnElec.csv')
 	df_elec.to_csv(outputFolder+'/energies_intEnElec.csv')
+	logger.info('Saving results to '+outputFolder+'/energies_intEnVdW.csv')
 	df_vdw.to_csv(outputFolder+'/energies_intEnVdW.csv')
 
+	logger.info('Saving results to '+outputFolder+'.pickle')
 	# If saving to a pickle is requested:
 	if toPickle:
 		file = open(outputFolder+'.pickle','wb')
 		pickle.dump(parsedEnergies,file)
 		file.close()
 
+	logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
 	if toPickle:
 		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=outputFolder+'/energies')
@@ -394,13 +402,17 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	pool.join()
 
 	if resIntCorr:
+		logger.info('Beginning residue interaction energy correlation calculation...')
 		getResIntCorr.getResIntCorr(inFile=outputFolder+'/'+'energies_intEnTotal.csv',
 			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
 			outPrefix=outputFolder+'/energies',logFile=logFile)
 
+	logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
 	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
 	subprocess.call('rm %s/*temp*' % outputFolder,shell=True)
+
+	logger.info('Computation sucessfully completed. Thank you for using gRINN.')
 	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)

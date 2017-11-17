@@ -4,6 +4,7 @@ import multiprocessing
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
 import re, pickle, types
+from common import getChainResnameResnum
 
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
@@ -29,14 +30,17 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	progbar = pyprind.ProgBar(numResidues*numResidues)
 
 	for i in range(numResidues):
+		i_chainResnameResnum = getChainResnameResnum(sys,i)
 		for j in range(numResidues):
-			if (i+1,j+1) in intEn or (j+1,i+1) in intEn:
-				intEnDict['Elec'][i,j] = np.mean(intEn[(i+1,j+1)]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Elec'][j,i] = np.mean(intEn[(j+1,i+1)]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][i,j] = np.mean(intEn[(i+1,j+1)]['Total'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][j,i] = np.mean(intEn[(j+1,i+1)]['Total'][frameRange[0]:frameRange[1]])
-				intEnDict['VdW'][i,j] = np.mean(intEn[(i+1,j+1)]['VdW'][frameRange[0]:frameRange[1]])
-				intEnDict['VdW'][j,i] = np.mean(intEn[(j+1,i+1)]['VdW'][frameRange[0]:frameRange[1]])
+			j_chainResnameResnum = getChainResnameResnum(sys,j)
+			keyString = i_chainResnameResnum+'-'+j_chainResnameResnum
+			if keyString in intEn:
+				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				intEnDict['Elec'][j,i] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				intEnDict['Total'][i,j] = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
+				intEnDict['Total'][j,i] = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
+				intEnDict['VdW'][i,j] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				intEnDict['VdW'][j,i] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 
 			else:
 				intEnDict['Elec'][i,j] = 0
@@ -59,7 +63,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 		for j in range(0,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
 			if value: # i.e. it it's not equal to zero
-				f.write('%s\t%s\t%s\n' % (str(i+1),str(j+1),str(value)))
+				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(sys,i),getChainResnameResnum(sys,j),str(value)))
 
 	f.close()
 	

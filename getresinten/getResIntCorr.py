@@ -17,6 +17,7 @@ import psutil
 import re
 from prody import *
 from common import parseEnergiesSingleCore
+from common import getChainResnameResnum
 
 def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 	numCores=1,meanIntEnCutoff=float(1),outPrefix=''):
@@ -41,8 +42,8 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 	logger.info('Calculating interaction energy correlations...')
 	for i in range(0,numResidues):
 		for j in range(0,numResidues):
-			df_col1 = '(%i, %i)' % (i+1,j+1)
-			df_col2 = '(%i, %i)' % (j+1,i+1)
+			df_col1 = getChainResnameResnum(system,i)+'-'+getChainResnameResnum(system,j)
+			df_col2 = getChainResnameResnum(system,j)+'-'+getChainResnameResnum(system,i)
 			if df_col1 in df.columns:
 				df_col = df_col1
 			elif df_col2 in df.columns:
@@ -93,7 +94,7 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 			for m in range(0,len(sigindices[0])):
 				row = sigindices[0][m]
 				col = sigindices[1][m]
-				if row != col and i != row and j != col:
+				if row != col and i != row and j != col and not (i == col and j == row): # Excluding correlations with self.
 					key = '-'.join(list(map(str,natsorted([i,row])+natsorted([j,col]))))
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
@@ -114,7 +115,17 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 		res12 = int(matches.groups()[1])
 		res21 = int(matches.groups()[2])
 		res22 = int(matches.groups()[3])
-		df_corr.loc[i] = [res11,res12,res21,res22,sigcorrs[key]]
+
+		res11_string = getChainResnameResnum(system,res11)
+		res12_string = getChainResnameResnum(system,res12)
+		res21_string = getChainResnameResnum(system,res21)
+		res22_string = getChainResnameResnum(system,res22)
+
+		# Do not include correlations with self.
+		#if res11_string == res22_string and res12_string == res21_string:
+		#	continue
+
+		df_corr.loc[i] = [res11_string,res12_string,res21_string,res22_string,sigcorrs[key]]
 
 	df_corr.to_csv(outPrefix+'_resIntCorr.csv')
 
