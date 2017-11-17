@@ -226,6 +226,20 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 		logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
 
+	# Check whether the system has enough memory to multiple processing of the DCD
+	dcdStats = os.stat(dcd)
+	size = dcdStats.st_size
+
+	memory = psutil.virtual_memory()
+
+	if not size*numCores > memory.available*1.1:
+		logger.info('System has enough memory to handle the computation... Continuing...')
+	else:
+		logger.exception('System does not have enough memory to handle the computation. \
+			Please either decrease the number of processors (numCores) or reduce the size of input DCD trajectory. \
+			Aborting now.')
+		return
+
 	logger.info('Writing the system to '+outputFolder+'/system.pdb ...')
 	writePDB(outputFolder+'/system.pdb',system)
 
