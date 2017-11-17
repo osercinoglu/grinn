@@ -227,7 +227,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 		return
 
 	logger.info('Writing the system to '+outputFolder+'/system.pdb ...')
-	writePDB(outputFolder+'/system.pdb')
+	writePDB(outputFolder+'/system.pdb',system)
 
 	numSource = len(sourceCA)
 	sourceResids = sourceCA.getResindices()
