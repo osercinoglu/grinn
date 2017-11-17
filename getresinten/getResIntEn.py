@@ -176,10 +176,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 		 or vice versa. Aborting now.",exc_info=True)
 		return
 
-	# Start a log file (some crude logging functionality!)
-	logFile2 = open('getResIntEn.log','w')
-	logFile2.close()
-
 	# Before we start the calculation, check whether the user has specified and outputFolder.
 	# If yes, check whether it exists. If it exists, change to that directory and do calculations.
 	# If it does not exist, create that directory and change to that directory and do calculations.
@@ -229,6 +225,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	except:
 		logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
+
+	logger.info('Writing the system to '+outputFolder+'/system.pdb ...')
+	writePDB(outputFolder+'/system.pdb')
 
 	numSource = len(sourceCA)
 	sourceResids = sourceCA.getResindices()

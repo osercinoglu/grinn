@@ -15,9 +15,14 @@ matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+from common import getResindex
+from common import getChainResnameResnum
+from prody import *
 
 class viewResultsParams(object):
 	def __init__(self):
+		self.system = None
 		self.outputFolder = None
 		self.intEnMeanTotal = None
 		self.intEnTotal = None
@@ -28,6 +33,7 @@ class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
     def __init__(self, parent=None, width=5, height=4, dpi=100):
         fig = Figure(figsize=(width, height), dpi=dpi)
+        self.fig = fig
         self.axes = fig.add_subplot(111)
         # We want the axes cleared every time plot() is called
         self.axes.hold(False)
@@ -55,15 +61,26 @@ class MyStaticMplCanvas(MyMplCanvas):
         self.axes.plot(t, s)
 
     def update_figure(self,viewResultsParams,type='time-series'):
+    	# Update the figure with new parameters
     	intEnTotal = viewResultsParams.intEnTotal
     	intEnMeanTotal = viewResultsParams.intEnMeanTotal
     	selectedSourceRes = viewResultsParams.selectedSourceRes
     	selectedTargetRes = viewResultsParams.selectedTargetRes
-    	key = str((selectedSourceRes+1,selectedTargetRes+1))
-    	if key not in intEnTotal.columns:
-    		s = np.zeros((len(intEnTotal)))
+    	selSource_string = getChainResnameResnum(viewResultsParams.system,selectedSourceRes)
+    	selTarget_string = getChainResnameResnum(viewResultsParams.system,selectedTargetRes)
+
+    	# Rather complicated to select the correct dict key, but it should work.
+    	key1 = selSource_string+'-'+selTarget_string
+    	key2 = selTarget_string+'-'+selSource_string
+    	if key1 not in intEnTotal.columns:
+    		if key2 not in intEnTotal.columns:
+    			s = np.zeros((len(intEnTotal)))
+    		else:
+    			s = intEnTotal[key2]
+    			key = key2
     	else:
-    		s = intEnTotal[key]
+    		s = intEnTotal[key1]
+    		key = key1
     	
     	t = np.arange(0,len(intEnTotal),1)
 
@@ -86,8 +103,9 @@ class MyStaticMplCanvas(MyMplCanvas):
     		en = data_nonzero['en'].values
     		self.axes.barh(y=np.arange(0,len(res),1),width=en,color="b")
     		self.axes.set_yticks(np.arange(0,len(res),1))
-    		self.axes.set_yticklabels(map(str,res))
-    		matplotlib.pyplot.tight_layout()
+    		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
+    		self.axes.set_xlabel('Mean IE [kcal/mol]')
+    		self.fig.tight_layout()
 
     	elif type=='iem':
     		if len(intEnMeanTotal) > 100:
@@ -96,6 +114,13 @@ class MyStaticMplCanvas(MyMplCanvas):
     			annot = True
     		seaborn.heatmap(intEnMeanTotal,vmax=10,vmin=-10,square=True,
                         cmap=seaborn.color_palette("BrBG", 10),annot=annot,ax=self.axes)
+
+    		xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
+    		xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
+    		self.axes.set_xticks(xticks)
+    		self.axes.set_xticklabels(xticklabels,fontsize=7)
+    		self.axes.set_yticks(xticks)
+    		self.axes.set_yticklabels(xticklabels,fontsize=7)
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
@@ -110,7 +135,8 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		#Ppopulate viewResultsParams object
 		self.viewResultsParams = viewResultsParams()
 
-		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
+		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(
+			["Residue","Residue","IE [kcal/mol]"])
 		
 		# Creating matplotlib canvases
 		self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
@@ -137,6 +163,7 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		if name:
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
+			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system.pdb')
 			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
 				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
 			self.viewResultsParams.intEnTotal = pandas.read_csv(
@@ -152,9 +179,11 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		self.tableWidget_sourceTargetResEnergies.setSortingEnabled(False)
 		for i in range(0,numResidues):
 			self.tableWidget_sourceTargetResEnergies.setItem(
-				i,0,QtWidgets.QTableWidgetItem(str(i+1)))
+				i,0,QtWidgets.QTableWidgetItem(getChainResnameResnum(
+					self.viewResultsParams.system,i)))
 			self.tableWidget_sourceTargetResEnergies.setItem(
-				i,1,QtWidgets.QTableWidgetItem(str(i+1)))
+				i,1,QtWidgets.QTableWidgetItem(getChainResnameResnum(
+					self.viewResultsParams.system,i)))
 
 		self.updateTable(0,0)
 
