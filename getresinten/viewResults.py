@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from common import getResindex
 from common import getChainResnameResnum
 from prody import *
+from pymolwidget import PyMolWidget
 
 class viewResultsParams(object):
 	def __init__(self):
@@ -75,6 +76,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     	if key1 not in intEnTotal.columns:
     		if key2 not in intEnTotal.columns:
     			s = np.zeros((len(intEnTotal)))
+    			key = key2
     		else:
     			s = intEnTotal[key2]
     			key = key2
@@ -85,7 +87,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     	t = np.arange(0,len(intEnTotal),1)
 
     	if type=='time-series':
-    		self.axes.plot(t,s,'b',label=key)
+    		self.axes.plot(t,s,'b',label=key if key else '')
     		self.axes.set_xlabel('Frame')
     		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
 
@@ -152,6 +154,17 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
+		# Creating the PyMolWidget
+		self.ProteinView = PyMolWidget()
+		self.horizontalLayout.addWidget(self.ProteinView)
+		self.ProteinView.show()
+		sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+		sizePolicy.setHorizontalStretch(1)
+		sizePolicy.setVerticalStretch(1)
+		sizePolicy.setHeightForWidth(self.ProteinView.sizePolicy().hasHeightForWidth())
+		self.ProteinView.setSizePolicy(sizePolicy)
+		self.ProteinView.setMaximumSize(QtCore.QSize(600,1000000))
+
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
 		#self.populateGUI()
@@ -189,6 +202,32 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 
 		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
 
+		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
+		self.ProteinView.show()
+
+	def updateProtein(self):
+		# Get selected two residues.
+		selectedSourceRes = self.viewResultsParams.selectedSourceRes
+		selectedTargetRes = self.viewResultsParams.selectedTargetRes
+		source_string = getChainResnameResnum(self.viewResultsParams.system,selectedSourceRes)
+		target_string = getChainResnameResnum(self.viewResultsParams.system,selectedTargetRes)
+
+		# Select all and reset the view
+		#self.ProteinView._pymol.cmd.select('all','all')
+		self.ProteinView._pymol.cmd.show_as('cartoon','all')
+		self.ProteinView._pymol.cmd.color('white','all')
+		self.ProteinView._pymol.cmd.label('all','')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.show_as('sticks','resi '+source_string[4:]+' and chain '+source_string[0])
+		self.ProteinView._pymol.cmd.show_as('sticks','resi '+target_string[4:]+' and chain '+target_string[0])
+		self.ProteinView._pymol.cmd.color('red','resi '+source_string[4:]+' and chain '+source_string[0])
+		self.ProteinView._pymol.cmd.color('red','resi '+target_string[4:]+' and chain '+target_string[0])
+		self.ProteinView._pymol.cmd.set('label_size','-2')
+		self.ProteinView._pymol.cmd.label('resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label('resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymolProcess()
+		#self.ProteinView._pymol.update()
+
 	def updateTable(self,row,column):
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 
@@ -216,12 +255,15 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 			self.viewResultsParams.selectedTargetRes = selectedTargetRes
 			self.intEnTimeSeries.update_figure(self.viewResultsParams,'time-series')
 			self.intEnDistributions.update_figure(self.viewResultsParams,'distribution')
-			pass # to do plot updating an other stuff..
+			
+			# Update the protein structure
+			self.updateProtein()
 
 def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
+	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
 	form = DesignInteract()
 	form.show()
 	app.exec_()
