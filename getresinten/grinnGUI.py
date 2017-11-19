@@ -7,20 +7,21 @@
 # WARNING! All changes made in this file will be lost!
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+import sys
 
 class Ui_gRINN(object):
     def setupUi(self, gRINN):
         gRINN.setObjectName("gRINN")
         gRINN.resize(659, 447)
         icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon.addPixmap(QtGui.QPixmap(sys.path[0]+"/clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         gRINN.setWindowIcon(icon)
         self.centralWidget = QtWidgets.QWidget(gRINN)
         self.centralWidget.setObjectName("centralWidget")
         self.label = QtWidgets.QLabel(self.centralWidget)
         self.label.setGeometry(QtCore.QRect(50, 30, 161, 151))
         self.label.setText("")
-        self.label.setPixmap(QtGui.QPixmap("clover.ico"))
+        self.label.setPixmap(QtGui.QPixmap(sys.path[0]+"/clover.ico"))
         self.label.setScaledContents(True)
         self.label.setObjectName("label")
         self.label_2 = QtWidgets.QLabel(self.centralWidget)
