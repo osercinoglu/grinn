@@ -6,6 +6,7 @@ import numpy as np
 import pyprind
 import argparse
 import pandas
+import os
 
 def getKongKarplusNetwork(resCorrFile,pdb,resMeanIntEnFile=False,includeCovalents=True,
 	corrCutoff=0,intEnCutoff=0,outName='resNetwork'):
@@ -136,11 +137,39 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 
 		progbar.update()
 
-	# Write the network to several file formats readable by network analysis packages?
-	nx.write_gml(network,outName+'RibeiroOrtiz'+'.gml')
+	if outName:
+		# Write the network to several file formats readable by network analysis packages?
+		nx.write_gml(network,outName+'RibeiroOrtiz'+'.gml')
 
 	return network
 
+def getProEnNet(inFolder=False,resMeanIntEnFile=False,resCorrFile=False,includeCovalents=True,intEnCutoff=1,
+	resCorrCutoff=0.4,outPrefix=False):
+	
+	if inFolder:
+		resMeanIntEnFile = inFolder+'/energies_intEnMeanTotal.dat'
+		pdb = inFolder+'/system.pdb'
+		if os.path.exists(inFolder+'/energies_resCorr.dat'):
+			resCorrFile = inFolder+'/energies_resCorr.dat'
+
+	if not resMeanIntEnFile:
+		print('You have to provide the mean interaction energy file.')
+		raise SystemExit(0)
+
+	print('Constructing the Ribeiro-Ortiz network using average residue interaction energies.')
+	networkRO = getRibeiroOrtizNetwork(pdb=pdb,resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,
+		intEnCutoff=intEnCutoff,outName=outPrefix)
+
+	networkKK = False
+	if not resCorrFile:
+		print('Skipping construction of the Kong-Karplus network.')
+	else:
+		print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
+		getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
+			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
+			intEnCutoff=intEnCutoff,outName=outPrefix)
+
+	return networkRO, networkKK
 
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)
@@ -180,6 +209,9 @@ if __name__ == '__main__':
 		help='Residue correlation cutoff for inserting the edges between two residues in Kong-Karplus \
 		network.')
 
+	parser.add_argument('--infolder',type=str,nargs=1,default=[False],
+		help='Output folder specified when calling getResIntEn.py')
+
 	parser.add_argument('--outprefix',type=str,nargs=1,default=['energies_resNetwork_'],
 		help='Output file name prefix')
 
@@ -187,6 +219,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 
 	pdb = args.pdb[0]
+
 	resMeanIntEnFile = args.resmeanintenfile[0]
 	intEnCutoff = float(args.intencutoff[0])
 	includeCovalents = args.includecovalents
@@ -194,20 +227,10 @@ if __name__ == '__main__':
 	resCorrFile = args.rescorrfile[0]
 	outPrefix = args.outprefix[0]
 
-	if not resMeanIntEnFile:
-		print('You have to provide the mean interaction energy file.')
-		raise SystemExit(0)
+	inFolder = args.infolder[0]
 
-	print('Constructing the Ribeiro-Ortiz network using average residue interaction energies.')
-	getRibeiroOrtizNetwork(pdb=pdb,resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,
-		intEnCutoff=intEnCutoff,outName=outPrefix)
-
-	if not resCorrFile:
-		print('Skipping construction of the Kong-Karplus network.')
-	else:
-		print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
-		getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
-			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
-			intEnCutoff=intEnCutoff,outName=outPrefix)
+	_,_ = getProEnNet(inFolder=inFolder,resMeanIntEnFile=resMeanIntEnFile,resCorrFile=resCorrFile,
+		includeCovalents=includeCovalents,intEnCutoff=intEnCutoff,resCorrCutoff=resCorrCutoff,
+		outPrefix=outPrefix)
 	
 	print('Done.')

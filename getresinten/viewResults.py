@@ -18,6 +18,8 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from common import getResindex
 from common import getChainResnameResnum
+import getProEnNet
+import networkx as nx
 from prody import *
 from pymolwidget import PyMolWidget
 
@@ -27,8 +29,10 @@ class viewResultsParams(object):
 		self.outputFolder = None
 		self.intEnMeanTotal = None
 		self.intEnTotal = None
+		self.networkRO = None
 		self.selectedSourceRes = 0
 		self.selectedTargetRes = 0
+		self.selectedShortestPath = None
 
 class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
@@ -128,10 +132,10 @@ class MyStaticMplCanvas(MyMplCanvas):
 
     	self.draw()
 
-class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
+class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 	
 	def __init__(self,parent=None):
-		super(DesignInteract,self).__init__(parent)
+		super(DesignInteractResults,self).__init__(parent)
 		self.setupUi(self)
 
 		#Ppopulate viewResultsParams object
@@ -168,8 +172,11 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
 		#self.populateGUI()
+		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updatePairwiseEnergiesTable)
 
-		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updateTable)
+		self.pushButton_findShortestPaths.clicked.connect(self.findShortestPaths)
+
+		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
@@ -181,6 +188,8 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
 			self.viewResultsParams.intEnTotal = pandas.read_csv(
 				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
+			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
+				self.viewResultsParams.outputFolder)
 			self.populateGUI()
 
 	def populateGUI(self):
@@ -198,14 +207,23 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 				i,1,QtWidgets.QTableWidgetItem(getChainResnameResnum(
 					self.viewResultsParams.system,i)))
 
-		self.updateTable(0,0)
+		self.updatePairwiseEnergiesTable(0,0)
+
+		self.comboBox_SourceResidue.clear()
+		self.comboBox_TargetResidue.clear()
+		chainResnameResnums = [getChainResnameResnum(self.viewResultsParams.system,i) for i in range(0,numResidues)]
+		self.comboBox_SourceResidue.addItems(chainResnameResnums)
+		self.comboBox_TargetResidue.addItems(chainResnameResnums)
+
+		self.tableWidget_ShortestPaths.setColumnCount(1)
+		self.tableWidget_ShortestPaths.setHorizontalHeaderLabels(["Path"])
 
 		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
 
 		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
 		self.ProteinView.show()
 
-	def updateProtein(self):
+	def updateProteinResiduePairs(self):
 		# Get selected two residues.
 		selectedSourceRes = self.viewResultsParams.selectedSourceRes
 		selectedTargetRes = self.viewResultsParams.selectedTargetRes
@@ -215,7 +233,7 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		# Select all and reset the view
 		#self.ProteinView._pymol.cmd.select('all','all')
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
-		self.ProteinView._pymol.cmd.color('white','all')
+		self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
 		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
 		self.ProteinView._pymol.cmd.show_as('sticks','resi '+source_string[4:]+' and chain '+source_string[0])
@@ -228,7 +246,22 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 		self.ProteinView._pymolProcess()
 		#self.ProteinView._pymol.update()
 
-	def updateTable(self,row,column):
+	def updateProteinShortestPaths(self,path):
+		self.ProteinView._pymol.cmd.show_as('cartoon','all')
+		self.ProteinView._pymol.cmd.color('green','all')
+		self.ProteinView._pymol.cmd.label('all','')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		path_split = path.split('-')
+		self.ProteinView._pymol.cmd.set('label_size','-2')
+		for res in path_split:
+			res_pymol_select = 'resi '+res[4:]+' and chain '+res[0]
+			self.ProteinView._pymol.cmd.show_as('sticks',res_pymol_select)
+			self.ProteinView._pymol.cmd.color('red',res_pymol_select)
+			self.ProteinView._pymol.cmd.label(res_pymol_select+' and name ca','"%s%s%s" % (chain,resn,resi)')
+
+		self.ProteinView._pymolProcess()
+
+	def updatePairwiseEnergiesTable(self,row,column):
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 
 		self.tableWidget_sourceTargetResEnergies.setRowCount(numResidues)
@@ -257,14 +290,42 @@ class DesignInteract(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 			self.intEnDistributions.update_figure(self.viewResultsParams,'distribution')
 			
 			# Update the protein structure
-			self.updateProtein()
+			self.updateProteinResiduePairs()
+
+	def findShortestPaths(self):
+		sourceRes_string = str(self.comboBox_SourceResidue.currentText())
+		targetRes_string = str(self.comboBox_TargetResidue.currentText())
+
+		if sourceRes_string and targetRes_string:
+			sourceRes_index = getResindex(self.viewResultsParams.system,sourceRes_string)
+			targetRes_index = getResindex(self.viewResultsParams.system,targetRes_string)
+			try:
+				allpaths = list(nx.all_shortest_paths(self.viewResultsParams.networkRO,
+				sourceRes_index+1,targetRes_index+1))
+			except:
+				QtWidgets.QMessageBox.information(self,"No Paths!","No paths found!")
+				return
+
+			if allpaths:
+				allpaths_string = [[getChainResnameResnum(self.viewResultsParams.system,
+					int(index)-1) for index in path] for path in allpaths]
+				self.tableWidget_ShortestPaths.setRowCount(len(allpaths_string))
+
+				for i in range(0,len(allpaths_string)):
+					path_string = allpaths_string[i]
+					self.tableWidget_ShortestPaths.setItem(
+						i,0,QtWidgets.QTableWidgetItem('-'.join(path_string)))
+
+	def updateShortestPathsTable(self,row,column):
+		selectedPath = str(self.tableWidget_ShortestPaths.item(row,0).text())
+		self.updateProteinShortestPaths(selectedPath)
 
 def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
-	form = DesignInteract()
+	form = DesignInteractResults()
 	form.show()
 	app.exec_()
 

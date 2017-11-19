@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'getresinten/viewResultsGUI.ui'
+# Form implementation generated from reading ui file 'viewResultsGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
@@ -12,6 +12,9 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1000, 592)
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        MainWindow.setWindowIcon(icon)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
@@ -207,26 +210,29 @@ class Ui_MainWindow(object):
         self.label = QtWidgets.QLabel(self.frame_ShortestPathsTop)
         self.label.setObjectName("label")
         self.horizontalLayout_6.addWidget(self.label)
-        self.comboBox = QtWidgets.QComboBox(self.frame_ShortestPathsTop)
-        self.comboBox.setObjectName("comboBox")
-        self.horizontalLayout_6.addWidget(self.comboBox)
+        self.comboBox_SourceResidue = QtWidgets.QComboBox(self.frame_ShortestPathsTop)
+        self.comboBox_SourceResidue.setObjectName("comboBox_SourceResidue")
+        self.horizontalLayout_6.addWidget(self.comboBox_SourceResidue)
         self.label_2 = QtWidgets.QLabel(self.frame_ShortestPathsTop)
         self.label_2.setObjectName("label_2")
         self.horizontalLayout_6.addWidget(self.label_2)
-        self.comboBox_2 = QtWidgets.QComboBox(self.frame_ShortestPathsTop)
-        self.comboBox_2.setObjectName("comboBox_2")
-        self.horizontalLayout_6.addWidget(self.comboBox_2)
+        self.comboBox_TargetResidue = QtWidgets.QComboBox(self.frame_ShortestPathsTop)
+        self.comboBox_TargetResidue.setObjectName("comboBox_TargetResidue")
+        self.horizontalLayout_6.addWidget(self.comboBox_TargetResidue)
+        self.pushButton_findShortestPaths = QtWidgets.QPushButton(self.frame_ShortestPathsTop)
+        self.pushButton_findShortestPaths.setObjectName("pushButton_findShortestPaths")
+        self.horizontalLayout_6.addWidget(self.pushButton_findShortestPaths)
         self.verticalLayout_7.addWidget(self.frame_ShortestPathsTop)
-        self.tableWidget = QtWidgets.QTableWidget(self.tab_ShortestPaths)
+        self.tableWidget_ShortestPaths = QtWidgets.QTableWidget(self.tab_ShortestPaths)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(1)
         sizePolicy.setVerticalStretch(1)
-        sizePolicy.setHeightForWidth(self.tableWidget.sizePolicy().hasHeightForWidth())
-        self.tableWidget.setSizePolicy(sizePolicy)
-        self.tableWidget.setObjectName("tableWidget")
-        self.tableWidget.setColumnCount(0)
-        self.tableWidget.setRowCount(0)
-        self.verticalLayout_7.addWidget(self.tableWidget)
+        sizePolicy.setHeightForWidth(self.tableWidget_ShortestPaths.sizePolicy().hasHeightForWidth())
+        self.tableWidget_ShortestPaths.setSizePolicy(sizePolicy)
+        self.tableWidget_ShortestPaths.setObjectName("tableWidget_ShortestPaths")
+        self.tableWidget_ShortestPaths.setColumnCount(0)
+        self.tableWidget_ShortestPaths.setRowCount(0)
+        self.verticalLayout_7.addWidget(self.tableWidget_ShortestPaths)
         self.tabWidget_2.addTab(self.tab_ShortestPaths, "")
         self.verticalLayout_6.addWidget(self.tabWidget_2)
         self.tabWidget.addTab(self.tab_Network, "")
@@ -239,13 +245,13 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(2)
         self.tabWidget_2.setCurrentIndex(1)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "gRINN: View Results"))
         self.pushButton_selectOutputFolder.setText(_translate("MainWindow", "Select Output Folder"))
         self.tableWidget_sourceTargetResEnergies.setSortingEnabled(True)
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_PairwiseEnergies), _translate("MainWindow", "Pairwise Energies"))
@@ -253,6 +259,7 @@ class Ui_MainWindow(object):
         self.tabWidget_2.setTabText(self.tabWidget_2.indexOf(self.tab_GeneralParameters), _translate("MainWindow", "General Parameters"))
         self.label.setText(_translate("MainWindow", "Source Residue"))
         self.label_2.setText(_translate("MainWindow", "Target Residue"))
+        self.pushButton_findShortestPaths.setText(_translate("MainWindow", "Find"))
         self.tabWidget_2.setTabText(self.tabWidget_2.indexOf(self.tab_ShortestPaths), _translate("MainWindow", "Shortest Paths"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_Network), _translate("MainWindow", "Network Analysis"))
 

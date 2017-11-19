@@ -2,6 +2,7 @@
 import re
 import numpy as np
 from prody import *
+import logging
 
 def getChainResnameResnum(pdb,resIndex):
 	# Get a string for chain+resid+resnum when supplied the residue index.
@@ -14,7 +15,7 @@ def getChainResnameResnum(pdb,resIndex):
 
 def getResindex(pdb,chainResnameResnum):
 	# Get the residue index of a chain resname resnum string.
-	matches = re.search('(\D+)(\D{3})(\d+)',chainResNameResnum)
+	matches = re.search('(\D+)(\D{3})(\d+)',chainResnameResnum)
 	if matches:
 		chain = matches.groups()[0]
 		resName = matches.groups()[1]
@@ -23,12 +24,16 @@ def getResindex(pdb,chainResnameResnum):
 		resIndex = selection.getResindices()[0]
 		return resIndex
 
-def parseEnergiesSingleCore(filePaths,pdb):
+def parseEnergiesSingleCore(filePaths,pdb,logFile):
 
+	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	logger = logging.getLogger(__name__)
 	# Start a dictionary for storing residue-pair energy values
+
 	energiesDict = dict()
 	for filePath in filePaths:
-		print('parsing: ',filePath)
+		logger.info('Parsing: '+filePath)
 		# Get the interaction residues
 		matches = re.search('(\d+)_(\d+)_energies.log',filePath)
 		if not matches:

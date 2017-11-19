@@ -142,6 +142,13 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 
 	logger.info('Started calculation.')
 
+	# Registering signal handler to capture SIGINT.
+	# def signal_handler(signal, frame):
+	# 	print('Captured SIGINT')
+	# 	os._exit(0)
+
+	# signal.signal(signal.SIGINT, signal_handler)
+
 	# ARGUMENT CHECKS
 	# TEMP
 	pairFilterSkip = skip
@@ -342,6 +349,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 			parent.kill()
 			print("suicide: %s" % os.getpid())
 			psutil.Process(os.getpid()).kill()
+			os._exit(0)
 		signal.signal(signal.SIGINT, sig_int)
 	    
 	# Start a pool of processors
@@ -370,7 +378,8 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
 	parsedEnergiesResults = pool.starmap(parseEnergiesSingleCore,
-		zip(energiesFilePathsChunks,itertools.repeat(pdb)))
+		zip(energiesFilePathsChunks,itertools.repeat(pdb),
+			itertools.repeat(logFile)))
 	
 	# while not parsedEnergiesResults.ready():
 	# 	print("num left: {}".format(parsedEnergiesResults._number_left))

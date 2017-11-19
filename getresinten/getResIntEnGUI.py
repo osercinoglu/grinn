@@ -37,12 +37,12 @@ class getResIntEnParams(object):
 		self.interactCorr = False
 		self.interactCorrCutoff = None
 	
-class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
+class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	stopMonitorProgressThread = pyqtSignal()
 	stopMonitorLogThread = pyqtSignal()
 	
 	def __init__(self,parent=None):
-		super(DesignInteract,self).__init__(parent)
+		super(DesignInteractCalculate,self).__init__(parent)
 		self.setupUi(self)
 
 		# Connect callbacks to UI elements
@@ -60,6 +60,15 @@ class DesignInteract(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		# for getResIntEn process
 		self.processGetResIntEn = None
 		self.params = getResIntEnParams()
+
+
+	def closeEvent(self, event):
+			self.stopCalculation()
+			event.accept() # let the window close
+
+	def exitHandler(self):
+		self.stopCalculation(self)
+		os._exit(0)
 
 	def updatePDBPath(self):
 		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
@@ -434,7 +443,8 @@ def main():
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
 	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
-	form = DesignInteract()
+	form = DesignInteractCalculate()
+	#app.aboutToQuit.connect(form.exitHandler)
 	form.show()
 	app.exec_()
 

@@ -11,7 +11,11 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>gRINN: View Results</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>clover.ico</normaloff>clover.ico</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
    <property name="sizePolicy">
@@ -111,7 +115,7 @@
              </size>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>2</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -366,7 +370,7 @@
                       </widget>
                      </item>
                      <item>
-                      <widget class="QComboBox" name="comboBox"/>
+                      <widget class="QComboBox" name="comboBox_SourceResidue"/>
                      </item>
                      <item>
                       <widget class="QLabel" name="label_2">
@@ -376,13 +380,20 @@
                       </widget>
                      </item>
                      <item>
-                      <widget class="QComboBox" name="comboBox_2"/>
+                      <widget class="QComboBox" name="comboBox_TargetResidue"/>
+                     </item>
+                     <item>
+                      <widget class="QPushButton" name="pushButton_findShortestPaths">
+                       <property name="text">
+                        <string>Find</string>
+                       </property>
+                      </widget>
                      </item>
                     </layout>
                    </widget>
                   </item>
                   <item>
-                   <widget class="QTableWidget" name="tableWidget">
+                   <widget class="QTableWidget" name="tableWidget_ShortestPaths">
                     <property name="sizePolicy">
                      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                       <horstretch>1</horstretch>
