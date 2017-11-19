@@ -434,7 +434,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
 	subprocess.call('rm %s/*temp*' % outputFolder,shell=True)
 
-	logger.info('Computation sucessfully completed. Thank you for using gRINN.')
+	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	
 def convert_arg_line_to_args(arg_line):
 	# To override the same method of the ArgumentParser (to read options from a file)

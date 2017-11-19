@@ -385,13 +385,21 @@ class monitorProgress(QtCore.QThread):
 						self.updateStatusBar.emit(line)
 						lastLogLine = i
 
-		if percent == 100:
-			self.success.emit()
-
-		self.incrementCalculationProgressBar.emit(0)
-		self.incrementCorrelationCalculationProgressBar.emit(0)
-
-		self.exit()
+		continueFlag = True
+		if percent == 100 and self._isRunning:
+			while continueFlag is True:
+				logFİle = open(self.params.logFile)
+				lines = logFile.readlines()
+				logFile.close()
+				for i in range(lastLogLine,len(lines)):
+					line = lines[i]
+					self.updateStatusBar.emit(line)
+					lastLogLine = i
+					if 'FINAL: ' in line:
+						self.success.emit()
+						self.incrementCalculationProgressBar.emit(0)
+						self.incrementCorrelationCalculationProgressBar.emit(0)
+						self.exit()
 
 	def stop(self):
 		self._isRunning = False
