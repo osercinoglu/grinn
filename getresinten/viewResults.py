@@ -111,7 +111,6 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_yticks(np.arange(0,len(res),1))
     		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
     		self.axes.set_xlabel('Mean IE [kcal/mol]')
-    		self.fig.tight_layout()
 
     	elif type=='iem':
     		if len(intEnMeanTotal) > 100:
@@ -130,6 +129,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
+    	self.fig.tight_layout()
     	self.draw()
 
 class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
@@ -324,6 +324,7 @@ def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
+	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
 	form = DesignInteractResults()
 	form.show()
