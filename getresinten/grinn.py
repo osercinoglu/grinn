@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 import viewResults
 import getResIntEnGUI
 import grinnGUI
-import sys
+import sys, time
 
 class DesignInteract(QtWidgets.QMainWindow,grinnGUI.Ui_gRINN):
 
@@ -24,10 +24,10 @@ class DesignInteract(QtWidgets.QMainWindow,grinnGUI.Ui_gRINN):
 
 	def viewResults(self):
 		self.formResults = viewResults.DesignInteractResults(self)
+		self.formResults.show()
+		time.sleep(1)
 		folderLoaded = self.formResults.updateOutputFolder()
-		if folderLoaded:
-			self.formResults.show()
-		else:
+		if not folderLoaded:
 			self.formResults.close()
 
 def main():

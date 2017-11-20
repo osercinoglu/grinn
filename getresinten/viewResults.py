@@ -235,6 +235,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
 
 		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
+		self.ProteinView._pymol.idle()
+		self.ProteinView._pymol.draw()
+		self.ProteinView._pymolProcess()
 		self.ProteinView.show()
 
 	def updateProteinResiduePairs(self):
@@ -342,9 +345,10 @@ def main():
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
 	form = DesignInteractResults()
 	# Directly call output folder selection dialog.
+	form.show() # First, show the form, somehow in some systems OpenGL requires to be activated via
+	# showing to the user!
 	folderLoaded = form.updateOutputFolder()
 	if folderLoaded:
-		form.show()
 		app.exec_()
 	else:
 		form.close()

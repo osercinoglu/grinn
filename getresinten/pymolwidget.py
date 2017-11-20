@@ -1,3 +1,5 @@
+#!/usr/local/env python3
+
 from PyQt5.QtOpenGL import *
 from PyQt5 import QtCore
 from PyQt5.Qt import Qt
@@ -14,11 +16,13 @@ class PyMolWidget(QGLWidget):
     def __init__(self, parent=None):
         self._enableUi = False
         f = QGLFormat()
+        print('sucesses')
         f.setStencil(True)
         f.setRgba(True)
         f.setDepth(True)
         f.setDoubleBuffer(True)
         super(PyMolWidget, self).__init__(f, parent)
+        self.initializeGL() # Strangely enough sometimes GL is not initialized!
 
     def initializeGL(self):
         """ 
@@ -51,6 +55,7 @@ class PyMolWidget(QGLWidget):
         self._pymolProcess()
 
     def loadMolFile(self, mol_file):
+        self.initializeGL() # Strangely enough sometimes GL is not initialized!
         self._pymol.cmd.load(str(mol_file))
 
     def _pymolProcess(self):
