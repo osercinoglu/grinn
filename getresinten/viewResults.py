@@ -117,8 +117,11 @@ class MyStaticMplCanvas(MyMplCanvas):
     			annot = False
     		else:
     			annot = True
-    		seaborn.heatmap(intEnMeanTotal,vmax=10,vmin=-10,square=True,
+    		hm = seaborn.heatmap(intEnMeanTotal,vmax=10,vmin=-10,square=True,
                         cmap=seaborn.color_palette("BrBG", 10),annot=annot,ax=self.axes)
+
+    		hm.set_xticklabels(hm.get_xticklabels(), rotation = 60)
+    		hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
 
     		xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
     		xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
@@ -135,7 +138,9 @@ class MyStaticMplCanvas(MyMplCanvas):
 class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
 	
 	def __init__(self,parent=None):
+		
 		super(DesignInteractResults,self).__init__(parent)
+		
 		self.setupUi(self)
 
 		#Ppopulate viewResultsParams object
@@ -179,7 +184,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
 
 	def updateOutputFolder(self):
-		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
+		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select an output folder containing energy calculation results.',os.getcwd()))
 		if name:
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
@@ -191,6 +196,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
 				self.viewResultsParams.outputFolder)
 			self.populateGUI()
+			return True
+		else:
+			return False
 
 	def populateGUI(self):
 
@@ -199,6 +207,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.tableWidget_sourceTargetResEnergies.setColumnCount(3)
 		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
 		self.tableWidget_sourceTargetResEnergies.setSortingEnabled(False)
+		header = self.tableWidget_sourceTargetResEnergies.horizontalHeader()
+		header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+		header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+
 		for i in range(0,numResidues):
 			self.tableWidget_sourceTargetResEnergies.setItem(
 				i,0,QtWidgets.QTableWidgetItem(getChainResnameResnum(
@@ -217,6 +229,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.tableWidget_ShortestPaths.setColumnCount(1)
 		self.tableWidget_ShortestPaths.setHorizontalHeaderLabels(["Path"])
+		header = self.tableWidget_ShortestPaths.horizontalHeader()
+		header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 
 		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
 
@@ -327,8 +341,14 @@ def main():
 	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
 	form = DesignInteractResults()
-	form.show()
-	app.exec_()
+	# Directly call output folder selection dialog.
+	folderLoaded = form.updateOutputFolder()
+	if folderLoaded:
+		form.show()
+		app.exec_()
+	else:
+		form.close()
+		app.quit()
 
 if __name__ == '__main__':
 	main()

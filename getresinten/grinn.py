@@ -24,7 +24,11 @@ class DesignInteract(QtWidgets.QMainWindow,grinnGUI.Ui_gRINN):
 
 	def viewResults(self):
 		self.formResults = viewResults.DesignInteractResults(self)
-		self.formResults.show()
+		folderLoaded = self.formResults.updateOutputFolder()
+		if folderLoaded:
+			self.formResults.show()
+		else:
+			self.formResults.close()
 
 def main():
 	sys_argv = sys.argv
