@@ -65,8 +65,18 @@ class MyStaticMplCanvas(MyMplCanvas):
         s = np.sin(2*np.pi*t)
         self.axes.plot(t, s)
 
-    def update_figure(self,viewResultsParams,type='time-series'):
+    def update_figure(self,mainWindow,type='time-series'):
+
+    	# Get figure canvas (needed later when removing toolbar for some plots below)
+    	try:
+    		win = self.fig.canvas.manager.window
+    	except AttributeError:
+    		win = self.fig.canvas.window()
+
+    	toolbar = win.findChild(QtWidgets.QToolBar)
+
     	# Update the figure with new parameters
+    	viewResultsParams = mainWindow.viewResultsParams
     	intEnTotal = viewResultsParams.intEnTotal
     	intEnMeanTotal = viewResultsParams.intEnMeanTotal
     	selectedSourceRes = viewResultsParams.selectedSourceRes
@@ -132,7 +142,22 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
-    	self.fig.tight_layout()
+    	elif type.startswith('network'):
+    		if type == 'network-bc':
+    			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
+    			title = 'Degree'
+    		elif type == 'network-degree':
+    			metric = dict(nx.degree(viewResultsParams.networkRO))
+    			title = 'Betweenness Centrality'
+
+    		chainResnameResnums = [getChainResnameResnum(viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
+    		self.axes.barh(y=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
+    		self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
+    		self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
+    		self.axes.set_ylim([0,len(metric.keys())])
+    		self.axes.set_title(title)
+
+    	self.fig.set_tight_layout({'pad':0})
     	self.draw()
 
 class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
@@ -163,6 +188,14 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
+		self.degreePlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
+			dpi=100)
+		self.horizontalLayout_4.addWidget(self.degreePlot)
+
+		self.bcPlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
+			dpi=100)
+		self.horizontalLayout_4.addWidget(self.bcPlot)
+
 		# Creating the PyMolWidget
 		self.ProteinView = PyMolWidget()
 		self.horizontalLayout.addWidget(self.ProteinView)
@@ -172,7 +205,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		sizePolicy.setVerticalStretch(1)
 		sizePolicy.setHeightForWidth(self.ProteinView.sizePolicy().hasHeightForWidth())
 		self.ProteinView.setSizePolicy(sizePolicy)
-		self.ProteinView.setMaximumSize(QtCore.QSize(600,1000000))
+		self.ProteinView.setMaximumSize(QtCore.QSize(500,1000000))
+		self.ProteinView.setMaximumSize(QtCore.QSize(1000,1000000))
 
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
@@ -221,6 +255,15 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.updatePairwiseEnergiesTable(0,0)
 
+		bc = nx.betweenness_centrality(self.viewResultsParams.networkRO)
+		numBC = len(bc)
+		newFrameSize = 10*numBC
+		width = self.frame_ResidueMetrics.size().width()
+		self.frame_ResidueMetrics.setMinimumSize(QtCore.QSize(width, newFrameSize))
+
+		self.degreePlot.update_figure(self,'network-degree')
+		self.bcPlot.update_figure(self,'network-bc')
+
 		self.comboBox_SourceResidue.clear()
 		self.comboBox_TargetResidue.clear()
 		chainResnameResnums = [getChainResnameResnum(self.viewResultsParams.system,i) for i in range(0,numResidues)]
@@ -232,7 +275,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		header = self.tableWidget_ShortestPaths.horizontalHeader()
 		header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 
-		self.intEnMeanMat.update_figure(self.viewResultsParams,'iem')
+		self.intEnMeanMat.update_figure(self,'iem')
 
 		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
 		self.ProteinView._pymol.idle()
@@ -298,13 +341,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(QtGui.QColor(100,100,150))
 
 			# plot bar plot of all other interactions with this residue
-			self.intEnBarPlot.update_figure(self.viewResultsParams,'bar-plot')
+			self.intEnBarPlot.update_figure(self,'bar-plot')
 		# if the cell is a target residue
 		elif column in [1,2]:
 			selectedTargetRes = row
 			self.viewResultsParams.selectedTargetRes = selectedTargetRes
-			self.intEnTimeSeries.update_figure(self.viewResultsParams,'time-series')
-			self.intEnDistributions.update_figure(self.viewResultsParams,'distribution')
+			self.intEnTimeSeries.update_figure(self,'time-series')
+			self.intEnDistributions.update_figure(self,'distribution')
 			
 			# Update the protein structure
 			self.updateProteinResiduePairs()
