@@ -388,7 +388,7 @@ class monitorProgress(QtCore.QThread):
 		continueFlag = True
 		if percent == 100 and self._isRunning:
 			while continueFlag is True:
-				logFİle = open(self.params.logFile)
+				logFile = open(self.params.logFile)
 				lines = logFile.readlines()
 				logFile.close()
 				for i in range(lastLogLine,len(lines)):

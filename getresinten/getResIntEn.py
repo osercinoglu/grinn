@@ -431,8 +431,8 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 
 	logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
-	subprocess.call('rm %s/*_energies.log' % outputFolder,shell=True)
-	subprocess.call('rm %s/*temp*' % outputFolder,shell=True)
+	os.remove(glob.glob(outputFolder+'/*_energies.log'))
+	os.remove(glob.glob(outputFolder+'/*temp*'))
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	

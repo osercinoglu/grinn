@@ -36,18 +36,20 @@ class viewResultsParams(object):
 
 class MyMplCanvas(FigureCanvas):
     """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.fig = fig
         self.axes = fig.add_subplot(111)
         # We want the axes cleared every time plot() is called
-        self.axes.hold(False)
 
         #self.compute_initial_figure()
 
         #
         FigureCanvas.__init__(self, fig)
         self.toolbar = NavigationToolbar(fig.canvas, self)
+        if not toolbar:
+            self.toolbar.hide()
+        
         self.setParent(parent)
 
         FigureCanvas.setSizePolicy(self,
@@ -66,15 +68,6 @@ class MyStaticMplCanvas(MyMplCanvas):
         self.axes.plot(t, s)
 
     def update_figure(self,mainWindow,type='time-series'):
-
-    	# Get figure canvas (needed later when removing toolbar for some plots below)
-    	try:
-    		win = self.fig.canvas.manager.window
-    	except AttributeError:
-    		win = self.fig.canvas.window()
-
-    	toolbar = win.findChild(QtWidgets.QToolBar)
-
     	# Update the figure with new parameters
     	viewResultsParams = mainWindow.viewResultsParams
     	intEnTotal = viewResultsParams.intEnTotal
@@ -99,6 +92,8 @@ class MyStaticMplCanvas(MyMplCanvas):
     		key = key1
     	
     	t = np.arange(0,len(intEnTotal),1)
+
+    	self.axes.clear()
 
     	if type=='time-series':
     		self.axes.plot(t,s,'b',label=key if key else '')
@@ -142,13 +137,19 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
+    	elif type == 'network':
+    		
+
     	elif type.startswith('network'):
     		if type == 'network-bc':
     			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Degree'
+    			title = 'Degree \n'
+    		elif type == 'network-cc':
+    			metric = nx.closeness_centrality(viewResultsParams.networkRO)
+    			title = 'Closeness \n centrality'
     		elif type == 'network-degree':
     			metric = dict(nx.degree(viewResultsParams.networkRO))
-    			title = 'Betweenness Centrality'
+    			title = 'Betweenness \n centrality'
 
     		chainResnameResnums = [getChainResnameResnum(viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
     		self.axes.barh(y=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
@@ -164,6 +165,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 	
 	def __init__(self,parent=None):
 		
+		matplotlib.use('Qt5Agg')
 		super(DesignInteractResults,self).__init__(parent)
 		
 		self.setupUi(self)
@@ -180,12 +182,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.verticalLayout_3.addWidget(self.intEnBarPlot)
 
 		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
-			dpi=100)
+			dpi=100,toolbar=True)
 		self.verticalLayout.addWidget(self.intEnTimeSeries)
 		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
 			dpi=100)
 		self.verticalLayout.addWidget(self.intEnDistributions)
-		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100)
+		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
 		self.degreePlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
@@ -195,6 +197,14 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.bcPlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
 			dpi=100)
 		self.horizontalLayout_4.addWidget(self.bcPlot)
+
+		self.ccPlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
+			dpi=100)
+		self.horizontalLayout_4.addWidget(self.ccPlot)
+
+		self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
+			dpi=100)
+		self.verticalLayout_10.addWidget(self.networkPlot)
 
 		# Creating the PyMolWidget
 		self.ProteinView = PyMolWidget()
@@ -255,14 +265,17 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.updatePairwiseEnergiesTable(0,0)
 
+		self.networkPlot.update_figure(self,'network')
+
 		bc = nx.betweenness_centrality(self.viewResultsParams.networkRO)
 		numBC = len(bc)
 		newFrameSize = 10*numBC
 		width = self.frame_ResidueMetrics.size().width()
 		self.frame_ResidueMetrics.setMinimumSize(QtCore.QSize(width, newFrameSize))
-
+		
 		self.degreePlot.update_figure(self,'network-degree')
 		self.bcPlot.update_figure(self,'network-bc')
+		self.ccPlot.update_figure(self,'network-cc')
 
 		self.comboBox_SourceResidue.clear()
 		self.comboBox_TargetResidue.clear()
