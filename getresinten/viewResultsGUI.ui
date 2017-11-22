@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1000</width>
-    <height>592</height>
+    <width>1053</width>
+    <height>691</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -121,7 +121,7 @@
              <enum>QTabWidget::Rounded</enum>
             </property>
             <property name="currentIndex">
-             <number>2</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -190,7 +190,7 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>100</width>
+                  <width>200</width>
                   <height>0</height>
                  </size>
                 </property>
@@ -223,7 +223,7 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>200</width>
+                  <width>400</width>
                   <height>0</height>
                  </size>
                 </property>
@@ -412,7 +412,7 @@
                    <widget class="QScrollArea" name="scrollArea_Degree">
                     <property name="maximumSize">
                      <size>
-                      <width>400</width>
+                      <width>16777215</width>
                       <height>16777215</height>
                      </size>
                     </property>
@@ -430,8 +430,8 @@
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>400</width>
-                       <height>369</height>
+                       <width>955</width>
+                       <height>468</height>
                       </rect>
                      </property>
                      <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -441,7 +441,7 @@
                       <item>
                        <widget class="QFrame" name="frame_ResidueMetrics">
                         <property name="sizePolicy">
-                         <sizepolicy hsizetype="Ignored" vsizetype="Maximum">
+                         <sizepolicy hsizetype="MinimumExpanding" vsizetype="Maximum">
                           <horstretch>1</horstretch>
                           <verstretch>1</verstretch>
                          </sizepolicy>

@@ -40,11 +40,11 @@ class MyMplCanvas(FigureCanvas):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.fig = fig
         self.axes = fig.add_subplot(111)
+        #self.axes.clear()
         # We want the axes cleared every time plot() is called
 
         #self.compute_initial_figure()
 
-        #
         FigureCanvas.__init__(self, fig)
         self.toolbar = NavigationToolbar(fig.canvas, self)
         if not toolbar:
@@ -56,9 +56,13 @@ class MyMplCanvas(FigureCanvas):
                 QSizePolicy.Expanding,
                 QSizePolicy.Expanding)
         FigureCanvas.updateGeometry(self)
+        self.draw()
 
     def compute_initial_figure(self):
-        pass
+        t = np.arange(0.0, 3.0, 0.01)
+        s = np.sin(2*np.pi*t)
+        self.axes.plot(t, s)
+        self.axes.clear()
 
 class MyStaticMplCanvas(MyMplCanvas):
     """Simple canvas with a sine plot."""
@@ -66,6 +70,7 @@ class MyStaticMplCanvas(MyMplCanvas):
         t = np.arange(0.0, 3.0, 0.01)
         s = np.sin(2*np.pi*t)
         self.axes.plot(t, s)
+        self.axes.clear()
 
     def update_figure(self,mainWindow,type='time-series'):
     	# Update the figure with new parameters
@@ -137,8 +142,8 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
-    	elif type == 'network':
-    		
+    	# elif type == 'network':
+    	# 	nx.draw_circular(viewResultsParams.networkRO)
 
     	elif type.startswith('network'):
     		if type == 'network-bc':
@@ -202,9 +207,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			dpi=100)
 		self.horizontalLayout_4.addWidget(self.ccPlot)
 
-		self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
-			dpi=100)
-		self.verticalLayout_10.addWidget(self.networkPlot)
+		#self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
+		#	dpi=100)
+		#self.verticalLayout_10.addWidget(self.networkPlot)
 
 		# Creating the PyMolWidget
 		self.ProteinView = PyMolWidget()
@@ -265,13 +270,14 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.updatePairwiseEnergiesTable(0,0)
 
-		self.networkPlot.update_figure(self,'network')
+		#self.networkPlot.update_figure(self,'network')
 
 		bc = nx.betweenness_centrality(self.viewResultsParams.networkRO)
 		numBC = len(bc)
 		newFrameSize = 10*numBC
 		width = self.frame_ResidueMetrics.size().width()
 		self.frame_ResidueMetrics.setMinimumSize(QtCore.QSize(width, newFrameSize))
+		self.update()
 		
 		self.degreePlot.update_figure(self,'network-degree')
 		self.bcPlot.update_figure(self,'network-bc')
@@ -403,12 +409,24 @@ def main():
 	# Directly call output folder selection dialog.
 	form.show() # First, show the form, somehow in some systems OpenGL requires to be activated via
 	# showing to the user!
+
+	#Skip through tab widgets to show each GUI component (apparently necessary for plots to draw correctly...
+	form.tabWidget.setCurrentIndex(0)
+	form.tabWidget.setCurrentIndex(2)
+	form.tabWidget.setCurrentIndex(3)
+	form.tabWidget_2.setCurrentIndex(0)
+	form.tabWidget_2.setCurrentIndex(1)
+	form.tabWidget_2.setCurrentIndex(2)
+	form.tabWidget_2.setCurrentIndex(0)
+	form.tabWidget.setCurrentIndex(0)
+
 	folderLoaded = form.updateOutputFolder()
 	if folderLoaded:
 		app.exec_()
 	else:
-		form.close()
-		app.quit()
+		app.exec_()
+		#form.close()
+		#app.quit()
 
 if __name__ == '__main__':
 	main()

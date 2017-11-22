@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'getresinten/viewResultsGUI.ui'
+# Form implementation generated from reading ui file 'viewResultsGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
@@ -11,7 +11,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1000, 592)
+        MainWindow.resize(1053, 691)
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         MainWindow.setWindowIcon(icon)
@@ -112,7 +112,7 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.frame_tabPairWiseEnergiesBarPlot.sizePolicy().hasHeightForWidth())
         self.frame_tabPairWiseEnergiesBarPlot.setSizePolicy(sizePolicy)
-        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(100, 0))
+        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(200, 0))
         self.frame_tabPairWiseEnergiesBarPlot.setMaximumSize(QtCore.QSize(100, 16777215))
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShadow(QtWidgets.QFrame.Raised)
@@ -127,7 +127,7 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.frame_tabPairWiseEnergiesPlots.sizePolicy().hasHeightForWidth())
         self.frame_tabPairWiseEnergiesPlots.setSizePolicy(sizePolicy)
-        self.frame_tabPairWiseEnergiesPlots.setMinimumSize(QtCore.QSize(200, 0))
+        self.frame_tabPairWiseEnergiesPlots.setMinimumSize(QtCore.QSize(400, 0))
         self.frame_tabPairWiseEnergiesPlots.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.frame_tabPairWiseEnergiesPlots.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_tabPairWiseEnergiesPlots.setObjectName("frame_tabPairWiseEnergiesPlots")
@@ -234,20 +234,20 @@ class Ui_MainWindow(object):
         self.verticalLayout_9.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout_9.setObjectName("verticalLayout_9")
         self.scrollArea_Degree = QtWidgets.QScrollArea(self.tab_ResidueMetrics)
-        self.scrollArea_Degree.setMaximumSize(QtCore.QSize(400, 16777215))
+        self.scrollArea_Degree.setMaximumSize(QtCore.QSize(16777215, 16777215))
         self.scrollArea_Degree.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.scrollArea_Degree.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustIgnored)
         self.scrollArea_Degree.setWidgetResizable(True)
         self.scrollArea_Degree.setObjectName("scrollArea_Degree")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 400, 369))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 955, 468))
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.scrollAreaWidgetContents)
         self.horizontalLayout_4.setSizeConstraint(QtWidgets.QLayout.SetMaximumSize)
         self.horizontalLayout_4.setContentsMargins(0, 0, 0, 0)
         self.horizontalLayout_4.setObjectName("horizontalLayout_4")
         self.frame_ResidueMetrics = QtWidgets.QFrame(self.scrollAreaWidgetContents)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Maximum)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.MinimumExpanding, QtWidgets.QSizePolicy.Maximum)
         sizePolicy.setHorizontalStretch(1)
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.frame_ResidueMetrics.sizePolicy().hasHeightForWidth())
@@ -323,8 +323,8 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(2)
-        self.tabWidget_2.setCurrentIndex(0)
+        self.tabWidget.setCurrentIndex(0)
+        self.tabWidget_2.setCurrentIndex(1)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
