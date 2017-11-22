@@ -9,7 +9,7 @@ import pandas
 import os
 
 def getKongKarplusNetwork(resCorrFile,pdb,resMeanIntEnFile=False,includeCovalents=True,
-	corrCutoff=0,intEnCutoff=0,outName='resNetwork'):
+	corrCutoff=0,intEnCutoff=0,outName=False):
 
 	# Get the number of residues
 	sys = parsePDB(pdb)
@@ -53,8 +53,9 @@ def getKongKarplusNetwork(resCorrFile,pdb,resMeanIntEnFile=False,includeCovalent
 					if np.abs(resIntEnMat[i][j]) > intEnCutoff:
 						network.add_edge(i+1,j+1,weight=float(resCorrMat[i,j]))
 
-	# Write the network to several file formats readable by network analysis packages?
-	nx.write_gml(network,outName+'KongKarplus'+'.gml')
+	if outName:
+		# Write the network to several file formats readable by network analysis packages?
+		nx.write_gml(network,outName+'KongKarplus'+'.gml')
 
 	return network
 

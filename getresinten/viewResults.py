@@ -35,34 +35,41 @@ class viewResultsParams(object):
 		self.selectedShortestPath = None
 
 class MyMplCanvas(FigureCanvas):
-    """Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
-    def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
-        fig = Figure(figsize=(width, height), dpi=dpi)
-        self.fig = fig
-        self.axes = fig.add_subplot(111)
-        #self.axes.clear()
-        # We want the axes cleared every time plot() is called
+	"""Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
+	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
+		fig = Figure(figsize=(width, height), dpi=dpi)
+		self.fig = fig
+		self.axes = fig.add_subplot(111)
+		#self.axes.clear()
+		# We want the axes cleared every time plot() is called
 
-        #self.compute_initial_figure()
+		#self.compute_initial_figure()
 
-        FigureCanvas.__init__(self, fig)
-        self.toolbar = NavigationToolbar(fig.canvas, self)
-        if not toolbar:
-            self.toolbar.hide()
-        
-        self.setParent(parent)
+		FigureCanvas.__init__(self, fig)
+		self.toolbar = NavigationToolbar(fig.canvas, self)
+		if not toolbar:
+			self.toolbar.hide()
+		
+		self.setParent(parent)
 
-        FigureCanvas.setSizePolicy(self,
-                QSizePolicy.Expanding,
-                QSizePolicy.Expanding)
-        FigureCanvas.updateGeometry(self)
-        self.draw()
+		def onclick(event):
+			print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' % 
+				('double' if event.dblclick else 'single', event.button,
+			event.x, event.y, event.xdata, event.ydata))
 
-    def compute_initial_figure(self):
-        t = np.arange(0.0, 3.0, 0.01)
-        s = np.sin(2*np.pi*t)
-        self.axes.plot(t, s)
-        self.axes.clear()
+		cid = fig.canvas.mpl_connect('button_press_event', onclick)
+
+		FigureCanvas.setSizePolicy(self,
+			QSizePolicy.Expanding,
+			QSizePolicy.Expanding)
+		FigureCanvas.updateGeometry(self)
+		self.draw()
+
+    # def compute_initial_figure(self):
+    #     t = np.arange(0.0, 3.0, 0.01)
+    #     s = np.sin(2*np.pi*t)
+    #     self.axes.plot(t, s)
+    #     self.axes.clear()
 
 class MyStaticMplCanvas(MyMplCanvas):
     """Simple canvas with a sine plot."""
@@ -241,7 +248,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
 				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
 			self.viewResultsParams.intEnTotal = pandas.read_csv(
-				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
+				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv',nrows=100) # Remove nrows when not needed!
 			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
 				self.viewResultsParams.outputFolder)
 			self.populateGUI()
