@@ -19,6 +19,9 @@ def calcEnergiesSingleCore(args):
 	dcdFilePath = args[3]
 	skip = args[4]
 	frameRange = args[5]
+	environment = args[6]
+	soluteDielectric = args[7]
+	solventDielectric = args[8]
 
 	# If frameRange is False, then the user did not request a frame range and thus
 	# wants to include all frames in the analysis. In this case create an array 
@@ -26,10 +29,10 @@ def calcEnergiesSingleCore(args):
 	if frameRange == False:
 		frameRange = [0,-1]
 
-	outputFolder = args[6]
-	namd2exe = args[7]
-	paramFile = args[8]
-	logFile = args[9]
+	outputFolder = args[9]
+	namd2exe = args[10]
+	paramFile = args[11]
+	logFile = args[12]
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -39,7 +42,7 @@ def calcEnergiesSingleCore(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
-		outputFolder,namd2exe,paramFile,logger):
+		environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger):
 		for pair in pairsFiltered:
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
@@ -80,7 +83,14 @@ def calcEnergiesSingleCore(args):
 			f.write('temperature 0\n')
 			f.write('COMmotion yes\n')
 			f.write('cutoff 12\n')
-			f.write('dielectric 1.0\n')
+			
+			if environment == 'implicit-solvent':
+				f.write('GBIS on\n')
+				f.write('solventDielectric %d\n' % solventDielectric)
+				f.write('soluteDielectric %d\n' % soluteDielectric)
+			elif environment == 'vacuum':
+				f.write('dielectric 1.0\n')
+
 			f.write('switchdist 1.0\n')
 			f.write('pairInteraction on\n')
 			f.write('pairInteractionGroup1 1\n')
@@ -131,9 +141,9 @@ def calcEnergiesSingleCore(args):
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
-def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCutoff,
-	pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,outputFolder,namd2exe,paramFile,
-	resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
+def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDielectric,solventDielectric,
+	pairCalc,pairFilterCutoff,pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,
+	outputFolder,namd2exe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -246,7 +256,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 	memory = psutil.virtual_memory()
 
 	if not size*numCores > memory.available*1.1:
-		logger.info('System has enough memory to handle the computation... Continuing...')
+		logger.info('System has enough memory to handle the computation... Proceeding...')
 	else:
 		logger.exception('System does not have enough memory to handle the computation. \
 			Please either decrease the number of processors (numCores) or reduce the size of input DCD trajectory. \
@@ -367,6 +377,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,pairCalc,pairFilterCuto
 			itertools.repeat(dcd),
 			itertools.repeat(skip),
 			itertools.repeat(frameRange),
+			itertools.repeat(environment),
+			itertools.repeat(soluteDielectric),
+			itertools.repeat(solventDielectric),
 			itertools.repeat(outputFolder),
 			itertools.repeat(namd2exe),
 			itertools.repeat(paramFile),
@@ -479,6 +492,15 @@ if __name__ == '__main__':
 		defaults to 1 (no parallel computation will be done). If specified, e.g. NUMCORES=n, \
 		then the computational workloading will be distributed among n cores.')
 
+	parser.add_argument('--environment',default=['vacuum'],choices=[['vacuum','implicit-solvent']],type=str,nargs=1,
+		help='Environment representation used during interaction energy calculation.')
+
+	parser.add_argument('--solutedielectric',default=[1],type=int,nargs=1,
+		help='Solute dielectric constant')
+
+	parser.add_argument('--solventdielectric',default=[78.5],type=int,nargs=1,
+		help='Solvent dielectric constant')
+
 	parser.add_argument('--sourcesel',default=['all'],nargs='+',help='A ProDy atom selection \
 	 string which determines the first group of selected residues. ')
 
@@ -547,6 +569,11 @@ if __name__ == '__main__':
 	frameRange = args.framerange
 	skip = args.skip[0]
 
+	environment = args.environment[0]
+
+	solventDielectric = args.solventdielectric[0]
+	soluteDielectric = args.solutedielectric[0]
+
 	pairCalc = args.paircalc
 	pairFilterCutoff = args.pairfiltercutoff[0]
 	pairFilterBasis = args.pairfilterbasis[0]
@@ -570,7 +597,8 @@ if __name__ == '__main__':
 	resIntCorrAverageIntEnCutoff = args.resintcorraverageintencutoff[0]
 
 	getResIntEn(psf=psf,pdb=pdb,dcd=dcd,numCores=numCores,
-		sourceSel=sourceSel,targetSel=targetSel,
+		sourceSel=sourceSel,targetSel=targetSel,environment=environment,
+		soluteDielectric=soluteDielectric,solventDielectric=solventDielectric,
 		pairCalc=pairCalc,pairFilterCutoff=pairFilterCutoff,pairFilterBasis=pairFilterBasis,
 		pairFilterPercentage=pairFilterPercentage,pairFilterSkip=pairFilterSkip,
 		skip=skip,frameRange=frameRange,resIntCorr=resIntCorr,

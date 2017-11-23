@@ -33,7 +33,7 @@
     <property name="geometry">
      <rect>
       <x>460</x>
-      <y>360</y>
+      <y>350</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -46,7 +46,7 @@
     <property name="geometry">
      <rect>
       <x>250</x>
-      <y>290</y>
+      <y>280</y>
       <width>271</width>
       <height>24</height>
      </rect>
@@ -59,7 +59,7 @@
     <property name="geometry">
      <rect>
       <x>250</x>
-      <y>320</y>
+      <y>310</y>
       <width>271</width>
       <height>24</height>
      </rect>
@@ -142,7 +142,7 @@
     <property name="geometry">
      <rect>
       <x>460</x>
-      <y>400</y>
+      <y>390</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -260,7 +260,7 @@
       <x>520</x>
       <y>10</y>
       <width>21</width>
-      <height>461</height>
+      <height>481</height>
      </rect>
     </property>
     <property name="orientation">
@@ -340,6 +340,9 @@
       <width>231</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Protein Data Bank File&lt;/span&gt;: The PDB file describing the coordinates of your system.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>Browse for PDB File</string>
@@ -542,7 +545,7 @@
     <property name="geometry">
      <rect>
       <x>130</x>
-      <y>290</y>
+      <y>280</y>
       <width>109</width>
       <height>21</height>
      </rect>
@@ -558,7 +561,7 @@
     <property name="geometry">
      <rect>
       <x>130</x>
-      <y>320</y>
+      <y>310</y>
       <width>109</width>
       <height>21</height>
      </rect>
@@ -599,10 +602,10 @@
      <enum>Qt::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QRadioButton" name="radioButton">
+   <widget class="QRadioButton" name="radioButton_Vacuum">
     <property name="geometry">
      <rect>
-      <x>260</x>
+      <x>240</x>
       <y>200</y>
       <width>106</width>
       <height>20</height>
@@ -611,8 +614,11 @@
     <property name="text">
      <string>Vacuum</string>
     </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
    </widget>
-   <widget class="QRadioButton" name="radioButton_2">
+   <widget class="QRadioButton" name="radioButton_ImplicitSolvent">
     <property name="geometry">
      <rect>
       <x>350</x>
@@ -623,6 +629,86 @@
     </property>
     <property name="text">
      <string>Implicit Solvent (GB)</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_3">
+    <property name="geometry">
+     <rect>
+      <x>0</x>
+      <y>200</y>
+      <width>211</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Environment</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_8">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>240</y>
+      <width>201</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Solute dielectric</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="doubleSpinBox_soluteDielectric">
+    <property name="geometry">
+     <rect>
+      <x>250</x>
+      <y>240</y>
+      <width>62</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <double>80.000000000000000</double>
+    </property>
+    <property name="value">
+     <double>1.000000000000000</double>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_9">
+    <property name="geometry">
+     <rect>
+      <x>340</x>
+      <y>240</y>
+      <width>111</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Solvent dielectric</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="doubleSpinBox_solventDielectric">
+    <property name="geometry">
+     <rect>
+      <x>460</x>
+      <y>240</y>
+      <width>62</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="maximum">
+     <double>100.000000000000000</double>
+    </property>
+    <property name="value">
+     <double>78.500000000000000</double>
     </property>
    </widget>
   </widget>
