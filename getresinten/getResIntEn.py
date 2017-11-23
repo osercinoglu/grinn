@@ -62,6 +62,10 @@ def calcEnergiesSingleCore(args):
 			
 			namdConf = '%s/%s_%s-temp.namd' % (outputFolder,pair[0],pair[1])
 			f = open(namdConf,'w')
+			
+			# SIMPLY TESTING GB IMPLICIT SOLVATION (TEMPORARY!)
+			f.write('GBIS on\n')
+
 			f.write('structure %s\n' % psfFilePath)
 			f.write('paraTypeCharmm on\n')
 			if paramFile:
@@ -90,6 +94,8 @@ def calcEnergiesSingleCore(args):
 			f.write('\tfirstTimeStep $ts\n')
 			f.write('\trun 0\n')
 			f.write('\tincr ts 1\n')
+			for i in range(0,skip-1,1):
+			 	f.write('\tcoorfile skip\n')
 			f.write('}\n')
 			f.write('coorfile close')
 			f.close()
