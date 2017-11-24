@@ -26,6 +26,9 @@ class getResIntEnParams(object):
 		self.dcd = None
 		self.sourceSel = None
 		self.targetSel = None
+		self.environment = 'vacuum'
+		self.soluteDielectric = 1
+		self.solventDielectric = 78.5
 		self.pairFilterPercentage = None
 		self.prePairFilterCutoff = None
 		self.pairFilterCutoff = None
@@ -53,6 +56,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_browseOutputFolder.clicked.connect(self.updateOutputFolder)
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
 		self.pushButton_BrowseParameterFile.clicked.connect(self.updateParameterFilePath)
+		self.radioButton_Vacuum.toggled.connect(self.updateEnvironment)
+		self.radioButton_ImplicitSolvent.toggled.connect(self.updateEnvironment)
 		self.pushButton_Stop.clicked.connect(self.stopCalculation)
 		self.pushButton_viewResults.clicked.connect(self.viewResults)
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
@@ -69,6 +74,16 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def exitHandler(self):
 		self.stopCalculation(self)
 		os._exit(0)
+
+	def updateEnvironment(self):
+		if self.radioButton_Vacuum.isChecked():
+			self.params.environment = 'vacuum'
+			#self.doubleSpinBox_soluteDielectric.setEnabled(False)
+			self.doubleSpinBox_solventDielectric.setEnabled(False)
+		elif self.radioButton_ImplicitSolvent.isChecked():
+			self.params.environment = 'implicit-solvent'
+			self.doubleSpinBox_soluteDielectric.setEnabled(True)
+			self.doubleSpinBox_solventDielectric.setEnabled(True)
 
 	def updatePDBPath(self):
 		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
@@ -131,8 +146,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def done(self):
 		self.resetProgressElements()
-		self.monitorProgressThread.exit()
-		self.monitorLogThread.exit()
+		#self.monitorProgressThread.exit()
+		#self.monitorLogThread.exit()
 		QtWidgets.QMessageBox.information(self,"Done!","Done with computation!")
 
 	def error(self,message):
@@ -193,11 +208,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.params.dcdFile = self.lineEdit_dcd.text()
 		self.params.sourceSel = self.lineEdit_residueGroup1.text()
 		self.params.targetSel = self.lineEdit_residueGroup2.text()
-		self.params.pairFilterPercentage = self.doubleSpinBox_filteringPercent.value()
-		self.params.pairFilterCutoff = self.doubleSpinBox_filteringCutoff.value()
+		self.params.soluteDielectric = float(self.doubleSpinBox_soluteDielectric.value())
+		self.params.solventDielectric = float(self.doubleSpinBox_solventDielectric.value())
+		self.params.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
+		self.params.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
 		self.params.numCores = self.spinBox_numProcessors.value()
 		self.params.skip = int(self.doubleSpinBox_dcdStride.value())
-		self.params.outputFolder = self.lineEdit_outputFolder.text()
+		self.params.outputFolder = os.path.abspath(self.lineEdit_outputFolder.text())
 		self.params.namd2exe = self.lineEdit_namd2.text()
 		self.params.paramFile = self.lineEdit_parameterFile.text()
 		self.params.interactCorrAverageIntEnCutoff = self.doubleSpinBox_AverageIntEnCutoff.value()
@@ -214,6 +231,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			kwargs={'psf':self.params.psfFile,'pdb':self.params.pdbFile,
 			'dcd':self.params.dcdFile,'numCores':self.params.numCores,
 			'sourceSel':self.params.sourceSel,'targetSel':self.params.targetSel,
+			'environment':self.params.environment,'soluteDielectric':self.params.soluteDielectric,
+			'solventDielectric':self.params.solventDielectric,
 			'pairCalc':True,'pairFilterCutoff':self.params.pairFilterCutoff,
 			'pairFilterPercentage':self.params.pairFilterPercentage*0.1,
 			'skip':self.params.skip,'namd2exe':self.params.namd2exe,
@@ -397,8 +416,10 @@ class monitorProgress(QtCore.QThread):
 					lastLogLine = i
 					if 'FINAL: ' in line:
 						self.success.emit()
+						continueFlag = False
 						self.incrementCalculationProgressBar.emit(0)
 						self.incrementCorrelationCalculationProgressBar.emit(0)
+						self._isRunning = False
 						self.exit()
 
 	def stop(self):

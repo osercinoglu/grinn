@@ -4,7 +4,7 @@ import multiprocessing
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
 import re, pickle, types, logging, datetime, psutil, signal, time
-import pandas
+import pandas, glob
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCore
 from common import getChainResnameResnum
@@ -19,9 +19,10 @@ def calcEnergiesSingleCore(args):
 	dcdFilePath = args[3]
 	skip = args[4]
 	frameRange = args[5]
-	environment = args[6]
-	soluteDielectric = args[7]
-	solventDielectric = args[8]
+	pairFilterCutoff = args[6]
+	environment = args[7]
+	soluteDielectric = args[8]
+	solventDielectric = args[9]
 
 	# If frameRange is False, then the user did not request a frame range and thus
 	# wants to include all frames in the analysis. In this case create an array 
@@ -29,10 +30,10 @@ def calcEnergiesSingleCore(args):
 	if frameRange == False:
 		frameRange = [0,-1]
 
-	outputFolder = args[9]
-	namd2exe = args[10]
-	paramFile = args[11]
-	logFile = args[12]
+	outputFolder = args[10]
+	namd2exe = args[11]
+	paramFile = args[12]
+	logFile = args[13]
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -42,7 +43,8 @@ def calcEnergiesSingleCore(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
-		environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger):
+		pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
+		logger):
 		for pair in pairsFiltered:
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
@@ -65,9 +67,6 @@ def calcEnergiesSingleCore(args):
 			
 			namdConf = '%s/%s_%s-temp.namd' % (outputFolder,pair[0],pair[1])
 			f = open(namdConf,'w')
-			
-			# SIMPLY TESTING GB IMPLICIT SOLVATION (TEMPORARY!)
-			f.write('GBIS on\n')
 
 			f.write('structure %s\n' % psfFilePath)
 			f.write('paraTypeCharmm on\n')
@@ -78,20 +77,25 @@ def calcEnergiesSingleCore(args):
 			else:
 				f.write('parameters %s\n' % (sys.path[0]+'/par_all27_prot_lipid_na.inp'))
 			f.write('numsteps 1\n')
+			f.write('switching off\n')
 			f.write('exclude scaled1-4\n')
 			f.write('outputname %i_%i-temp\n' % (pair[0],pair[1]))
 			f.write('temperature 0\n')
 			f.write('COMmotion yes\n')
-			f.write('cutoff 12\n')
+			f.write('cutoff %d\n' % pairFilterCutoff)
 			
 			if environment == 'implicit-solvent':
 				f.write('GBIS on\n')
 				f.write('solventDielectric %d\n' % solventDielectric)
-				f.write('soluteDielectric %d\n' % soluteDielectric)
+				f.write('dielectric %d\n' % soluteDielectric)
+				f.write('alphaCutoff %d\n' % (float(pairFilterCutoff)-3)) # Setting GB radius to cutoff for now. We might want to change this behaviour later.
+				f.write('SASA on\n')
 			elif environment == 'vacuum':
-				f.write('dielectric 1.0\n')
+				f.write('dielectric %d\n' % soluteDielectric)
+			else:
+				f.write('#environment is %s\n' % str(environment))
 
-			f.write('switchdist 1.0\n')
+			f.write('switchdist 10.0\n')
 			f.write('pairInteraction on\n')
 			f.write('pairInteractionGroup1 1\n')
 			f.write('pairInteractionFile %s\n' % pairIntPDB)
@@ -133,7 +137,7 @@ def calcEnergiesSingleCore(args):
 
 	for pairsFilteredChunk in pairsFilteredChunks:
 		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
-			outputFolder,namd2exe,paramFile,logger)
+			pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
 
 		progBar.update()
 		percent = percent + 10
@@ -377,6 +381,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 			itertools.repeat(dcd),
 			itertools.repeat(skip),
 			itertools.repeat(frameRange),
+			itertools.repeat(pairFilterCutoff),
 			itertools.repeat(environment),
 			itertools.repeat(soluteDielectric),
 			itertools.repeat(solventDielectric),
@@ -450,8 +455,11 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 
 	logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
-	os.remove(glob.glob(outputFolder+'/*_energies.log'))
-	os.remove(glob.glob(outputFolder+'/*temp*'))
+	for item in glob.glob(outputFolder+'/*_energies.log'):
+		os.remove(item)
+
+	for item in glob.glob(outputFolder+'/*temp*'):
+		os.remove(item)
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	
