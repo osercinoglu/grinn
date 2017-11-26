@@ -1,0 +1,54 @@
+;
+;	File 'topol.top' was generated
+;	By user: onur (1000)
+;	On host: BIOE-CERBEROS
+;	At date: Thu Mar  9 14:24:46 2017
+
+;
+;	This is a standalone topology file
+;
+;	Created by:
+;	                 :-) GROMACS - gmx pdb2gmx, VERSION 5.1.4 (-:
+;	
+;	Executable:   /usr/local/gromacs/bin/gmx
+;	Data prefix:  /usr/local/gromacs
+;	Command line:
+;	  gmx pdb2gmx -f 1vac.pdb -o 1vac_processed.gro -water tip3p
+;	Force field was read from the standard GROMACS share directory.
+;
+
+; Include forcefield parameters
+#include "charmm27.ff/forcefield.itp"
+
+; Include chain topologies
+#include "topol_Protein_chain_A.itp"
+#include "topol_Protein_chain_B.itp"
+#include "topol_Protein_chain_P.itp"
+
+; Include water topology
+#include "charmm27.ff/tip3p.itp"
+
+#ifdef POSRES_WATER
+; Position restraint for each water oxygen
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+   1    1       1000       1000       1000
+#endif
+
+; Include topology for ions
+#include "charmm27.ff/ions.itp"
+
+[ system ]
+; Name
+MHC CLASS I H-2KB HEAVY CHAIN; BETA-2 MICROGLOBULIN; CHICKEN OVALBUMIN in water
+
+[ molecules ]
+; Compound        #mols
+Protein_chain_A     1
+Protein_chain_B     1
+Protein_chain_P     1
+SOL                77
+SOL                29
+SOL                 3
+SOL         24605
+NA               7

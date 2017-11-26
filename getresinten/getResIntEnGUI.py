@@ -194,12 +194,12 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def startCalculation(self):
 
 		#### TEMPORARY!!! ####
-		# subprocess.call('rm -R getResIntEn_output',shell=True)
-		# self.lineEdit_namd2.setText('/Users/onur/repos/gRINN/NAMD_2.12_MacOSX-x86_64-multicore/namd2')
-		# self.lineEdit_pdb.setText('/Users/onur/repos/gRINN/test/test.pdb')
-		# self.lineEdit_psf.setText('/Users/onur/repos/gRINN/test/test.psf')
-		# self.lineEdit_dcd.setText('/Users/onur/repos/gRINN/test/test.dcd')
-		# self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
+		subprocess.call('rm -R getResIntEn_output',shell=True)
+		self.lineEdit_namd2.setText('/usr/local/gromacs/bin/gmx')
+		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.tpr')
+		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.top')
+		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test_stride.xtc')
+		self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
@@ -228,19 +228,18 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		
 		# Start calculation in the background
 		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
-			kwargs={'psf':self.params.psfFile,'pdb':self.params.pdbFile,
-			'dcd':self.params.dcdFile,'numCores':self.params.numCores,
+			kwargs={'top':self.params.psfFile,'pdb':self.params.pdbFile,'tpr':self.params.pdbFile,
+			'traj':self.params.dcdFile,'numCores':self.params.numCores,
 			'sourceSel':self.params.sourceSel,'targetSel':self.params.targetSel,
 			'environment':self.params.environment,'soluteDielectric':self.params.soluteDielectric,
 			'solventDielectric':self.params.solventDielectric,
 			'pairCalc':True,'pairFilterCutoff':self.params.pairFilterCutoff,
 			'pairFilterPercentage':self.params.pairFilterPercentage*0.1,
 			'skip':self.params.skip,'namd2exe':self.params.namd2exe,
-			'paramFile':self.params.paramFile,'outputFolder':self.params.outputFolder,
-			'logFile':self.params.logFile,'toPickle':True,
+			'gmxExe':self.params.namd2exe,'paramFile':self.params.paramFile,
+			'outputFolder':self.params.outputFolder,'logFile':self.params.logFile,'toPickle':True,
 			'resIntCorr':self.params.interactCorr,'pairFilterBasis':'com',
-			'pairFilterSkip':1,'frameRange':[False],
-			'resIntCorrAverageIntEnCutoff':1})
+			'pairFilterSkip':1,'frameRange':[False],'resIntCorrAverageIntEnCutoff':1})
 
 		self.processGetResIntEn.start()
 
@@ -314,7 +313,8 @@ class monitorProgress(QtCore.QThread):
 		percent = 0
 		start_time = time.time()
 		lastLogLine = 0
-		while percent != 100 and self._isRunning:
+		continueFlag = False
+		while percent != float(100) and self._isRunning:
 			oldpercent = percent
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
@@ -327,14 +327,16 @@ class monitorProgress(QtCore.QThread):
 					newpercent = float(matches.groups()[0])
 					if newpercent > oldpercent:
 						percent = newpercent
+						print(percent == float(100))
 						current_time = time.time()
 						etaString = 'Filtering progress: ' + getETAstring(start_time,current_time,percent)
 						self.updateETAfilteringLabel.emit(etaString)
 						self.incrementFilteringProgressBar.emit(percent)
-						break
-				if i > lastLogLine:
-					self.updateStatusBar.emit(line)
-					lastLogLine = i
+						if i > lastLogLine:
+							self.updateStatusBar.emit(line)
+							lastLogLine = i
+							break
+
 
 		# Monitor calculation
 		continueFlag = False
@@ -345,19 +347,17 @@ class monitorProgress(QtCore.QThread):
 			for i in range(0,len(lines)):
 				line = lines[i]
 				if 'DEBUG' in line: continue
-				matches = re.search('.*Started a pairwise energy calculation thread.',line)
+				matches = re.search('.*Started an energy calculation thread.',line)
 				if matches:
-					continueFlag = True
-					self.updateStatusBar.emit(line)
-					break
-				if i > lastLogLine:
-					self.updateStatusBar.emit(line)
-					lastLogLine = i
-				self.updateStatusBar.emit(line)
+					if i > lastLogLine:
+						self.updateStatusBar.emit(line)
+						lastLogLine = i
+						continueFlag = True
 
 		percent = 0
 		start_time = time.time()
-		while percent != 100 and self._isRunning:
+		numFilteredPairs = False
+		while percent < 100 and self._isRunning:
 			oldpercent = percent
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
@@ -368,16 +368,21 @@ class monitorProgress(QtCore.QThread):
 				matches = re.search('.*Number of interaction pairs selected after filtering step:\s(\d+)',line)
 				if matches:
 					numFilteredPairs = int(matches.groups()[0])
-					numCalculatedPairs = len(glob.glob(self.params.outputFolder+'/*_energies.log'))
-					percent = int(float(numCalculatedPairs)/float(numFilteredPairs)*100)
-					if percent > oldpercent:
-						current_time = time.time()
-						etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
-						self.updateETAcalculationLabel.emit(etaString)
-						self.incrementCalculationProgressBar.emit(percent)
-				if i > lastLogLine:
 					self.updateStatusBar.emit(line)
 					lastLogLine = i
+
+				if numFilteredPairs:
+					matches = re.search('.*Completed calculation percentage: (\d+)',line)
+					if matches:
+						percent = int(matches.groups()[0])
+						if percent > oldpercent:
+							current_time = time.time()
+							etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
+							self.updateETAcalculationLabel.emit(etaString)
+							self.incrementCalculationProgressBar.emit(percent)
+							if i > lastLogLine:
+								self.updateStatusBar.emit(line)
+								lastLogLine = i
 
 		# Monitor interaction correlation calculation.
 		if self.params.interactCorr and self._isRunning:

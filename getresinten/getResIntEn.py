@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 from prody import *
+import mdtraj
 import multiprocessing
+import pexpect
 import numpy as np
 import sys, itertools, argparse, os, pyprind, subprocess
 import re, pickle, types, logging, datetime, psutil, signal, time
 import pandas, glob
+from shutil import copyfile
 from getResIntEnMean import getResIntEnMean
-from common import parseEnergiesSingleCore
+from common import parseEnergiesSingleCoreNAMD
 from common import getChainResnameResnum
+from common import makeNDXMDPforGMX
+from common import parseEnergiesGMX
 import getResIntCorr
 
-def calcEnergiesSingleCore(args):
-
+def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
 	pairsFiltered = args[0]
 	psfFilePath = args[1]
@@ -39,7 +43,7 @@ def calcEnergiesSingleCore(args):
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)
 
-	logger.info('Started a pairwise energy calculation thread.')
+	logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
@@ -141,13 +145,43 @@ def calcEnergiesSingleCore(args):
 
 		progBar.update()
 		percent = percent + 10
-		logger.info('Completed pairwise interaction percentage: %s' % percent)
+		logger.info('Completed calculation percentage: %s' % percent)
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
-def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDielectric,solventDielectric,
+def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
+	pairFilterCutoff,outputFolder,gmxExe,logFile,numCores):
+	
+	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	logger = logging.getLogger(__name__)
+
+	logger.info('Started an energy calculation thread.')
+
+	# Make an index and MDP file with the pairs filtered.
+	gmxExe = 'gmx'
+	makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder)
+
+	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
+	i = 0
+	for pair in pairsFiltered:
+		proc = subprocess.Popen([gmxExe,'grompp','-f',outputFolder+'/interact'+str(i)+'.mdp','-n',
+			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',outputFolder+'/interact'+str(i)+'.tpr','-maxwarn','20'],
+			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
+		proc.wait()
+
+		proc = subprocess.Popen([gmxExe,'mdrun','-rerun',trajFilePath,'-s',outputFolder+'/interact'+str(i)+'.tpr',
+			'-e',outputFolder+'/interact'+str(i)+'.edr','-nt',str(numCores)],
+			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
+		proc.wait()
+
+		i += 1
+
+		logger.info('Completed calculation percentage: '+str(i/len(pairsFiltered)*100))
+
+def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,soluteDielectric,solventDielectric,
 	pairCalc,pairFilterCutoff,pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,
-	outputFolder,namd2exe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
+	outputFolder,namd2exe,gmxExe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -173,36 +207,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 	# TEMP
 	pairFilterSkip = skip
 
-	paramFile = paramFile
-	if paramFile and not type(paramFile) == str:
-		paramFile = paramFile[0]
-
-	if paramFile:
-		paramFile = paramFile.split(' ')
-		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
-
-	if not type(sourceSel) == str:
-		if len(sourceSel) > 1:
-			sourceSel = ' '.join(sourceSel)
-		else:
-			sourceSel = sourceSel[0]
-
-	if not type(targetSel) == str:
-		if len(targetSel) > 1:
-			targetSel = ' '.join(targetSel)
-		else:
-			targetSel = False
-
-	if len(frameRange) > 1:
-		frameRange = np.asarray(frameRange)
-	else:
-		frameRange = frameRange[0]
-
-	if targetSel == False and pairCalc == True:
-		logger.error("You must also specify a --targetsel for --paircalc to be executed,\
-		 or vice versa. Aborting now.",exc_info=True)
-		return
-
 	# Before we start the calculation, check whether the user has specified and outputFolder.
 	# If yes, check whether it exists. If it exists, change to that directory and do calculations.
 	# If it does not exist, create that directory and change to that directory and do calculations.
@@ -218,16 +222,78 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 			os.makedirs(outputFolder)
 			#os.chdir(outputFolder)
 
-	if pairFilterCutoff < 4:
-		logger.exception('Filtering distance cutoff value can not be smaller than 4. Aborting now.')
+	if tpr:
+		gmxExe = 'gmx' # TEMPORARY
+
+		# Convert tpr to pdb, selecting just Protein.
+		proc = pexpect.spawnu('%s trjconv -s %s -b 0 -e 0 -o %s' % (gmxExe,tpr,outputFolder+'/system.pdb'))
+		proc.send('Protein')
+		proc.sendline()
+		proc.wait()
+		proc.kill(1)
+
+		# Convert tpr to pdb, without selecting just water
+		proc = pexpect.spawnu('%s trjconv -s %s -b 0 -e 0 -o %s' % (gmxExe,tpr,outputFolder+'/system_full.pdb'))
+		proc.send('0 0')
+		proc.sendline()
+		proc.wait()
+		proc.kill(1)
+
+		pdb = outputFolder+'/system.pdb'
+		pdbFull = outputFolder+'/system_full.pdb'
+		copyfile(tpr,outputFolder+'/system.tpr')
+		tpr = outputFolder+'/system.tpr'
 
 	try:
-		system = parsePDB(pdb)
-		systemCA = system.select('name CA')
+		system = parsePDB(pdbFull)
 	except:
 		logger.exception('Could not load the PDB file provided. Please check your input PDB file.\
 			 Aborting now.')
 		return
+
+	systemProtein = system.select('protein or nucleic')
+	systemCA = system.select('name CA')
+	numResidues = len(np.unique(systemProtein.getResindices()))
+
+	for resindex in np.unique(systemProtein.getResindices()):
+		residue = systemProtein.select('resindex %i' % resindex)
+		index = np.unique(residue.getResnames())
+		if len(index) > 1:
+			logger.exception('There are residues with the same residue index in your PDB file. This is not allowed. Aborting now...')
+			return
+
+	paramFile = paramFile
+	if paramFile and not type(paramFile) == str:
+		paramFile = paramFile[0]
+
+	if paramFile:
+		paramFile = paramFile.split(' ')
+		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
+
+	if not type(sourceSel) == str:
+		if len(sourceSel) > 1:
+			sourceSel = ' '.join(sourceSel)
+		else:
+			sourceSel = sourceSel[0]
+
+	if targetSel and not type(targetSel) == str:
+		if len(targetSel) > 1:
+			targetSel = ' '.join(targetSel)
+		else:
+			targetSel = targetSel[0]
+
+	if len(frameRange) > 1:
+		frameRange = np.asarray(frameRange)
+	else:
+		frameRange = frameRange[0]
+
+	if targetSel == False and pairCalc == True:
+		logger.error("You must also specify a --targetsel for --paircalc to be executed,\
+		 or vice versa. Aborting now.",exc_info=True)
+		return
+
+	if pairFilterCutoff < 4:
+		logger.exception('Filtering distance cutoff value can not be smaller than 4. Aborting now.')
 
 	# Load psf with prody and get some useful numbers.
 	### COMMENTING THIS OUT DUE TO INCOMPATIBILITY PROBLEMS WITH python3.6
@@ -239,23 +305,12 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 	# 		 Aborting now.')
 	# 	return
 
-	try:
-		traj = parseDCD(dcd)
-	except:
-		logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
-		return
-
-
-	# Load pdb with prody and get some useful numbers.
-	try:
-		sourceCA = system.select(sourceSel+' and name CA')
-	except:
-		logger.exception('Could not select Selection 1 residue group. Aborting now.')
-		return
+	# Saving traj argument here to a string (cause we change it later on)
+	trajPath = traj
 
 	# Check whether the system has enough memory to multiple processing of the DCD
-	dcdStats = os.stat(dcd)
-	size = dcdStats.st_size
+	trajStats = os.stat(trajPath)
+	size = trajStats.st_size
 
 	memory = psutil.virtual_memory()
 
@@ -267,8 +322,42 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 			Aborting now.')
 		return
 
-	logger.info('Writing the system to '+outputFolder+'/system.pdb ...')
-	writePDB(outputFolder+'/system.pdb',system)
+	# Check the input trajectory and convert to DCD if necessary.
+	if not trajPath.endswith('.dcd') and (trajPath.endswith('.xtc') or trajPath.endswith('.trr')):
+		# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
+		logger.info('Detected GMX trajectory... Converting to DCD to proceed further...')
+		try:
+			if traj.endswith('.xtc'):
+				traj = mdtraj.load_xtc(trajPath,top=outputFolder+'/system_full.pdb')
+				traj.save_trr(outputFolder+'/traj.trr')
+				trajPath = outputFolder+'/traj.trr'
+			elif traj.endswith('.trr'):
+				traj = mdtraj.load_trr(trajPath,top=outputFolder+'/system_full.pdb')
+
+			dataType = 'GMX' # Specify a data type to use later on!
+		except:
+			logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
+			return
+
+		traj.save_dcd(outputFolder+'/traj.dcd')
+		# Load back this DCD and continue with it (for code compatibility with ProDy)
+		traj = parseDCD(outputFolder+'/traj.dcd')
+
+	else:
+		try:
+			traj = parseDCD(trajPath)
+			dataType = 'NAMD'
+		except:
+			logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
+			return
+
+
+	# Load pdb with prody and get some useful numbers.
+	try:
+		sourceCA = system.select(sourceSel+' and name CA')
+	except:
+		logger.exception('Could not select Selection 1 residue group. Aborting now.')
+		return
 
 	numSource = len(sourceCA)
 	sourceResids = sourceCA.getResindices()
@@ -310,7 +399,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 	coordSets = traj.getCoordsets()
 
 	# Start a contact matrix (Kirchhoff matrix)
-	kh = np.zeros((system.numResidues(),system.numResidues()))
+	kh = np.zeros((numResidues,numResidues))
 
 	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
@@ -323,6 +412,7 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 		kh = kh + gnm.getKirchhoff()
 		monitor = monitor + pairFilterSkip
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		if calculatedPercentage > 100: calculatedPercentage = 100
 		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
@@ -373,37 +463,54 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 		signal.signal(signal.SIGINT, sig_int)
 	    
 	# Start a pool of processors
-	pool = multiprocessing.Pool(numCores,worker_init)
+	if dataType == 'NAMD':
 
-	pool.map(calcEnergiesSingleCore,
-		zip(pairsFilteredChunks,itertools.repeat(psf),
-			itertools.repeat(pdb),
-			itertools.repeat(dcd),
-			itertools.repeat(skip),
-			itertools.repeat(frameRange),
-			itertools.repeat(pairFilterCutoff),
-			itertools.repeat(environment),
-			itertools.repeat(soluteDielectric),
-			itertools.repeat(solventDielectric),
-			itertools.repeat(outputFolder),
-			itertools.repeat(namd2exe),
-			itertools.repeat(paramFile),
-			itertools.repeat(logFile)))
-	
-	#pool.join()
-	# Parse the specified outFolder after energy calculation is done.
-	outFolderFileList = os.listdir(outputFolder)
+		pool = multiprocessing.Pool(numCores,worker_init)
 
-	energiesFilePaths = list()
-	for fileName in outFolderFileList:
-		if fileName.endswith('energies.log'):
-			energiesFilePaths.append(outputFolder+'/'+fileName)
+		pool.map(calcEnergiesSingleCoreNAMD,
+			zip(pairsFilteredChunks,itertools.repeat(top),
+				itertools.repeat(outputFolder+'/system.pdb'),
+				itertools.repeat(trajPath),
+				itertools.repeat(skip),
+				itertools.repeat(frameRange),
+				itertools.repeat(pairFilterCutoff),
+				itertools.repeat(environment),
+				itertools.repeat(soluteDielectric),
+				itertools.repeat(solventDielectric),
+				itertools.repeat(outputFolder),
+				itertools.repeat(namd2exe),
+				itertools.repeat(paramFile),
+				itertools.repeat(logFile)))
+		
+		#pool.join()
+		# Parse the specified outFolder after energy calculation is done.
+		outFolderFileList = os.listdir(outputFolder)
 
-	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
+		energiesFilePaths = list()
+		for fileName in outFolderFileList:
+			if fileName.endswith('energies.log'):
+				energiesFilePaths.append(outputFolder+'/'+fileName)
 
-	parsedEnergiesResults = pool.starmap(parseEnergiesSingleCore,
-		zip(energiesFilePathsChunks,itertools.repeat(pdb),
-			itertools.repeat(logFile)))
+		energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
+
+		parsedEnergiesResults = pool.starmap(parseEnergiesSingleCoreNAMD,
+			zip(energiesFilePathsChunks,itertools.repeat(outputFolder+'/system.pdb'),
+				itertools.repeat(logFile)))
+
+		parsedEnergies = dict()
+		for parsedEnergiesResult in parsedEnergiesResults:
+			parsedEnergies.update(parsedEnergiesResult)
+
+
+		pool.close()
+		pool.join()
+
+	elif dataType == 'GMX':
+		calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,
+			trajFilePath=trajPath,skip=skip,frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,outputFolder=outputFolder,
+			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
+
+		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFiltered=pairsFiltered,outputFolder=outputFolder)
 	
 	# while not parsedEnergiesResults.ready():
 	# 	print("num left: {}".format(parsedEnergiesResults._number_left))
@@ -411,10 +518,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 
 	# parsedEnergiesResults = parsedEnergiesResults.get()
 	logger.info('Collecting results...')
-
-	parsedEnergies = dict()
-	for parsedEnergiesResult in parsedEnergiesResults:
-		parsedEnergies.update(parsedEnergiesResult)
 
 	# Prepare a pandas data table from parsed energies, write it to new files depending on type of energy
 	df_total = pandas.DataFrame()
@@ -444,9 +547,6 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 	if toPickle:
 		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=outputFolder+'/energies')
 
-	pool.close()
-	pool.join()
-
 	if resIntCorr:
 		logger.info('Beginning residue interaction energy correlation calculation...')
 		getResIntCorr.getResIntCorr(inFile=outputFolder+'/'+'energies_intEnTotal.csv',
@@ -460,6 +560,9 @@ def getResIntEn(psf,pdb,dcd,numCores,sourceSel,targetSel,environment,soluteDiele
 
 	for item in glob.glob(outputFolder+'/*temp*'):
 		os.remove(item)
+
+	os.remove(outputFolder+'/traj.dcd')
+	os.remove(outputFolder+'/traj.trr')
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	
@@ -487,13 +590,16 @@ if __name__ == '__main__':
 	# Overriding convert_arg_line_to_args in the input parser with our own function.
 	parser.convert_arg_line_to_args = convert_arg_line_to_args
 
-	parser.add_argument('--pdb',type=str,nargs=1,help='Name of the corresponding pdb file of the \
+	parser.add_argument('--pdb',default=' ',type=str,nargs=1,help='Name of the corresponding pdb file of the \
 		DCD trajectory')
 
-	parser.add_argument('--psf',type=str,nargs=1,help='Name of the corresponding psf file of the \
-		DCD trajectory')
+	parser.add_argument('--tpr',default=' ',type=str,nargs=1,help='Name of the corresponding TPR file of the \
+		XTC/TRR trajectory')
 
-	parser.add_argument('--dcd',type=str,nargs=1,help='Name of the trajectory DCD file')
+	parser.add_argument('--top',default=' ',type=str,nargs=1,help='Name of the corresponding psf file of the \
+		DCD trajectory or top file of the XTC/TRR trajectory')
+
+	parser.add_argument('--traj',default=' ',type=str,nargs=1,help='Name of the trajectory file')
 
 	parser.add_argument('--numcores',default=[1],type=int,nargs=1,
 		help='Number of CPU cores to be employed for energy calculation. If not specified, it \
@@ -543,6 +649,8 @@ if __name__ == '__main__':
 		section of the trajectory will be handled')
 
 	parser.add_argument('--namd2exe',default=['namd2'],type=str,nargs=1,help='Path to the namd2 executable.')
+	
+	parser.add_argument('--gmxexe',default=['gmx'],type=str,nargs=1,help='Path to the GMX executable')
 
 	parser.add_argument('--parameterfile',default=[False],type=str,nargs='+',help='Path to the parameter file.')
 
@@ -569,9 +677,10 @@ if __name__ == '__main__':
 	# Parsing input arguments
 	args = parser.parse_args()
 
-	psf = os.path.abspath(args.psf[0])
+	top = os.path.abspath(args.top[0])
 	pdb = os.path.abspath(args.pdb[0])
-	dcd = os.path.abspath(args.dcd[0])
+	tpr = os.path.abspath(args.tpr[0])
+	traj = os.path.abspath(args.traj[0])
 	
 	numCores = args.numcores[0]
 	frameRange = args.framerange
@@ -592,6 +701,8 @@ if __name__ == '__main__':
 
 	namd2exe = os.path.abspath(args.namd2exe[0])
 
+	gmxExe = os.path.abspath(args.gmxexe[0])
+
 	logFile = os.path.abspath(args.logfile[0])
 
 	frameRange = args.framerange
@@ -604,11 +715,11 @@ if __name__ == '__main__':
 	resIntCorr = args.resintcorr 
 	resIntCorrAverageIntEnCutoff = args.resintcorraverageintencutoff[0]
 
-	getResIntEn(psf=psf,pdb=pdb,dcd=dcd,numCores=numCores,
+	getResIntEn(top=top,pdb=pdb,tpr=tpr,traj=traj,numCores=numCores,
 		sourceSel=sourceSel,targetSel=targetSel,environment=environment,
 		soluteDielectric=soluteDielectric,solventDielectric=solventDielectric,
 		pairCalc=pairCalc,pairFilterCutoff=pairFilterCutoff,pairFilterBasis=pairFilterBasis,
 		pairFilterPercentage=pairFilterPercentage,pairFilterSkip=pairFilterSkip,
 		skip=skip,frameRange=frameRange,resIntCorr=resIntCorr,
 		resIntCorrAverageIntEnCutoff=resIntCorrAverageIntEnCutoff,outputFolder=outputFolder,
-		namd2exe=namd2exe,paramFile=paramFile,toPickle=args.topickle,logFile=logFile)
+		namd2exe=namd2exe,gmxExe=gmxExe,paramFile=paramFile,toPickle=args.topickle,logFile=logFile)

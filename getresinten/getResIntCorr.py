@@ -16,7 +16,7 @@ import pandas
 import psutil
 import re
 from prody import *
-from common import parseEnergiesSingleCore
+from common import parseEnergiesSingleCoreNAMD
 from common import getChainResnameResnum
 
 def getResIntCorr(inFile,pdb,logFile,frameRange=False,

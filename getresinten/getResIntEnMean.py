@@ -17,8 +17,10 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 		frameRange = [0,numFrames]
 
 	# Get number of residues
-	sys = parsePDB(pdb)
-	numResidues = sys.numResidues()
+	system = parsePDB(pdb)
+	system_dry = system.select('protein or nucleic')
+	system_dry = system_dry.select('not resname SOL')
+	numResidues = len(np.unique(system_dry.getResindices()))
 
 	# Start interaction energy variables
 	intEnDict = dict()
@@ -30,9 +32,9 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	progbar = pyprind.ProgBar(numResidues*numResidues)
 
 	for i in range(numResidues):
-		i_chainResnameResnum = getChainResnameResnum(sys,i)
+		i_chainResnameResnum = getChainResnameResnum(system_dry,i)
 		for j in range(numResidues):
-			j_chainResnameResnum = getChainResnameResnum(sys,j)
+			j_chainResnameResnum = getChainResnameResnum(system_dry,j)
 			keyString = i_chainResnameResnum+'-'+j_chainResnameResnum
 			if keyString in intEn:
 				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
@@ -63,7 +65,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 		for j in range(0,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
 			if value: # i.e. it it's not equal to zero
-				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(sys,i),getChainResnameResnum(sys,j),str(value)))
+				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system_dry,i),getChainResnameResnum(system_dry,j),str(value)))
 
 	f.close()
 	

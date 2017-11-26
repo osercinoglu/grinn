@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'getresinten/getResIntEnGUI.ui'
+# Form implementation generated from reading ui file 'getResIntEnGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
@@ -215,11 +215,16 @@ class Ui_MainWindow(object):
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "gRINN: Get Residue Interaction Energies"))
+        self.doubleSpinBox_filteringCutoff.setToolTip(_translate("MainWindow", "<html><head/><body><p>For a residue pair to be selected for computations, their Centers of Mass must come closer than this value for at least the specified percent of the trajectory frames.</p></body></html>"))
+        self.lineEdit_residueGroup1.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">Selection 1 and Selection 2 </span><span style=\" font-weight:400;\">define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. </span></p><p><a href=\"https://www.onursercinoglu.com\"><span style=\" text-decoration: underline; color:#0000ff;\">More information is here.</span></a></p></body></html>"))
         self.lineEdit_residueGroup1.setText(_translate("MainWindow", "all"))
+        self.lineEdit_residueGroup2.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">Selection 1 and Selection 2 </span>define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. </p><p><a href=\"https://www.onursercinoglu.com\"><span style=\" text-decoration: underline; color:#0000ff;\">More information is here.</span></a></p></body></html>"))
         self.lineEdit_residueGroup2.setText(_translate("MainWindow", "all"))
         self.label_4.setText(_translate("MainWindow", "Filtering distance cutoff (Angstroms)"))
         self.label_5.setText(_translate("MainWindow", "Percent cutoff (%)"))
+        self.doubleSpinBox_filteringPercent.setToolTip(_translate("MainWindow", "<html><head/><body><p>For a residue pair to be selected for computations, their Centers of Mass must come closer than the filtering distance cutoff value for at least this percent of the trajectory frames.</p></body></html>"))
         self.label_6.setText(_translate("MainWindow", "DCD stride"))
+        self.spinBox_numProcessors.setToolTip(_translate("MainWindow", "<html><head/><body><p>Number of processors to use for the calculation.</p></body></html>"))
         self.label_7.setText(_translate("MainWindow", "<html><head/><body><p>Number of processors</p></body></html>"))
         self.pushButton_Calculate.setText(_translate("MainWindow", "CALCULATE"))
         self.pushButton_Stop.setText(_translate("MainWindow", "STOP"))
@@ -227,16 +232,21 @@ class Ui_MainWindow(object):
         self.labelCalculation.setText(_translate("MainWindow", "Calculation progress"))
         self.lineEdit_outputFolder.setText(_translate("MainWindow", "getResIntEn_output"))
         self.lineEdit_namd2.setText(_translate("MainWindow", "namd2"))
-        self.pushButton_browsePDB.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">Protein Data Bank File</span>: The PDB file describing the coordinates of your system.</p></body></html>"))
-        self.pushButton_browsePDB.setText(_translate("MainWindow", "Browse for PDB File"))
-        self.pushButton_browsePSF.setText(_translate("MainWindow", "Browse for PSF File"))
-        self.pushButton_browseDCD.setText(_translate("MainWindow", "Browse for DCD File"))
+        self.pushButton_browsePDB.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">NAMD Users: </span><span style=\" font-weight:400;\">Select the Protein Data Bank (PDB) file describing your system here.</span></p><p><span style=\" font-weight:600;\">Gromacs Users: </span><span style=\" font-weight:400;\">Select the &quot;run input file&quot; (TPR) that you\'ve used for simulation.</span></p></body></html>"))
+        self.pushButton_browsePDB.setText(_translate("MainWindow", "Browse for PDB/TPR File"))
+        self.pushButton_browsePSF.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">NAMD Users: </span><span style=\" font-weight:400;\">Select the Protein Structure File (PSF) here.</span></p><p><span style=\" font-weight:600;\">Gromacs Users: </span><span style=\" font-weight:400;\">Select the topology file (TOP) that you used for simulation.</span></p></body></html>"))
+        self.pushButton_browsePSF.setText(_translate("MainWindow", "Browse for PSF/TOP File"))
+        self.pushButton_browseDCD.setToolTip(_translate("MainWindow", "<html><head/><body><p><span style=\" font-weight:600;\">NAMD Users: </span><span style=\" font-weight:400;\">Select the DCD file containing your simulation trajectory here.</span></p><p><span style=\" font-weight:600;\">Gromacs Users: </span><span style=\" font-weight:400;\">Select the XTC or TRR file containing your simulation trajectory here.</span></p></body></html>"))
+        self.pushButton_browseDCD.setText(_translate("MainWindow", "Browse for DCD/XTC/TRR File"))
+        self.pushButton_browseOutputFolder.setToolTip(_translate("MainWindow", "<html><head/><body><p>This is the full path to the folder where you wish to store calculation results. </p><p>The path must not exist prior to calculation; it is going to be created by gRINN.</p></body></html>"))
         self.pushButton_browseOutputFolder.setText(_translate("MainWindow", "Output Folder"))
-        self.pushButton_BrowseNAMD.setText(_translate("MainWindow", "Browse for NAMD Executable"))
+        self.pushButton_BrowseNAMD.setToolTip(_translate("MainWindow", "<html><head/><body><p>Select the full path to the NAMD or GMX executable here.</p><p>Leave it empty if <span style=\" font-weight:600;\">namd2 </span><span style=\" font-weight:400;\">or </span><span style=\" font-weight:600;\">gmx </span><span style=\" font-weight:400;\">is already in the executable search path of your system.</span></p></body></html>"))
+        self.pushButton_BrowseNAMD.setText(_translate("MainWindow", "Browse for NAMD/GMX Executable"))
         self.checkBox_interactionCorrelation.setText(_translate("MainWindow", "Calculate residue interaction correlation as well"))
-        self.pushButton_BrowseParameterFile.setText(_translate("MainWindow", "Browse for Parameter File (Optional)"))
+        self.pushButton_BrowseParameterFile.setText(_translate("MainWindow", "Browse for Parameter File (NAMD)"))
         self.label_PearsonCorrCutoff.setText(_translate("MainWindow", "Average interaction energy cutoff (kcal/mol)"))
         self.labelCorrelation.setText(_translate("MainWindow", "Correlation progress"))
+        self.doubleSpinBox_dcdStride.setToolTip(_translate("MainWindow", "<html><head/><body><p>If specified, a stride will be applied to the DCD frames, i.e. only 1 out of this many frames will be included in the calculation.</p></body></html>"))
         self.label.setText(_translate("MainWindow", "Selection 1"))
         self.label_2.setText(_translate("MainWindow", "Selection 2"))
         self.pushButton_viewResults.setText(_translate("MainWindow", "VIEW RESULTS"))

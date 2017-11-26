@@ -38,6 +38,9 @@
       <height>24</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass must come closer than this value for at least the specified percent of the trajectory frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="value">
      <double>12.000000000000000</double>
     </property>
@@ -51,6 +54,9 @@
       <height>24</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. &lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;a href=&quot;https://www.onursercinoglu.com&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;More information is here.&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string>all</string>
     </property>
@@ -63,6 +69,9 @@
       <width>271</width>
       <height>24</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. &lt;/p&gt;&lt;p&gt;&lt;a href=&quot;https://www.onursercinoglu.com&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;More information is here.&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>all</string>
@@ -115,6 +124,9 @@
       <height>24</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass must come closer than the filtering distance cutoff value for at least this percent of the trajectory frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="value">
      <double>60.000000000000000</double>
     </property>
@@ -146,6 +158,9 @@
       <width>62</width>
       <height>24</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Number of processors to use for the calculation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="value">
      <number>4</number>
@@ -342,10 +357,13 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Protein Data Bank File&lt;/span&gt;: The PDB file describing the coordinates of your system.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the Protein Data Bank (PDB) file describing your system here.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the &amp;quot;run input file&amp;quot; (TPR) that you've used for simulation.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="toolTipDuration">
+     <number>10</number>
     </property>
     <property name="text">
-     <string>Browse for PDB File</string>
+     <string>Browse for PDB/TPR File</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_browsePSF">
@@ -357,8 +375,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the Protein Structure File (PSF) here.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the topology file (TOP) that you used for simulation.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
-     <string>Browse for PSF File</string>
+     <string>Browse for PSF/TOP File</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_browseDCD">
@@ -370,8 +391,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the DCD file containing your simulation trajectory here.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the XTC or TRR file containing your simulation trajectory here.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
-     <string>Browse for DCD File</string>
+     <string>Browse for DCD/XTC/TRR File</string>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_browseOutputFolder">
@@ -382,6 +406,9 @@
       <width>231</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the full path to the folder where you wish to store calculation results. &lt;/p&gt;&lt;p&gt;The path must not exist prior to calculation; it is going to be created by gRINN.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>Output Folder</string>
@@ -396,8 +423,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select the full path to the NAMD or GMX executable here.&lt;/p&gt;&lt;p&gt;Leave it empty if &lt;span style=&quot; font-weight:600;&quot;&gt;namd2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;or &lt;/span&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;gmx &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;is already in the executable search path of your system.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
-     <string>Browse for NAMD Executable</string>
+     <string>Browse for NAMD/GMX Executable</string>
     </property>
    </widget>
    <widget class="QCheckBox" name="checkBox_interactionCorrelation">
@@ -426,7 +456,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Browse for Parameter File (Optional)</string>
+     <string>Browse for Parameter File (NAMD)</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_parameterFile">
@@ -533,6 +563,9 @@
       <width>62</width>
       <height>24</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If specified, a stride will be applied to the DCD frames, i.e. only 1 out of this many frames will be included in the calculation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="maximum">
      <double>100000.000000000000000</double>
