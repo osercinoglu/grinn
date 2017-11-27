@@ -21,9 +21,10 @@ import common
 
 class getResIntEnParams(object):
 	def __init__(self):
-		self.psf = None
 		self.pdb = None
-		self.dcd = None
+		self.traj = None
+		self.tpr = None
+		self.top = None
 		self.sourceSel = None
 		self.targetSel = None
 		self.environment = 'vacuum'
@@ -203,9 +204,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.
-		self.params.psfFile = self.lineEdit_psf.text()
-		self.params.pdbFile = self.lineEdit_pdb.text()
-		self.params.dcdFile = self.lineEdit_dcd.text()
+		self.params.top = self.lineEdit_psf.text()
+		if self.lineEdit_pdb.text().endswith('.pdb'):
+			self.params.pdb = self.lineEdit_pdb.text()
+		elif self.lineEdit_pdb.text().endswith('.tpr'):
+			self.params.tpr = self.lineEdit_pdb.text()
+
+		self.params.traj = self.lineEdit_dcd.text()
 		self.params.sourceSel = self.lineEdit_residueGroup1.text()
 		self.params.targetSel = self.lineEdit_residueGroup2.text()
 		self.params.soluteDielectric = float(self.doubleSpinBox_soluteDielectric.value())
@@ -228,8 +233,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		
 		# Start calculation in the background
 		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
-			kwargs={'top':self.params.psfFile,'pdb':self.params.pdbFile,'tpr':self.params.pdbFile,
-			'traj':self.params.dcdFile,'numCores':self.params.numCores,
+			kwargs={'top':self.params.top,'pdb':self.params.pdb,'tpr':self.params.tpr,
+			'traj':self.params.traj,'numCores':self.params.numCores,
 			'sourceSel':self.params.sourceSel,'targetSel':self.params.targetSel,
 			'environment':self.params.environment,'soluteDielectric':self.params.soluteDielectric,
 			'solventDielectric':self.params.solventDielectric,

@@ -226,18 +226,19 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		gmxExe = 'gmx' # TEMPORARY
 
 		# Convert tpr to pdb, selecting just Protein.
-		proc = pexpect.spawnu('%s trjconv -s %s -b 0 -e 0 -o %s' % (gmxExe,tpr,outputFolder+'/system.pdb'))
+		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
 		proc.send('Protein')
 		proc.sendline()
 		proc.wait()
 		proc.kill(1)
 
 		# Convert tpr to pdb, without selecting just water
-		proc = pexpect.spawnu('%s trjconv -s %s -b 0 -e 0 -o %s' % (gmxExe,tpr,outputFolder+'/system_full.pdb'))
+		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system_full.pdb'))
 		proc.send('0 0')
 		proc.sendline()
 		proc.wait()
 		proc.kill(1)
+		print('active')
 
 		pdb = outputFolder+'/system.pdb'
 		pdbFull = outputFolder+'/system_full.pdb'
