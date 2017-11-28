@@ -33,6 +33,8 @@ class viewResultsParams(object):
 		self.outputFolder = None
 		self.intEnMeanTotal = None
 		self.intEnTotal = None
+		self.resCorrTotal = None
+		self.intEnCorrTotal = None
 		self.networkRO = None
 		self.selectedSourceRes = 0
 		self.selectedTargetRes = 0
@@ -142,13 +144,25 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
     		self.axes.set_xlabel('Mean IE [kcal/mol]')
 
-    	elif type=='iem':
-    		if len(intEnMeanTotal) > 100:
+    	elif type in ['iem','rc']:
+    		if type=='iem':
+    			matrix = intEnMeanTotal
+    			vmax = 10
+    			vmin = -10
+    			cmap = seaborn.color_palette("BrBG", 10)
+
+    		elif type=='rc':
+    			matrix = viewResultsParams.resCorrTotal
+    			vmax = np.max(matrix)
+    			vmin = 0
+    			cmap = 'Blues'
+
+    		if len(matrix) > 100:
     			annot = False
     		else:
     			annot = True
-    		hm = seaborn.heatmap(intEnMeanTotal,vmax=10,vmin=-10,square=True,
-                        cmap=seaborn.color_palette("BrBG", 10),annot=annot,ax=self.axes)
+
+    		hm = seaborn.heatmap(matrix,vmax=vmin,vmin=vmax,square=True,cmap=cmap,annot=annot,ax=self.axes)
 
     		hm.set_xticklabels(hm.get_xticklabels(), rotation = 60)
     		hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
@@ -215,6 +229,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
+		self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC)
+		self.verticalLayout_13.addWidget(self.resCorrTotalMat)
+
 		self.degreePlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
 			dpi=100)
 		self.horizontalLayout_4.addWidget(self.degreePlot)
@@ -258,13 +275,22 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		if name:
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
-			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system.pdb')
+			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system_dry.pdb')
 			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
 				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
 			self.viewResultsParams.intEnTotal = pandas.read_csv(
-				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv',nrows=100) # Remove nrows when not needed!
+				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
 			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
 				self.viewResultsParams.outputFolder)
+
+			intEnCorrTotalPath = self.viewResultsParams.outputFolder+'/energies_resIntCorr.csv'
+			if os.path.exists(intEnCorrTotalPath):
+				self.viewResultsParams.intEnCorrTotal = pandas.read_csv(intEnCorrTotalPath)
+
+			resCorrTotalPath = self.viewResultsParams.outputFolder+'/energies_resCorr.dat'
+			if os.path.exists(resCorrTotalPath):
+				self.viewResultsParams.resCorrTotal =np.loadtxt(resCorrTotalPath)
+
 			self.populateGUI()
 			return True
 		else:
@@ -317,8 +343,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.intEnMeanMat.update_figure(self,'iem')
 
-		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
-		trajPath = self.viewResultsParams.outputFolder+'/traj.dcd'
+		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system_dry.pdb')
+		trajPath = self.viewResultsParams.outputFolder+'/traj_dry.dcd'
 		self.ProteinView._pymol.idle()
 		self.ProteinView._pymol.draw()
 		self.ProteinView._pymolProcess()
@@ -327,12 +353,20 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		# Load trajectory if it exists in the output folder!
 		# Usually it should exist!
 		if os.path.exists(trajPath):
-			self.viewResultsParams.traj = trajPath
-			self.ProteinView._pymol.cmd.load_traj(trajPath)
-			self.viewResultsParams.numFrames = self.ProteinView._pymol.cmd.count_frames()
-			self.horizontalSlider.setMinimum(1)
-			self.horizontalSlider.setMaximum(self.viewResultsParams.numFrames-1) # Remember first frame is already the PDB
-			self.horizontalSlider.sliderMoved.connect(self.updateFrame)
+			buttonReply = QMessageBox.question(self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?"
+			"Warning: This might slow down the display significantly if the trajectory file size is large.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+			if buttonReply == QMessageBox.No:
+				pass
+			elif buttonReply == QMessageBox.Yes:
+				self.viewResultsParams.traj = trajPath
+				self.ProteinView._pymol.cmd.load_traj(trajPath)
+				self.viewResultsParams.numFrames = self.ProteinView._pymol.cmd.count_frames()
+				self.horizontalSlider.setMinimum(1)
+				self.horizontalSlider.setMaximum(self.viewResultsParams.numFrames-1) # Remember first frame is already the PDB
+				self.horizontalSlider.sliderMoved.connect(self.updateFrame)
+
+		if isinstance(self.viewResultsParams.resCorrTotal,np.ndarray):
+			self.resCorrTotalMat.update_figure(self,'rc')
 
 	def updateFrame(self):
 		# Set the current frame. Don't forget that first frame is the PDB file, so we assign plus one here.
@@ -456,6 +490,8 @@ def main():
 	form.tabWidget.setCurrentIndex(0)
 	form.tabWidget.setCurrentIndex(2)
 	form.tabWidget.setCurrentIndex(3)
+	form.tabWidget.setCurrentIndex(4)
+	form.tabWidget.setCurrentIndex(5)
 	form.tabWidget_2.setCurrentIndex(0)
 	form.tabWidget_2.setCurrentIndex(1)
 	form.tabWidget_2.setCurrentIndex(2)

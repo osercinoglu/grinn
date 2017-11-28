@@ -226,33 +226,33 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		gmxExe = 'gmx' # TEMPORARY
 
 		# Convert tpr to pdb, selecting just Protein.
-		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
+		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
 		proc.send('Protein')
 		proc.sendline()
 		proc.wait()
 		proc.kill(1)
 
 		# Convert tpr to pdb, without selecting just water
-		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system_full.pdb'))
+		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
 		proc.send('0 0')
 		proc.sendline()
 		proc.wait()
 		proc.kill(1)
 		print('active')
 
-		pdb = outputFolder+'/system.pdb'
-		pdbFull = outputFolder+'/system_full.pdb'
+		pdb = outputFolder+'/system_dry.pdb'
+		pdbFull = outputFolder+'/system.pdb'
 		copyfile(tpr,outputFolder+'/system.tpr')
 		tpr = outputFolder+'/system.tpr'
 
 	try:
 		system = parsePDB(pdbFull)
 	except:
-		logger.exception('Could not load the PDB file provided. Please check your input PDB file.\
-			 Aborting now.')
+		logger.exception('Could not load the PDB file. Aborting now.')
 		return
 
 	systemProtein = system.select('protein or nucleic')
+	writePDB(outputFolder+'/system_dry.pdb',systemProtein)
 	systemCA = system.select('name CA')
 	numResidues = len(np.unique(systemProtein.getResindices()))
 
@@ -329,11 +329,11 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		logger.info('Detected GMX trajectory... Converting to DCD to proceed further...')
 		try:
 			if traj.endswith('.xtc'):
-				traj = mdtraj.load_xtc(trajPath,top=outputFolder+'/system_full.pdb')
+				traj = mdtraj.load_xtc(trajPath,top=outputFolder+'/system.pdb',stride=skip)
 				traj.save_trr(outputFolder+'/traj.trr')
 				trajPath = outputFolder+'/traj.trr'
 			elif traj.endswith('.trr'):
-				traj = mdtraj.load_trr(trajPath,top=outputFolder+'/system_full.pdb')
+				traj = mdtraj.load_trr(trajPath,top=outputFolder+'/system.pdb',stride=skip)
 
 			dataType = 'GMX' # Specify a data type to use later on!
 		except:
@@ -343,6 +343,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		traj.save_dcd(outputFolder+'/traj.dcd')
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
 		traj = parseDCD(outputFolder+'/traj.dcd')
+		logger.info('DCD file conversion success.')
 
 	else:
 		try:
@@ -352,6 +353,10 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 			logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
 			return
 
+	logger.info('Deleting waters from the trajectory...')
+	traj.setAtoms(system.select('protein'))
+	writeDCD(outputFolder+'/traj_dry.dcd',traj,step=skip if dataType=='NAMD' else 1)
+	logger.info('Deleting waters from the trajectory... Done.')
 
 	# Load pdb with prody and get some useful numbers.
 	try:
@@ -562,8 +567,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	for item in glob.glob(outputFolder+'/*temp*'):
 		os.remove(item)
 
+	for item in glob.glob(outputFolder+'/interact*'):
+		os.remove(item)
+
+	for item in glob.glob(outputFolder+'/*.trr'):
+		os.remove(item)
+
 	os.remove(outputFolder+'/traj.dcd')
-	os.remove(outputFolder+'/traj.trr')
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	

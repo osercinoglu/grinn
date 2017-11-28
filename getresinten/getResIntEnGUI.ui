@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>801</width>
-    <height>500</height>
+    <height>460</height>
    </rect>
   </property>
   <property name="minimumSize">
@@ -33,7 +33,7 @@
     <property name="geometry">
      <rect>
       <x>460</x>
-      <y>350</y>
+      <y>300</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -49,7 +49,7 @@
     <property name="geometry">
      <rect>
       <x>250</x>
-      <y>280</y>
+      <y>230</y>
       <width>271</width>
       <height>24</height>
      </rect>
@@ -65,7 +65,7 @@
     <property name="geometry">
      <rect>
       <x>250</x>
-      <y>310</y>
+      <y>260</y>
       <width>271</width>
       <height>24</height>
      </rect>
@@ -81,7 +81,7 @@
     <property name="geometry">
      <rect>
       <x>220</x>
-      <y>350</y>
+      <y>300</y>
       <width>231</width>
       <height>20</height>
      </rect>
@@ -97,7 +97,7 @@
     <property name="geometry">
      <rect>
       <x>-30</x>
-      <y>350</y>
+      <y>300</y>
       <width>171</width>
       <height>21</height>
      </rect>
@@ -119,7 +119,7 @@
     <property name="geometry">
      <rect>
       <x>150</x>
-      <y>350</y>
+      <y>300</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -135,7 +135,7 @@
     <property name="geometry">
      <rect>
       <x>-20</x>
-      <y>390</y>
+      <y>340</y>
       <width>161</width>
       <height>20</height>
      </rect>
@@ -154,7 +154,7 @@
     <property name="geometry">
      <rect>
       <x>460</x>
-      <y>390</y>
+      <y>340</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -170,7 +170,7 @@
     <property name="geometry">
      <rect>
       <x>300</x>
-      <y>390</y>
+      <y>340</y>
       <width>151</width>
       <height>20</height>
      </rect>
@@ -186,7 +186,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>10</y>
+      <y>90</y>
       <width>251</width>
       <height>61</height>
      </rect>
@@ -199,7 +199,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>170</y>
+      <y>240</y>
       <width>251</width>
       <height>21</height>
      </rect>
@@ -212,7 +212,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>230</y>
+      <y>290</y>
       <width>251</width>
       <height>23</height>
      </rect>
@@ -228,7 +228,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>80</y>
+      <y>160</y>
       <width>251</width>
       <height>61</height>
      </rect>
@@ -241,7 +241,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>150</y>
+      <y>220</y>
       <width>251</width>
       <height>21</height>
      </rect>
@@ -257,7 +257,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>210</y>
+      <y>270</y>
       <width>251</width>
       <height>20</height>
      </rect>
@@ -273,7 +273,7 @@
     <property name="geometry">
      <rect>
       <x>520</x>
-      <y>10</y>
+      <y>-40</y>
       <width>21</width>
       <height>481</height>
      </rect>
@@ -434,7 +434,7 @@
     <property name="geometry">
      <rect>
       <x>190</x>
-      <y>420</y>
+      <y>380</y>
       <width>331</width>
       <height>21</height>
      </rect>
@@ -476,7 +476,7 @@
     <property name="geometry">
      <rect>
       <x>7</x>
-      <y>410</y>
+      <y>360</y>
       <width>521</width>
       <height>20</height>
      </rect>
@@ -492,7 +492,7 @@
     <property name="geometry">
      <rect>
       <x>460</x>
-      <y>450</y>
+      <y>410</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -514,7 +514,7 @@
     <property name="geometry">
      <rect>
       <x>170</x>
-      <y>450</y>
+      <y>410</y>
       <width>281</width>
       <height>20</height>
      </rect>
@@ -530,7 +530,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>270</y>
+      <y>320</y>
       <width>251</width>
       <height>20</height>
      </rect>
@@ -546,7 +546,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>290</y>
+      <y>340</y>
       <width>251</width>
       <height>23</height>
      </rect>
@@ -559,7 +559,7 @@
     <property name="geometry">
      <rect>
       <x>150</x>
-      <y>390</y>
+      <y>340</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -578,7 +578,7 @@
     <property name="geometry">
      <rect>
       <x>130</x>
-      <y>280</y>
+      <y>230</y>
       <width>109</width>
       <height>21</height>
      </rect>
@@ -594,7 +594,7 @@
     <property name="geometry">
      <rect>
       <x>130</x>
-      <y>310</y>
+      <y>260</y>
       <width>109</width>
       <height>21</height>
      </rect>
@@ -613,7 +613,7 @@
     <property name="geometry">
      <rect>
       <x>540</x>
-      <y>330</y>
+      <y>370</y>
       <width>251</width>
       <height>61</height>
      </rect>
@@ -635,56 +635,11 @@
      <enum>Qt::Horizontal</enum>
     </property>
    </widget>
-   <widget class="QRadioButton" name="radioButton_Vacuum">
-    <property name="geometry">
-     <rect>
-      <x>240</x>
-      <y>200</y>
-      <width>106</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Vacuum</string>
-    </property>
-    <property name="checked">
-     <bool>true</bool>
-    </property>
-   </widget>
-   <widget class="QRadioButton" name="radioButton_ImplicitSolvent">
-    <property name="geometry">
-     <rect>
-      <x>350</x>
-      <y>200</y>
-      <width>171</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Implicit Solvent (GB)</string>
-    </property>
-   </widget>
-   <widget class="QLabel" name="label_3">
-    <property name="geometry">
-     <rect>
-      <x>0</x>
-      <y>200</y>
-      <width>211</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Environment</string>
-    </property>
-    <property name="alignment">
-     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-    </property>
-   </widget>
    <widget class="QLabel" name="label_8">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>240</y>
+      <x>220</x>
+      <y>200</y>
       <width>201</width>
       <height>21</height>
      </rect>
@@ -702,8 +657,8 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>250</x>
-      <y>240</y>
+      <x>460</x>
+      <y>200</y>
       <width>62</width>
       <height>24</height>
      </rect>
@@ -715,39 +670,53 @@
      <double>1.000000000000000</double>
     </property>
    </widget>
-   <widget class="QLabel" name="label_9">
+   <widget class="QLabel" name="label_3">
     <property name="geometry">
      <rect>
-      <x>340</x>
-      <y>240</y>
-      <width>111</width>
-      <height>21</height>
+      <x>540</x>
+      <y>10</y>
+      <width>71</width>
+      <height>71</height>
      </rect>
     </property>
     <property name="text">
-     <string>Solvent dielectric</string>
+     <string/>
     </property>
-    <property name="alignment">
-     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+    <property name="pixmap">
+     <pixmap>clover.ico</pixmap>
+    </property>
+    <property name="scaledContents">
+     <bool>true</bool>
     </property>
    </widget>
-   <widget class="QDoubleSpinBox" name="doubleSpinBox_solventDielectric">
-    <property name="enabled">
-     <bool>false</bool>
-    </property>
+   <widget class="QLabel" name="label_9">
     <property name="geometry">
      <rect>
-      <x>460</x>
-      <y>240</y>
-      <width>62</width>
-      <height>24</height>
+      <x>620</x>
+      <y>10</y>
+      <width>171</width>
+      <height>71</height>
      </rect>
     </property>
-    <property name="maximum">
-     <double>100.000000000000000</double>
+    <property name="font">
+     <font>
+      <pointsize>36</pointsize>
+     </font>
     </property>
-    <property name="value">
-     <double>78.500000000000000</double>
+    <property name="acceptDrops">
+     <bool>true</bool>
+    </property>
+    <property name="text">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-size:24pt;&quot;&gt;gRINN&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="textFormat">
+     <enum>Qt::RichText</enum>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignCenter</set>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
     </property>
    </widget>
   </widget>

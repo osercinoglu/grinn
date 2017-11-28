@@ -149,7 +149,7 @@ def getProEnNet(inFolder=False,resMeanIntEnFile=False,resCorrFile=False,includeC
 	
 	if inFolder:
 		resMeanIntEnFile = inFolder+'/energies_intEnMeanTotal.dat'
-		pdb = inFolder+'/system.pdb'
+		pdb = inFolder+'/system_dry.pdb'
 		if os.path.exists(inFolder+'/energies_resCorr.dat'):
 			resCorrFile = inFolder+'/energies_resCorr.dat'
 
