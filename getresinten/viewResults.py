@@ -22,10 +22,14 @@ import getProEnNet
 import networkx as nx
 from prody import *
 from pymolwidget import PyMolWidget
+import time
 
 class viewResultsParams(object):
 	def __init__(self):
 		self.system = None
+		self.traj = None
+		self.numFrames = None
+		self.currentFrame = None
 		self.outputFolder = None
 		self.intEnMeanTotal = None
 		self.intEnTotal = None
@@ -80,6 +84,7 @@ class MyStaticMplCanvas(MyMplCanvas):
         self.axes.clear()
 
     def update_figure(self,mainWindow,type='time-series'):
+
     	# Update the figure with new parameters
     	viewResultsParams = mainWindow.viewResultsParams
     	intEnTotal = viewResultsParams.intEnTotal
@@ -107,10 +112,18 @@ class MyStaticMplCanvas(MyMplCanvas):
 
     	self.axes.clear()
 
+    	currentFrame = mainWindow.viewResultsParams.currentFrame
+
     	if type=='time-series':
     		self.axes.plot(t,s,'b',label=key if key else '')
     		self.axes.set_xlabel('Frame')
     		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
+
+    		if currentFrame:
+    			# Plot a tracer dot. Remember that in the following data currentFrame is two minus.
+    			# This is because first frame is from the PDB loaded.
+    			# Also python is zero-indexed.
+    			self.axes.plot(currentFrame-2,s[currentFrame-2],linestyle=None,marker='o',color='red')
 
     	elif type=='distribution':
     		seaborn.kdeplot(s,ax=self.axes)
@@ -220,7 +233,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		# Creating the PyMolWidget
 		self.ProteinView = PyMolWidget()
-		self.horizontalLayout.addWidget(self.ProteinView)
+		self.verticalLayoutProteinView = QtWidgets.QVBoxLayout(self.frame_ProteinView)
+		self.verticalLayoutProteinView.addWidget(self.ProteinView)
 		self.ProteinView.show()
 		sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 		sizePolicy.setHorizontalStretch(1)
@@ -304,10 +318,32 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnMeanMat.update_figure(self,'iem')
 
 		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system.pdb')
+		trajPath = self.viewResultsParams.outputFolder+'/traj.dcd'
 		self.ProteinView._pymol.idle()
 		self.ProteinView._pymol.draw()
 		self.ProteinView._pymolProcess()
 		self.ProteinView.show()
+
+		# Load trajectory if it exists in the output folder!
+		# Usually it should exist!
+		if os.path.exists(trajPath):
+			self.viewResultsParams.traj = trajPath
+			self.ProteinView._pymol.cmd.load_traj(trajPath)
+			self.viewResultsParams.numFrames = self.ProteinView._pymol.cmd.count_frames()
+			self.horizontalSlider.setMinimum(1)
+			self.horizontalSlider.setMaximum(self.viewResultsParams.numFrames-1) # Remember first frame is already the PDB
+			self.horizontalSlider.sliderMoved.connect(self.updateFrame)
+
+	def updateFrame(self):
+		# Set the current frame. Don't forget that first frame is the PDB file, so we assign plus one here.
+		self.viewResultsParams.currentFrame = self.horizontalSlider.value()+1
+
+		self.ProteinView._pymol.cmd.set_frame(self.viewResultsParams.currentFrame)
+		self.ProteinView._pymol.cmd.refresh()
+		self.ProteinView.glDraw()
+		self.ProteinView._pymolProcess()
+		if self.viewResultsParams.selectedTargetRes:
+			self.intEnTimeSeries.update_figure(self,'time-series')
 
 	def updateProteinResiduePairs(self):
 		# Get selected two residues.
@@ -330,7 +366,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.ProteinView._pymol.cmd.label('resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label('resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
-		#self.ProteinView._pymol.update()
 
 	def updateProteinShortestPaths(self,path):
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')

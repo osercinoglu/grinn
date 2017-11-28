@@ -33,10 +33,12 @@ class PyMolWidget(QGLWidget):
         """
         self._pymol = pymol2.PyMOL()
         self._pymol.start()
-        
+
         if not self._enableUi:
             self._pymol.cmd.set("internal_gui", 0)
             self._pymol.cmd.set("internal_feedback", 0)
+            self._pymol.cmd.set("movie_panel",0)
+            self._pymol.cmd.set("draw_frames",1)
             self._pymol.cmd.button("double_left", "None", "None")
             self._pymol.cmd.button("single_right", "None", "None")
             self._pymol.cmd.bg_color('white')
