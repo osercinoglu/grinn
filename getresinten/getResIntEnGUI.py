@@ -184,11 +184,16 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		#### TEMPORARY!!! ####
 		subprocess.call('rm -R getResIntEn_output',shell=True)
-		self.lineEdit_namd2.setText('/usr/local/gromacs/bin/gmx')
-		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.tpr')
-		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.top')
-		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test_stride.xtc')
-		self.lineEdit_parameterFile.setText('/Users/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
+		# self.lineEdit_namd2.setText('gmx')
+		# self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.tpr')
+		# self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.top')
+		# self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test_stride.xtc')
+
+		self.lineEdit_namd2.setText('/home/onur/repos/gRINN/NAMD_2.12b1/namd2')
+		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.pdb')
+		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.psf')
+		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test.dcd')
+		self.lineEdit_parameterFile.setText('/home/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.

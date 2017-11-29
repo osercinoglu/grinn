@@ -22,7 +22,7 @@ import getProEnNet
 import networkx as nx
 from prody import *
 from pymolwidget import PyMolWidget
-import time
+import math
 
 class viewResultsParams(object):
 	def __init__(self):
@@ -46,10 +46,10 @@ class MyMplCanvas(FigureCanvas):
 		fig = Figure(figsize=(width, height), dpi=dpi)
 		self.fig = fig
 		self.axes = fig.add_subplot(111)
-		#self.axes.clear()
+		self.axes.clear()
 		# We want the axes cleared every time plot() is called
 
-		#self.compute_initial_figure()
+		self.compute_initial_figure()
 
 		FigureCanvas.__init__(self, fig)
 		self.toolbar = NavigationToolbar(fig.canvas, self)
@@ -58,24 +58,17 @@ class MyMplCanvas(FigureCanvas):
 		
 		self.setParent(parent)
 
-		def onclick(event):
-			print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' % 
-				('double' if event.dblclick else 'single', event.button,
-			event.x, event.y, event.xdata, event.ydata))
-
-		cid = fig.canvas.mpl_connect('button_press_event', onclick)
-
 		FigureCanvas.setSizePolicy(self,
 			QSizePolicy.Expanding,
 			QSizePolicy.Expanding)
 		FigureCanvas.updateGeometry(self)
 		self.draw()
 
-    # def compute_initial_figure(self):
-    #     t = np.arange(0.0, 3.0, 0.01)
-    #     s = np.sin(2*np.pi*t)
-    #     self.axes.plot(t, s)
-    #     self.axes.clear()
+		def compute_initial_figure(self):
+			t = np.arange(0.0, 3.0, 0.01)
+			s = np.sin(2*np.pi*t)
+			self.axes.plot(t, s)
+			self.axes.clear()
 
 class MyStaticMplCanvas(MyMplCanvas):
     """Simple canvas with a sine plot."""
@@ -83,7 +76,6 @@ class MyStaticMplCanvas(MyMplCanvas):
         t = np.arange(0.0, 3.0, 0.01)
         s = np.sin(2*np.pi*t)
         self.axes.plot(t, s)
-        self.axes.clear()
 
     def update_figure(self,mainWindow,type='time-series'):
 
@@ -139,10 +131,12 @@ class MyStaticMplCanvas(MyMplCanvas):
     		data_nonzero = data[data['en'] != np.float64(0)]
     		res = data_nonzero['res'].values
     		en = data_nonzero['en'].values
-    		self.axes.barh(y=np.arange(0,len(res),1),width=en,color="b")
+    		# Mind that the following does not work in mpl2.1.x
+    		self.axes.barh(bottom=np.arange(0,len(res),1),width=en,color="b")
     		self.axes.set_yticks(np.arange(0,len(res),1))
     		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
     		self.axes.set_xlabel('Mean IE [kcal/mol]')
+    		self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.01,top=0.99)
 
     	elif type in ['iem','rc']:
     		if type=='iem':
@@ -191,13 +185,18 @@ class MyStaticMplCanvas(MyMplCanvas):
     			title = 'Betweenness \n centrality'
 
     		chainResnameResnums = [getChainResnameResnum(viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
-    		self.axes.barh(y=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
+    		# Note that the following does not work in mpl=2.1.0
+    		self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
     		self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
     		self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
     		self.axes.set_ylim([0,len(metric.keys())])
     		self.axes.set_title(title)
+    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.01,top=0.99)
 
-    	self.fig.set_tight_layout({'pad':0})
+    	# Note that the following does not work in mpl=2.0.2
+    	# Works fine in mpl=2.1.0 but leaving the newest stable version out until a toolbar issue is fixed in mpl=2.2.0.
+    	#self.fig.set_tight_layout({'pad':0.1})
+
     	self.draw()
 
 class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainWindow):
@@ -215,7 +214,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(
 			["Residue","Residue","IE [kcal/mol]"])
 		
-		# Creating matplotlib canvases
+		#self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
+		#	dpi=100)
+		#self.verticalLayout_10.addWidget(self.networkPlot)
+
 		self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
 			dpi=100)
 		self.verticalLayout_3.addWidget(self.intEnBarPlot)
@@ -223,9 +225,11 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
 			dpi=100,toolbar=True)
 		self.verticalLayout.addWidget(self.intEnTimeSeries)
+
 		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
 			dpi=100)
 		self.verticalLayout.addWidget(self.intEnDistributions)
+
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
@@ -244,10 +248,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			dpi=100)
 		self.horizontalLayout_4.addWidget(self.ccPlot)
 
-		#self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
-		#	dpi=100)
-		#self.verticalLayout_10.addWidget(self.networkPlot)
-
 		# Creating the PyMolWidget
 		self.ProteinView = PyMolWidget()
 		self.verticalLayoutProteinView = QtWidgets.QVBoxLayout(self.frame_ProteinView)
@@ -263,16 +263,92 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
-		#self.populateGUI()
 		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updatePairwiseEnergiesTable)
-
 		self.pushButton_findShortestPaths.clicked.connect(self.findShortestPaths)
-
 		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
+
+	def isFolderGood(self,folderPath):
+		# Check sequentially if the folder contains the bare minimum necessary to load results
+		# This is to prevent the user from selecting a totally random folder which does not contain
+		# data generated by getResIntEn.py
+		files = ['energies_intEnTotal.csv','energies_intEnElec.csv','energies_intEnVdW.csv',
+		'energies_intEnMeanTotal.dat','energies_intEnMeanElec.dat','energies_intEnMeanVdW.dat',
+		'system_dry.pdb']
+		filePaths = [folderPath+'/'+x for x in files]
+		for path in filePaths:
+			if not os.path.exists(path):
+				loadingMessage = QMessageBox.critical(self,"Error","I looked for file %s and could not find it.\n"
+					"This is a required output file." % path)
+				return False
+
+		return True
+
+	def onClick_intEnBarPlot(self,event):
+		# Get the axis included in the intEnBatPlot MplStaticCanvas object
+		axes = self.intEnBarPlot.fig.gca()
+
+		# Get the label (residue) that is clicked on
+		yticklabels = axes.yaxis.get_ticklabels()
+
+		# Note that the event object here is different in mpl=2.1.0
+		# The following only works with mpl=2.0.2
+		x = event.x
+		y = event.y
+		xdata = event.xdata
+		ydata = event.ydata
+		if yticklabels and ydata:
+			# Set the selectedTargetRes
+			selectedTargetRes = getResindex(self.viewResultsParams.system,
+				yticklabels[math.ceil(ydata)].get_text()) 
+
+			# Don't do anything if the residue is already selected in the table
+			if self.viewResultsParams.selectedTargetRes == selectedTargetRes:
+				return
+			
+			self.viewResultsParams.selectedTargetRes = selectedTargetRes
+
+			# Take action as if the sourceTargetRes table second column is clicked
+			self.intEnTimeSeries.update_figure(self,'time-series')
+			self.intEnDistributions.update_figure(self,'distribution')
+			self.updateProteinResiduePairs()
+
+	def onClick_intEnMeanMat(self,event):
+
+		if not event.dblclick:
+			return
+
+		# Note that the event object here is different in mpl=2.1.0
+		# The following only works with mpl=2.0.2
+		x = event.x
+		y = event.y
+		xdata = event.xdata
+		ydata = event.ydata
+
+		# Get the axis included in intEnMeanMat MplStaticCanvas object
+		axes = self.intEnMeanMat.fig.gca()
+
+		# Get the indices clicked on.
+		selectedSourceRes = math.ceil(xdata)
+		selectedTargetRes = math.ceil(ydata)
+		
+		# Don't do anything is both selected source and target residues are the same with
+		# previously selected ones.
+		if selectedSourceRes == self.viewResultsParams.selectedSourceRes and \
+			selectedTargetRes == self.viewResultsParams.selectedTargetRes:
+			return
+
+		self.viewResultsParams.selectedSourceRes = selectedSourceRes
+		self.viewResultsParams.selectedTargetRes = selectedTargetRes
+
+		self.updateProteinResiduePairs()
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select an output folder containing energy calculation results.',os.getcwd()))
 		if name:
+			isFolderGood = self.isFolderGood(name)
+			if not isFolderGood:
+				return False
+			loadingMessage = QMessageBox.about(self,"Loading...","Please click OK to start loading your data...")
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
 			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system_dry.pdb')
@@ -291,7 +367,45 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			if os.path.exists(resCorrTotalPath):
 				self.viewResultsParams.resCorrTotal =np.loadtxt(resCorrTotalPath)
 
+			# Clearing matplotlib canvases
+			if hasattr(self,"intEnBarPlot"):
+				self.intEnBarPlot.setParent(None)
+
+			self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
+				dpi=100)
+			self.verticalLayout_3.addWidget(self.intEnBarPlot)
+
+			if hasattr(self,"intEnTimeSeries"):
+				self.intEnTimeSeries.setParent(None)
+
+			self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+				dpi=100,toolbar=True)
+			self.verticalLayout.addWidget(self.intEnTimeSeries)
+
+			if hasattr(self,"intEnDistributions"):
+				self.intEnDistributions.setParent(None)
+
+			self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+				dpi=100)
+			self.verticalLayout.addWidget(self.intEnDistributions)
+
+			if hasattr(self,"intEnMeanMat"):
+				self.intEnMeanMat.setParent(None)
+
+			self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
+			self.verticalLayout_5.addWidget(self.intEnMeanMat)
+
+			if hasattr(self,"resCorrTotalMat"):
+				self.resCorrTotalMat.setParent(None)
+
+			self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC)
+			self.verticalLayout_13.addWidget(self.resCorrTotalMat)
+
 			self.populateGUI()
+
+			# Connect some callbacks that need to be connected only once some data is loaded.
+			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnBarPlot)
+			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
 			return True
 		else:
 			return False
@@ -353,11 +467,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		# Load trajectory if it exists in the output folder!
 		# Usually it should exist!
 		if os.path.exists(trajPath):
-			buttonReply = QMessageBox.question(self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?"
+			buttonReply = QMessageBox.question(self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?\n"
 			"Warning: This might slow down the display significantly if the trajectory file size is large.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 			if buttonReply == QMessageBox.No:
+				self.horizontalSlider.setEnabled(False)
 				pass
 			elif buttonReply == QMessageBox.Yes:
+				self.horizontalSlider.setEnabled(True)
 				self.viewResultsParams.traj = trajPath
 				self.ProteinView._pymol.cmd.load_traj(trajPath)
 				self.viewResultsParams.numFrames = self.ProteinView._pymol.cmd.count_frames()

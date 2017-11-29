@@ -158,8 +158,11 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 	logger.info('Started an energy calculation thread.')
 
+	# Prevent backup making while calculating energies.
+	os.environ["GMX_MAXBACKUP"] = "-1"
+
 	# Make an index and MDP file with the pairs filtered.
-	gmxExe = 'gmx'
+	#gmxExe = 'gmx'
 	makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder)
 
 	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
@@ -223,7 +226,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 			#os.chdir(outputFolder)
 
 	if tpr:
-		gmxExe = 'gmx' # TEMPORARY
+		#gmxExe = 'gmx' # TEMPORARY
 
 		# Convert tpr to pdb, selecting just Protein.
 		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
@@ -246,7 +249,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		tpr = outputFolder+'/system.tpr'
 
 	try:
-		system = parsePDB(pdbFull)
+		system = parsePDB(pdb)
 	except:
 		logger.exception('Could not load the PDB file. Aborting now.')
 		return
@@ -347,7 +350,8 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 	else:
 		try:
-			traj = parseDCD(trajPath)
+			traj = Trajectory(trajPath)
+			traj.link(system)
 			dataType = 'NAMD'
 		except:
 			logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
@@ -475,7 +479,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		pool.map(calcEnergiesSingleCoreNAMD,
 			zip(pairsFilteredChunks,itertools.repeat(top),
-				itertools.repeat(outputFolder+'/system.pdb'),
+				itertools.repeat(outputFolder+'/system_dry.pdb'),
 				itertools.repeat(trajPath),
 				itertools.repeat(skip),
 				itertools.repeat(frameRange),
@@ -500,7 +504,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
 		parsedEnergiesResults = pool.starmap(parseEnergiesSingleCoreNAMD,
-			zip(energiesFilePathsChunks,itertools.repeat(outputFolder+'/system.pdb'),
+			zip(energiesFilePathsChunks,itertools.repeat(outputFolder+'/system_dry.pdb'),
 				itertools.repeat(logFile)))
 
 		parsedEnergies = dict()
@@ -573,7 +577,8 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	for item in glob.glob(outputFolder+'/*.trr'):
 		os.remove(item)
 
-	os.remove(outputFolder+'/traj.dcd')
+	if os.path.exists(outputFolder+'/traj.dcd'):
+		os.remove(outputFolder+'/traj.dcd')
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	
