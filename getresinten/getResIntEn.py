@@ -151,7 +151,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
 	pairFilterCutoff,outputFolder,gmxExe,logFile,numCores):
-	
+
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)
@@ -163,29 +163,39 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 	# Make an index and MDP file with the pairs filtered.
 	#gmxExe = 'gmx'
-	makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder)
+	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder)
 
 	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
 	i = 0
-	for pair in pairsFiltered:
-		proc = subprocess.Popen([gmxExe,'grompp','-f',outputFolder+'/interact'+str(i)+'.mdp','-n',
-			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',outputFolder+'/interact'+str(i)+'.tpr','-maxwarn','20'],
+	edrFiles = list()
+	for i in range(0,len(mdpFiles)):
+		mdpFile = mdpFiles[i]
+		tprFile = mdpFile.rstrip('.mdp')+'.tpr'
+		edrFile = mdpFile.rstrip('.mdp')+'.edr'
+
+		proc = subprocess.Popen([gmxExe,'grompp','-f',mdpFile,'-n',
+			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20'],
 			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
 		proc.wait()
 
-		proc = subprocess.Popen([gmxExe,'mdrun','-rerun',trajFilePath,'-s',outputFolder+'/interact'+str(i)+'.tpr',
-			'-e',outputFolder+'/interact'+str(i)+'.edr','-nt',str(numCores)],
+		proc = subprocess.Popen([gmxExe,'mdrun','-rerun',trajFilePath,'-s',tprFile,
+			'-e',edrFile,'-nt',str(numCores)],
 			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
 		proc.wait()
 
-		i += 1
+		edrFiles.append(edrFile)
 
-		logger.info('Completed calculation percentage: '+str(i/len(pairsFiltered)*100))
+		logger.info('Completed calculation percentage: '+str(i/len(mdpFiles)*100))
+
+	return edrFiles, pairsFilteredChunks
 
 def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,soluteDielectric,solventDielectric,
 	pairCalc,pairFilterCutoff,pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,
 	outputFolder,namd2exe,gmxExe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
+	# TEMP
+	gmxExe = 'gmx'
+
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
 		filename=logFile)
@@ -243,8 +253,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		proc.kill(1)
 		print('active')
 
-		pdb = outputFolder+'/system_dry.pdb'
-		pdbFull = outputFolder+'/system.pdb'
+		pdb = outputFolder+'/system.pdb'
 		copyfile(tpr,outputFolder+'/system.tpr')
 		tpr = outputFolder+'/system.tpr'
 
@@ -345,7 +354,9 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		traj.save_dcd(outputFolder+'/traj.dcd')
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
-		traj = parseDCD(outputFolder+'/traj.dcd')
+		traj = Trajectory(outputFolder+'/traj.dcd')
+		print(system.numAtoms())
+		traj.link(system)
 		logger.info('DCD file conversion success.')
 
 	else:
@@ -516,11 +527,12 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		pool.join()
 
 	elif dataType == 'GMX':
-		calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,
+		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,
 			trajFilePath=trajPath,skip=skip,frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,outputFolder=outputFolder,
 			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
 
-		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFiltered=pairsFiltered,outputFolder=outputFolder)
+		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,
+			edrFiles=edrFiles)
 	
 	# while not parsedEnergiesResults.ready():
 	# 	print("num left: {}".format(parsedEnergiesResults._number_left))

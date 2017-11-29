@@ -75,7 +75,7 @@ def parseEnergiesSingleCoreNAMD(filePaths,pdb,logFile):
 
 	return energiesDict
 
-def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFiltered):
+def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles):
 
 	system = parsePDB(pdb)
 	system_dry = system.select('protein or nucleic')
@@ -98,25 +98,32 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFiltered):
 
 	# WITH PANEDR
 	df = panedr.edr_to_df(outputFolder+'/interact0.edr')
-	for i in range(1,len(pairsFiltered)):
-		df_pair = panedr.edr_to_df(outputFolder+'/interact'+str(i)+'.edr')
+	for i in range(0,len(edrFiles)):
+		edrFile = edrFiles[i]
+
+		df_pair = panedr.edr_to_df(outputFolder+edrFile)
 		df = pandas.concat([df,df_pair],axis=1)
 
 	energiesDict = dict()
-	for pair in pairsFiltered:
-		res1_string = getChainResnameResnum(system_dry,pair[0])
-		res2_string = getChainResnameResnum(system_dry,pair[1])
-		energyDict = dict()
-		energyDict['VdW'] = df['LJ-SR:res%i-res%i' % (pair[0],pair[1])].values
-		energyDict['Elec'] = df['Coul-SR:res%i-res%i' % (pair[0],pair[1])].values
-		energyDict['Total'] = [energyDict['VdW'][i]+energyDict['Elec'][i] for i in range(0,len(energyDict['VdW']))]
+	for i in range(0,len(pairsFilteredChunks)):
+		pairsFilteredChunk = pairsFilteredChunks[i]
+		energiesDictChunk = dict()
+		for pair in pairsFilteredChunk:
+			res1_string = getChainResnameResnum(system_dry,pair[0])
+			res2_string = getChainResnameResnum(system_dry,pair[1])
+			energyDict = dict()
+			energyDict['VdW'] = df['LJ-SR:res%i-res%i' % (pair[0],pair[1])].values
+			energyDict['Elec'] = df['Coul-SR:res%i-res%i' % (pair[0],pair[1])].values
+			energyDict['Total'] = [energyDict['VdW'][i]+energyDict['Elec'][i] for i in range(0,len(energyDict['VdW']))]
 
-		key1 = res1_string+'-'+res2_string
-		key1 = key1.replace(' ','')
-		key2 = res2_string+'-'+res1_string
-		key2 = key2.replace(' ','')
-		energiesDict[key1] = energyDict
-		energiesDict[key2] = energyDict
+			key1 = res1_string+'-'+res2_string
+			key1 = key1.replace(' ','')
+			key2 = res2_string+'-'+res1_string
+			key2 = key2.replace(' ','')
+			energiesDictChunk[key1] = energyDict
+			energiesDictChunk[key2] = energyDict
+
+		energiesDict.update(energiesDictChunk)
 
 	return energiesDict
 	print('Parsing success!')
@@ -207,15 +214,24 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	#f.close()
 
 	# Write the .mdp files necessary for GMX
-
+	mdpFiles = list()
 	i = 0
-	for pair in pairsFiltered:
-		filename = str(outFolder)+'/interact'+str(i)+'.mdp'
-		f = open(filename,'w')
-		f.write('cutoff-scheme = group\n')
+	allSerialsChunks = list()
+	for j in np.arange(0,len(allSerials),200):
+		allSerialsChunk = allSerials[j:j+200]
+		print(allSerialsChunk)
+		if allSerialsChunk:
+			filename = str(outFolder)+'/interact'+str(i)+'.mdp'
+			f = open(filename,'w')
+			f.write('cutoff-scheme = group\n')
+			allSerialsChunks.append(allSerialsChunk)
+		else:
+			continue
+
 		resString = ''
-		resString += 'res'+str(pair[0])+' '
-		resString += 'res'+str(pair[1])+' '
+		for pair in allSerialsChunk:
+			resString += 'res'+str(pair[0])+' '
+			resString += 'res'+str(pair[1])+' '
 
 		resString += ' SOL'
 
@@ -232,5 +248,7 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 		f.write(energygrpExclString)
 
 		f.close()
+		mdpFiles.append(filename)
 		i += 1
 
+	return mdpFiles, pairsFilteredChunks
