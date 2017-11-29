@@ -19,12 +19,14 @@ from prody import *
 from common import parseEnergiesSingleCoreNAMD
 from common import getChainResnameResnum
 
-def getResIntCorr(inFile,pdb,logFile,frameRange=False,
+def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 	numCores=1,meanIntEnCutoff=float(1),outPrefix=''):
-
-	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+	
+	if not logger and logFile:
+		logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
-	logger = logging.getLogger(__name__)
+		logger = logging.getLogger(__name__)
+	
 	logger.info('Started residue interaction energy calculation.')
 
 	logger.info('Reading input CSV...')
@@ -60,6 +62,9 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 			else:
 				intEnMat[i,j] = np.zeros(len(df))
 				intEnMat[j,i] = np.zeros(len(df))
+
+		percentCalculated = ((i+1)/float(numResidues))*100/2 # /2 because this is only halfway of calculation.
+		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
 
 	# Calculate pearson product moment correlation between all interaction energy pairs
@@ -99,7 +104,8 @@ def getResIntCorr(inFile,pdb,logFile,frameRange=False,
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
 
-		logger.info('Interaction energy correlation calculated percentage: %i' % (int(i+1)/numResidues*100))
+		percentCalculated = 50+((i+1)/float(numResidues))*100/2 # /2 because this is only halfway of calculation.
+		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
 		progbar.update()
 

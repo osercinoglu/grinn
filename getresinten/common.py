@@ -75,12 +75,12 @@ def parseEnergiesSingleCoreNAMD(filePaths,pdb,logFile):
 
 	return energiesDict
 
-def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles):
+def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger):
 
 	system = parsePDB(pdb)
 	system_dry = system.select('protein or nucleic')
 	system_dry = system_dry.select('not resname SOL')
-	gmxExe = 'gmx' # TEMPORARY!
+	#gmxExe = '/usr/local/gromacs/bin/gmx' # TEMPORARY!
 	# Parse the resulting interact.edr file from the output directory
 
 	# WITHOUT PANEDR
@@ -97,13 +97,15 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles):
 	# proc.kill(1)
 
 	# WITH PANEDR
+	logger.info('Parsing GMX energy output... This may take a while...')
 	df = panedr.edr_to_df(outputFolder+'/interact0.edr')
-	for i in range(0,len(edrFiles)):
+	for i in range(1,len(edrFiles)):
 		edrFile = edrFiles[i]
-
-		df_pair = panedr.edr_to_df(outputFolder+edrFile)
+		df_pair = panedr.edr_to_df(edrFile)
 		df = pandas.concat([df,df_pair],axis=1)
+		logger.info('Parsed %i out of %i EDR files...' % (i+1,len(edrFiles)))
 
+	logger.info('Collecting energy results...')
 	energiesDict = dict()
 	for i in range(0,len(pairsFilteredChunks)):
 		pairsFilteredChunk = pairsFilteredChunks[i]
@@ -126,7 +128,6 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles):
 		energiesDict.update(energiesDictChunk)
 
 	return energiesDict
-	print('Parsing success!')
 
 def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel=None,targetSel=None,outFolder=os.getcwd()):
 	
@@ -215,23 +216,48 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 
 	# Write the .mdp files necessary for GMX
 	mdpFiles = list()
+
+	# Divide pairsFiltered into chunks so that each chunk does not contain
+	# more than 220 unique residue indices. This is because GMX does not 
+	# allow more than 254 energy groups to be defined in an MDP file and
+	# each residue has to be an energy group in our case.
+	pairsFilteredChunks = list()
+	if len(np.unique(np.hstack(pairsFiltered))) <= 220:
+		pairsFilteredChunks.append(pairsFiltered)
+	else:
+		i = 0
+		while i < len(pairsFiltered)-1:
+			j = i+1
+			# Extract a chunk, get how many unique residue indices are there,
+			# if there are more than 220, stop and take the chunk in the previous
+			# iteration, then move on scanning another chunk. 
+			# Continue doing this until the end of pairsFiltered list.
+			numResidues = 0
+			while numResidues < 220 and j <= len(pairsFiltered):
+				print(i,j)
+				print(len(pairsFiltered))
+				chunk = [pairsFiltered[k] for k in range(i,j)]
+				numResidues = len(np.unique(np.hstack(chunk)))
+				j += 1
+
+			pairsFilteredChunks.append(chunk)
+			i = j
+
+	
 	i = 0
-	allSerialsChunks = list()
-	for j in np.arange(0,len(allSerials),200):
-		allSerialsChunk = allSerials[j:j+200]
-		print(allSerialsChunk)
-		if allSerialsChunk:
+	for chunk in pairsFilteredChunks:
+		if chunk:
 			filename = str(outFolder)+'/interact'+str(i)+'.mdp'
 			f = open(filename,'w')
 			f.write('cutoff-scheme = group\n')
-			allSerialsChunks.append(allSerialsChunk)
 		else:
 			continue
 
+		chunkResidues = np.unique(np.hstack(chunk))
+
 		resString = ''
-		for pair in allSerialsChunk:
-			resString += 'res'+str(pair[0])+' '
-			resString += 'res'+str(pair[1])+' '
+		for res in chunkResidues:
+			resString += 'res'+str(res)+' '
 
 		resString += ' SOL'
 

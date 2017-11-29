@@ -185,7 +185,7 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 		edrFiles.append(edrFile)
 
-		logger.info('Completed calculation percentage: '+str(i/len(mdpFiles)*100))
+		logger.info('Completed calculation percentage: '+str((i+1)/len(mdpFiles)*100))
 
 	return edrFiles, pairsFilteredChunks
 
@@ -194,7 +194,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	outputFolder,namd2exe,gmxExe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
 	# TEMP
-	gmxExe = 'gmx'
+	gmxExe = '/usr/local/gromacs/bin/gmx'
 
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
@@ -251,7 +251,6 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		proc.sendline()
 		proc.wait()
 		proc.kill(1)
-		print('active')
 
 		pdb = outputFolder+'/system.pdb'
 		copyfile(tpr,outputFolder+'/system.tpr')
@@ -355,7 +354,6 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		traj.save_dcd(outputFolder+'/traj.dcd')
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
 		traj = Trajectory(outputFolder+'/traj.dcd')
-		print(system.numAtoms())
 		traj.link(system)
 		logger.info('DCD file conversion success.')
 
@@ -527,12 +525,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		pool.join()
 
 	elif dataType == 'GMX':
-		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,
-			trajFilePath=trajPath,skip=skip,frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,outputFolder=outputFolder,
+		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,
+			pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,trajFilePath=trajPath,skip=skip,
+			frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,outputFolder=outputFolder,
 			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
 
 		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,
-			edrFiles=edrFiles)
+			edrFiles=edrFiles,logger=logger)
 	
 	# while not parsedEnergiesResults.ready():
 	# 	print("num left: {}".format(parsedEnergiesResults._number_left))
@@ -546,6 +545,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	df_elec = pandas.DataFrame()
 	df_vdw = pandas.DataFrame()
 	for key,value in list(parsedEnergies.items()):
+		print(key,value)
 		df_total[key] = value['Total']
 		df_elec[key] = value['Elec']
 		df_vdw[key] = value['VdW']
@@ -573,7 +573,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		logger.info('Beginning residue interaction energy correlation calculation...')
 		getResIntCorr.getResIntCorr(inFile=outputFolder+'/'+'energies_intEnTotal.csv',
 			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
-			outPrefix=outputFolder+'/energies',logFile=logFile)
+			outPrefix=outputFolder+'/energies',logger=logger)
 
 	logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
