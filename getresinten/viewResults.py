@@ -112,6 +112,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.plot(t,s,'b',label=key if key else '')
     		self.axes.set_xlabel('Frame')
     		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
+    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
     		if currentFrame:
     			# Plot a tracer dot. Remember that in the following data currentFrame is two minus.
@@ -123,6 +124,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		seaborn.kdeplot(s,ax=self.axes)
     		self.axes.set_xlabel('Total Non-bonded IE [kcal/mol]')
     		self.axes.set_ylabel('Kernel Density')
+    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
     	elif type=='bar-plot':
     		data = pandas.DataFrame(columns=['res','en'])
@@ -136,7 +138,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_yticks(np.arange(0,len(res),1))
     		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
     		self.axes.set_xlabel('Mean IE [kcal/mol]')
-    		self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.01,top=0.99)
+    		self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.1,top=0.99)
 
     	elif type in ['iem','rc']:
     		if type=='iem':
