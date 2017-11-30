@@ -23,6 +23,7 @@ import networkx as nx
 from prody import *
 from pymolwidget import PyMolWidget
 import math
+import time
 
 class viewResultsParams(object):
 	def __init__(self):
@@ -178,13 +179,13 @@ class MyStaticMplCanvas(MyMplCanvas):
     	elif type.startswith('network'):
     		if type == 'network-bc':
     			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Degree \n'
+    			title = 'Betweennes \n centrality \n'
     		elif type == 'network-cc':
     			metric = nx.closeness_centrality(viewResultsParams.networkRO)
     			title = 'Closeness \n centrality'
     		elif type == 'network-degree':
     			metric = dict(nx.degree(viewResultsParams.networkRO))
-    			title = 'Betweenness \n centrality'
+    			title = 'Degree'
 
     		chainResnameResnums = [getChainResnameResnum(viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
     		# Note that the following does not work in mpl=2.1.0
@@ -314,6 +315,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			self.intEnDistributions.update_figure(self,'distribution')
 			self.updateProteinResiduePairs()
 
+	def onClick_networkBarPlots(self,event):
+
+		selectedRes = math.ceil(event.ydata)
+
+		self.updateProteinResidueMetrics(resIndex=selectedRes)
+
 	def onClick_intEnMeanMat(self,event):
 
 		if not event.dblclick:
@@ -351,6 +358,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			if not isFolderGood:
 				return False
 			loadingMessage = QMessageBox.about(self,"Loading...","Please click OK to start loading your data...")
+
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
 			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system_dry.pdb')
@@ -408,6 +416,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			# Connect some callbacks that need to be connected only once some data is loaded.
 			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnBarPlot)
 			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
+			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
+			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
+			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			return True
 		else:
 			return False
@@ -517,6 +528,19 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.ProteinView._pymol.cmd.set('label_size','-2')
 		self.ProteinView._pymol.cmd.label('resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label('resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymolProcess()
+
+	def updateProteinResidueMetrics(self,resIndex,bfacColorScheme=None):
+
+		res_string = getChainResnameResnum(self.viewResultsParams.system,resIndex)
+		self.ProteinView._pymol.cmd.show_as('cartoon','all')
+		self.ProteinView._pymol.cmd.color('white','all')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.label('all','')
+		self.ProteinView._pymol.cmd.show_as('spheres','resi '+res_string[4:]+' and chain '+res_string[0])
+		self.ProteinView._pymol.cmd.color('red','resi '+res_string[4:]+' and chain '+res_string[0])
+		self.ProteinView._pymol.cmd.set('label_size','-2')
+		self.ProteinView._pymol.cmd.label('resi '+res_string[4:]+' and chain '+res_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinShortestPaths(self,path):

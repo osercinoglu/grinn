@@ -215,10 +215,14 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.params.namd2exe = self.lineEdit_namd2.text()
 		self.params.paramFile = self.lineEdit_parameterFile.text()
 		self.params.interactCorrAverageIntEnCutoff = self.doubleSpinBox_AverageIntEnCutoff.value()
+		
+		# Date-inclusive log file name.
 		# Date: %d.%d.%d %d:%d \n' % (now.year,now.month,now.day,now.hour,
-		now = datetime.datetime.now()
-		self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
-			now.hour,now.minute,now.second)
+		#now = datetime.datetime.now()
+		#self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
+		#	now.hour,now.minute,now.second)
+
+		self.params.logFile = self.params.outputFolder+'/grinn.log'
 
 		# Make the log file now.
 		subprocess.call('touch %s' % self.params.logFile,shell=True)
