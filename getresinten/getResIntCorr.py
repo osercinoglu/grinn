@@ -36,7 +36,8 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 
 	# Get number of residues
 	system = parsePDB(pdb)
-	numResidues = system.numResidues()
+	systemProtein = system.select('protein or nucleic')
+	numResidues = len(np.unique(systemProtein.getResindices()))
 
 	# Convert the interaction energy time series to a 3D matrix
 	intEnMat = np.zeros((numResidues,numResidues,len(df)))

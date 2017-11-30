@@ -96,12 +96,20 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 	# proc.sendline()
 	# proc.kill(1)
 
-	# WITH PANEDR
+	# WITH PANEDR parse edr files to pandas dataframes
 	logger.info('Parsing GMX energy output... This may take a while...')
 	df = panedr.edr_to_df(outputFolder+'/interact0.edr')
 	for i in range(1,len(edrFiles)):
 		edrFile = edrFiles[i]
 		df_pair = panedr.edr_to_df(edrFile)
+
+		# It is possible that an interaction column has been calculated already in accumulated df.
+		# This is because of the way GMX energy calculations work.
+		# In this case we have to remove it from df_pair before concatenating it!
+		for column in df_pair.columns:
+			if column in df.columns:
+				df_pair = df_pair.drop(column,axis=1)
+				
 		df = pandas.concat([df,df_pair],axis=1)
 		logger.info('Parsed %i out of %i EDR files...' % (i+1,len(edrFiles)))
 
@@ -126,6 +134,7 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 			energiesDictChunk[key2] = energyDict
 
 		energiesDict.update(energiesDictChunk)
+		logger.info('Collected %i result out of %i' % (i+1,len(pairsFilteredChunks)))
 
 	return energiesDict
 

@@ -194,7 +194,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	outputFolder,namd2exe,gmxExe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
 	# TEMP
-	gmxExe = '/usr/local/gromacs/bin/gmx'
+	gmxExe = 'gmx'
 
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
