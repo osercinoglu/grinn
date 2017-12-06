@@ -18,6 +18,7 @@ import threading
 import getResIntEn
 import getResIntCorr
 import common
+import time
 
 class getResIntEnParams(object):
 	def __init__(self):
@@ -183,11 +184,12 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def startCalculation(self):
 
 		#### TEMPORARY!!! ####
+		root_path = '/Users/onur/repos/gRINN'
 		subprocess.call('rm -R getResIntEn_output',shell=True)
 		self.lineEdit_namd2.setText('gmx')
-		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.tpr')
-		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.top')
-		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test_stride.xtc')
+		self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
+		self.lineEdit_psf.setText(root_path+'/test/test.top')
+		self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
 
 		#self.lineEdit_namd2.setText('/home/onur/repos/gRINN/NAMD_2.12b1/namd2')
 		#self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.pdb')
@@ -223,9 +225,6 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		#	now.hour,now.minute,now.second)
 
 		self.params.logFile = self.params.outputFolder+'/grinn.log'
-
-		# Make the log file now.
-		subprocess.call('touch %s' % self.params.logFile,shell=True)
 		
 		# Start calculation in the background
 		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
@@ -297,7 +296,7 @@ class monitorProgress(QtCore.QThread):
 	def run(self):
 
 		# Start monitoring the progress of computation
-		subprocess.call('rm getResIntEn.log',shell=True)
+		
 		self.mainWindow.progressBar_filtering.setValue(0)
 		self.mainWindow.progressBar_calculation.setValue(0)
 		self._isRunning = True
@@ -309,6 +308,10 @@ class monitorProgress(QtCore.QThread):
 			remaining_time_hhmm = divmod(remaining_time,60)
 			etaString = 'ETA: %i min %i sec' % (remaining_time_hhmm[0],remaining_time_hhmm[1])
 			return etaString
+
+		# Wait until the logFile is created.
+		while not os.path.exists(self.params.logFile):
+			time.sleep(1)
 
 		# Monitor filtering steps
 		percent = 0
@@ -459,6 +462,10 @@ class monitorLog(QtCore.QThread):
 
 	def run(self):
 		
+		# Wait until the log file is created.
+		while not os.path.exists(self.params.logFile):
+			time.sleep(1)
+
 		# Start monitoring the progress log file produced by getResIntEn.py
 		errorLines = list()
 		while not errorLines and self._isRunning:

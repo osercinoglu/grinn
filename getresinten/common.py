@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas
+import re, os, pexpect, panedr, pandas, time
 import numpy as np
 from prody import *
 import logging
@@ -99,19 +99,39 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 	# WITH PANEDR parse edr files to pandas dataframes
 	logger.info('Parsing GMX energy output... This may take a while...')
 	df = panedr.edr_to_df(outputFolder+'/interact0.edr')
+	logger.info('Parsed 1 EDR file.')
 	for i in range(1,len(edrFiles)):
 		edrFile = edrFiles[i]
 		df_pair = panedr.edr_to_df(edrFile)
-
 		# It is possible that an interaction column has been calculated already in accumulated df.
 		# This is because of the way GMX energy calculations work.
-		# In this case we have to remove it from df_pair before concatenating it!
-		for column in df_pair.columns:
-			if column in df.columns:
-				df_pair = df_pair.drop(column,axis=1)
-				
+		# In this case we have to remove them.
+		df_pair_columns = df_pair.columns
+		df_pair = df_pair[list(set(df_pair_columns)-set(df.columns))]
+
 		df = pandas.concat([df,df_pair],axis=1)
 		logger.info('Parsed %i out of %i EDR files...' % (i+1,len(edrFiles)))
+
+	# logger.info('Removing duplicates from energy data frame...')
+	# df.to_csv(outputFolder+'/energies.csv')
+	# df = pandas.read_csv(outputFolder+'/energies.csv')
+	# col2remove = list()
+	# for column in df.columns:
+	# 	logger.info('Current column: %s' % column)
+	# 	matches = re.search('.*\.\d+',column)
+	# 	if matches:
+	# 		col2remove.append(column)
+	# 		logger.info('Will remove column from energy data frame.')
+
+	# df = df.drop(col2remove,1)
+	# logger.info('Removing duplicates from energy data frame... Done')
+	# os.remove(outputFolder+'/energies.csv')
+
+	# for column in df_pair.columns:
+	# 	if column in df.columns:
+	# 		df_pair = df_pair.drop(column,axis=1)
+	# 		# TEMP
+	# 		logger.info('Removed a column that already exists in energies data frame.')
 
 	logger.info('Collecting energy results...')
 	energiesDict = dict()
@@ -122,8 +142,21 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 			res1_string = getChainResnameResnum(system_dry,pair[0])
 			res2_string = getChainResnameResnum(system_dry,pair[1])
 			energyDict = dict()
-			energyDict['VdW'] = df['LJ-SR:res%i-res%i' % (pair[0],pair[1])].values
-			energyDict['Elec'] = df['Coul-SR:res%i-res%i' % (pair[0],pair[1])].values
+			column_string1 = 'LJ-SR:res%i-res%i' % (pair[0],pair[1])
+			column_string2 = 'LJ-SR:res%i-res%i' % (pair[1],pair[0])
+			if column_string1 in df.columns:
+				column_string = column_string1
+				
+			elif column_string2 in df.columns:
+				column_string = column_string2
+
+			else:
+				logger.exception('At least one required residue interaction was not found in the pair interaction '
+					'energy output. Please contact the developer.')
+				return
+
+			energyDict['VdW'] = df[column_string].values
+			energyDict['Elec'] = df[column_string].values
 			energyDict['Total'] = [energyDict['VdW'][i]+energyDict['Elec'][i] for i in range(0,len(energyDict['VdW']))]
 
 			key1 = res1_string+'-'+res2_string
@@ -134,11 +167,12 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 			energiesDictChunk[key2] = energyDict
 
 		energiesDict.update(energiesDictChunk)
-		logger.info('Collected %i result out of %i' % (i+1,len(pairsFilteredChunks)))
+		logger.info('Collected %i out of %i results' % (i+1,len(pairsFilteredChunks)))
 
 	return energiesDict
 
-def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel=None,targetSel=None,outFolder=os.getcwd()):
+def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel=None,
+	targetSel=None,outFolder=os.getcwd(),logger=None):
 	
 	system = parsePDB(pdb)
 
@@ -206,10 +240,13 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	filename = str(outFolder)+'/interact.ndx'
 
 	proc = pexpect.spawnu('%s make_ndx -f %s -o %s' % (gmxExe,tpr,filename))
+	proc.expect('>.*')
 	proc.send('q')
 	proc.sendline()
 	proc.sendline()
-	proc.wait()
+
+	time.sleep(5)# proc.wait() is a better option here, but it apparently does not work
+	# out of the box in Mac OSX. so using time.sleep(2) here.
 	proc.kill(1)
 
 	# Append our residue groups to this standart file!
@@ -227,40 +264,40 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	mdpFiles = list()
 
 	# Divide pairsFiltered into chunks so that each chunk does not contain
-	# more than 220 unique residue indices. This is because GMX does not 
+	# more than 200 unique residue indices. This is because GMX does not 
 	# allow more than 254 energy groups to be defined in an MDP file and
 	# each residue has to be an energy group in our case.
 	pairsFilteredChunks = list()
-	if len(np.unique(np.hstack(pairsFiltered))) <= 220:
+	if len(np.unique(np.hstack(pairsFiltered))) <= 200:
 		pairsFilteredChunks.append(pairsFiltered)
 	else:
-		i = 0
-		while i < len(pairsFiltered)-1:
-			j = i+1
-			# Extract a chunk, get how many unique residue indices are there,
-			# if there are more than 220, stop and take the chunk in the previous
-			# iteration, then move on scanning another chunk. 
-			# Continue doing this until the end of pairsFiltered list.
-			numResidues = 0
-			while numResidues < 220 and j <= len(pairsFiltered):
-				print(i,j)
-				print(len(pairsFiltered))
-				chunk = [pairsFiltered[k] for k in range(i,j)]
-				numResidues = len(np.unique(np.hstack(chunk)))
-				j += 1
+		i = 2
+		maxNumRes = len(np.unique(np.hstack(pairsFiltered)))
+		while maxNumRes >= 200:
+			pairsFilteredChunks = np.array_split(pairsFiltered,i)
+			chunkNumResList = list()
+			for chunk in pairsFilteredChunks:
+				chunkNumResList.append(len(np.unique(np.hstack(chunk))))
 
-			pairsFilteredChunks.append(chunk)
-			i = j
+			maxNumRes = np.max(chunkNumResList)
+			i += 1
 
+	# TEMPORARY
+	# Check whether pairsFilteredChunks missed any residue included in pairsFiltered
 	
+	for pair in pairsFiltered:
+		if pair not in np.vstack(pairsFilteredChunks):
+			logger.exception('RED ALERT: pairsFilteredChunks missing at least one residue in pairsFiltered.')
+		else:
+			logger.info('Residue included in pairsFiltered... Pass.')
+
+	# END OF TEMPORARY SECTION
+
 	i = 0
 	for chunk in pairsFilteredChunks:
-		if chunk:
-			filename = str(outFolder)+'/interact'+str(i)+'.mdp'
-			f = open(filename,'w')
-			f.write('cutoff-scheme = group\n')
-		else:
-			continue
+		filename = str(outFolder)+'/interact'+str(i)+'.mdp'
+		f = open(filename,'w')
+		f.write('cutoff-scheme = group\n')
 
 		chunkResidues = np.unique(np.hstack(chunk))
 

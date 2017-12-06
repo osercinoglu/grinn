@@ -163,7 +163,9 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 	# Make an index and MDP file with the pairs filtered.
 	#gmxExe = 'gmx'
-	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder)
+	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,
+		tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder,
+		logger=logger)
 
 	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
 	i = 0
@@ -173,14 +175,13 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 		tprFile = mdpFile.rstrip('.mdp')+'.tpr'
 		edrFile = mdpFile.rstrip('.mdp')+'.edr'
 
-		proc = subprocess.Popen([gmxExe,'grompp','-f',mdpFile,'-n',
-			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20'],
-			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
+		args = [gmxExe,'grompp','-f',mdpFile,'-n',
+			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20']
+		proc = subprocess.Popen(args)
 		proc.wait()
 
 		proc = subprocess.Popen([gmxExe,'mdrun','-rerun',trajFilePath,'-s',tprFile,
-			'-e',edrFile,'-nt',str(numCores)],
-			stderr=subprocess.STDOUT,stdout = subprocess.PIPE)
+			'-e',edrFile,'-nt',str(numCores)])
 		proc.wait()
 
 		edrFiles.append(edrFile)
@@ -195,19 +196,6 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	
 	# TEMP
 	gmxExe = 'gmx'
-
-	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
-	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
-		filename=logFile)
-	logger = logging.getLogger(__name__)
-	
-	# Also print messages to the terminal
-	console = logging.StreamHandler()
-	console.setLevel(logging.INFO)
-	console.setFormatter(logging.Formatter(loggingFormat))
-	logger.addHandler(console)
-
-	logger.info('Started calculation.')
 
 	# Registering signal handler to capture SIGINT.
 	# def signal_handler(signal, frame):
@@ -226,32 +214,64 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	currentFolder = os.getcwd()
 	if outputFolder != currentFolder:
 		if os.path.exists(outputFolder):
-			logger.error(
+			print(
 				"The output folder exists. Please delete or rename this folder before"\
-				 "proceeding. Aborting now.",exc_info=True)
+				 "proceeding. Aborting now.")
 			return
 		if not os.path.isdir(outputFolder):
-			logger.info('Creating the output folder %s' % outputFolder)
 			os.makedirs(outputFolder)
+			f = open(logFile,'w')
+			f.close()
+			loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
+			logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
+				filename=logFile)
+			logger = logging.getLogger(__name__)
+	
+			# Also print messages to the terminal
+			console = logging.StreamHandler()
+			console.setLevel(logging.INFO)
+			console.setFormatter(logging.Formatter(loggingFormat))
+			logger.addHandler(console)
+			logger.info('Creating the output folder %s' % outputFolder)
 			#os.chdir(outputFolder)
 
+
+	def sigint_handler(signum, frame):
+		logger.exception('Keyboard interrupt detected. Aborting now.')
+		sys.exit(0)
+ 
+	signal.signal(signal.SIGINT, sigint_handler)
+
+	logger.info('Started calculation.')
+	
 	if tpr:
 		#gmxExe = 'gmx' # TEMPORARY
 
+		logger.info('Detected TPR file, converting to PDB...')
 		# Convert tpr to pdb, selecting just Protein.
-		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
+		# Apparently directly spawning gmx in the following does not work as expect in OSX
+		# Prepending bash -c to the command line prior to gmx.
+		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
+		proc.expect('Select a group:.*')
 		proc.send('Protein')
 		proc.sendline()
-		proc.wait()
+		#proc.wait() # proc.wait() does not work on MacOSX for some reason...
+		while not os.path.exists(outputFolder+'/system_dry.pdb'):
+			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
 		proc.kill(1)
-
-		# Convert tpr to pdb, without selecting just water
-		proc = pexpect.spawnu('%s trjconv -f %s -s %s -b 0 -e 0 -o %s' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
+		
+		# Convert tpr to pdb, full system.
+		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
+		proc.expect('Select a group:.*')
 		proc.send('0 0')
 		proc.sendline()
-		proc.wait()
+
+		while not os.path.exists(outputFolder+'/system.pdb'):
+			time.sleep(1)
+
 		proc.kill(1)
 
+		logger.info('Detected TPR file, converting to PDB... Done.')
 		pdb = outputFolder+'/system.pdb'
 		copyfile(tpr,outputFolder+'/system.tpr')
 		tpr = outputFolder+'/system.tpr'
@@ -337,7 +357,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	# Check the input trajectory and convert to DCD if necessary.
 	if not trajPath.endswith('.dcd') and (trajPath.endswith('.xtc') or trajPath.endswith('.trr')):
 		# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
-		logger.info('Detected GMX trajectory... Converting to DCD to proceed further...')
+		logger.info('Detected GMX trajectory... Converting to DCD...')
 		try:
 			if traj.endswith('.xtc'):
 				traj = mdtraj.load_xtc(trajPath,top=outputFolder+'/system.pdb',stride=skip)
@@ -355,7 +375,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
 		traj = Trajectory(outputFolder+'/traj.dcd')
 		traj.link(system)
-		logger.info('DCD file conversion success.')
+		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 
 	else:
 		try:
@@ -411,7 +431,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	# Split the pair set list into chunks according to number of cores
 	pairChunks = np.array_split(list(pairSet),numCores)
 
-	logger.info('Starting the filtering step.')
+	logger.info('Starting the filtering step...')
 
 	# Continue with filtering operation
 	traj.setAtoms(systemCA)
@@ -545,7 +565,6 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	df_elec = pandas.DataFrame()
 	df_vdw = pandas.DataFrame()
 	for key,value in list(parsedEnergies.items()):
-		print(key,value)
 		df_total[key] = value['Total']
 		df_elec[key] = value['Elec']
 		df_vdw[key] = value['VdW']
