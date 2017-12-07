@@ -185,17 +185,18 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		#### TEMPORARY!!! ####
 		root_path = '/Users/onur/repos/gRINN'
+		root_path = '/home/onur/repos/gRINN'
 		subprocess.call('rm -R getResIntEn_output',shell=True)
-		self.lineEdit_namd2.setText('gmx')
-		self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
-		self.lineEdit_psf.setText(root_path+'/test/test.top')
-		self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
+		# self.lineEdit_namd2.setText('gmx')
+		# self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
+		# self.lineEdit_psf.setText(root_path+'/test/test.top')
+		# self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
 
-		#self.lineEdit_namd2.setText('/home/onur/repos/gRINN/NAMD_2.12b1/namd2')
-		#self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.pdb')
-		#self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.psf')
-		#self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test.dcd')
-		#self.lineEdit_parameterFile.setText('/home/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
+		self.lineEdit_namd2.setText('/home/onur/repos/gRINN/NAMD_2.12b1/namd2')
+		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.pdb')
+		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.psf')
+		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test.dcd')
+		self.lineEdit_parameterFile.setText('/home/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
 		#### TEMPORARY!!! ####
 
 		# Get necessary input arguments.

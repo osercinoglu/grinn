@@ -7,6 +7,7 @@
 # WARNING! All changes made in this file will be lost!
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+import sys
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -187,7 +188,7 @@ class Ui_MainWindow(object):
         self.label_3 = QtWidgets.QLabel(self.centralwidget)
         self.label_3.setGeometry(QtCore.QRect(540, 10, 71, 71))
         self.label_3.setText("")
-        self.label_3.setPixmap(QtGui.QPixmap("clover.ico"))
+        self.label_3.setPixmap(QtGui.QPixmap(sys.path[0]+"/clover.ico"))
         self.label_3.setScaledContents(True)
         self.label_3.setObjectName("label_3")
         self.label_9 = QtWidgets.QLabel(self.centralwidget)

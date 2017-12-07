@@ -287,9 +287,7 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	
 	for pair in pairsFiltered:
 		if pair not in np.vstack(pairsFilteredChunks):
-			logger.exception('RED ALERT: pairsFilteredChunks missing at least one residue in pairsFiltered.')
-		else:
-			logger.info('Residue included in pairsFiltered... Pass.')
+			logger.exception('Missing at least one residue in filtered residue pairs. Please contact the developer.')
 
 	# END OF TEMPORARY SECTION
 

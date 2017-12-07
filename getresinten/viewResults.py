@@ -179,7 +179,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     	elif type.startswith('network'):
     		if type == 'network-bc':
     			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Betweennes \n centrality \n'
+    			title = 'Betweennes \n centrality'
     		elif type == 'network-cc':
     			metric = nx.closeness_centrality(viewResultsParams.networkRO)
     			title = 'Closeness \n centrality'
@@ -236,7 +236,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
-		self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC)
+		self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC,toolbar=True)
 		self.verticalLayout_13.addWidget(self.resCorrTotalMat)
 
 		self.degreePlot = MyStaticMplCanvas(self.frame_ResidueMetrics,width=4,height=2,
@@ -317,9 +317,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 	def onClick_networkBarPlots(self,event):
 
-		selectedRes = math.ceil(event.ydata)
+		selectedRes = None
+		if event.ydata:
+			selectedRes = math.ceil(event.ydata)
 
-		self.updateProteinResidueMetrics(resIndex=selectedRes)
+		if selectedRes:
+			self.updateProteinResidueMetrics(resIndex=selectedRes)
 
 	def onClick_intEnMeanMat(self,event):
 
@@ -408,7 +411,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			if hasattr(self,"resCorrTotalMat"):
 				self.resCorrTotalMat.setParent(None)
 
-			self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC)
+			self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC,toolbar=True)
 			self.verticalLayout_13.addWidget(self.resCorrTotalMat)
 
 			self.populateGUI()
