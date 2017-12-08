@@ -169,12 +169,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
-		print('detected stop')
 		if hasattr(self,"processGetResIntEn"):
 
-			print('supposed to kill the running process.')
-			# Stop the calculation
-			os.kill(self.processGetResIntEn.pid,signal.SIGINT)
+			if self.processGetResIntEn:
+				# Stop the calculation
+				os.kill(self.processGetResIntEn.pid,signal.SIGINT)
 
 			# Stop monitoring
 			self.stopMonitorProgressThread.emit()
