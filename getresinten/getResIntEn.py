@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 from prody import *
 import mdtraj
 import multiprocessing
@@ -52,8 +52,8 @@ def calcEnergiesSingleCoreNAMD(args):
 		for pair in pairsFiltered:
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
-			sel1 = system.select('resindex %i' % int(pair[0]))
-			sel2 = system.select('resindex %i' % int(pair[1]))
+			sel1 = system.select(str('resindex %i' % int(pair[0])))
+			sel2 = system.select(str('resindex %i' % int(pair[1])))
 			# Changing the values of B-factor columns so that they can be recognized by
 			# pairInteractionGroup1 parameter in NAMD configuration file.
 			sel1.setBetas([1]*sel1.numAtoms())
@@ -186,7 +186,7 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 		edrFiles.append(edrFile)
 
-		logger.info('Completed calculation percentage: '+str((i+1)/len(mdpFiles)*100))
+		logger.info('Completed calculation percentage: '+str((i+1)/float(len(mdpFiles))*100))
 
 	return edrFiles, pairsFilteredChunks
 
@@ -194,9 +194,6 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	pairCalc,pairFilterCutoff,pairFilterBasis,pairFilterPercentage,pairFilterSkip,skip,frameRange,
 	outputFolder,namd2exe,gmxExe,paramFile,resIntCorr,resIntCorrAverageIntEnCutoff,toPickle,logFile):
 	
-	# TEMP
-	gmxExe = 'gmx'
-
 	# Registering signal handler to capture SIGINT.
 	# def signal_handler(signal, frame):
 	# 	print('Captured SIGINT')
@@ -252,7 +249,8 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		# Apparently directly spawning gmx in the following does not work as expect in OSX
 		# Prepending bash -c to the command line prior to gmx.
 		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
-		proc.expect('Select a group:.*')
+		proc.expect(u'Select a group:.*')
+		proc.logfile = sys.stdout
 		proc.send('Protein')
 		proc.sendline()
 		#proc.wait() # proc.wait() does not work on MacOSX for some reason...
@@ -262,7 +260,8 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		
 		# Convert tpr to pdb, full system.
 		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
-		proc.expect('Select a group:.*')
+		proc.expect(u'Select a group:.*')
+		proc.logfile = sys.stdout
 		proc.send('0 0')
 		proc.sendline()
 
@@ -282,13 +281,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		logger.exception('Could not load the PDB file. Aborting now.')
 		return
 
-	systemProtein = system.select('protein or nucleic')
+	systemProtein = system.select(str('protein or nucleic'))
 	writePDB(outputFolder+'/system_dry.pdb',systemProtein)
-	systemCA = system.select('name CA')
+	systemCA = system.select(str('name CA'))
 	numResidues = len(np.unique(systemProtein.getResindices()))
 
 	for resindex in np.unique(systemProtein.getResindices()):
-		residue = systemProtein.select('resindex %i' % resindex)
+		residue = systemProtein.select(str('resindex %i' % resindex))
 		index = np.unique(residue.getResnames())
 		if len(index) > 1:
 			logger.exception('There are residues with the same residue index in your PDB file. This is not allowed. Aborting now...')
@@ -373,7 +372,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		traj.save_dcd(outputFolder+'/traj.dcd')
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
-		traj = Trajectory(outputFolder+'/traj.dcd')
+		traj = Trajectory(str(outputFolder+'/traj.dcd'))
 		traj.link(system)
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 
@@ -387,13 +386,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 			return
 
 	logger.info('Deleting waters from the trajectory...')
-	traj.setAtoms(system.select('protein'))
-	writeDCD(outputFolder+'/traj_dry.dcd',traj,step=skip if dataType=='NAMD' else 1)
+	traj.setAtoms(system.select(str('protein')))
+	writeDCD(str(outputFolder+'/traj_dry.dcd'),traj,step=skip if dataType=='NAMD' else 1)
 	logger.info('Deleting waters from the trajectory... Done.')
 
 	# Load pdb with prody and get some useful numbers.
 	try:
-		sourceCA = system.select(sourceSel+' and name CA')
+		sourceCA = system.select(str(sourceSel)+' and name CA')
 	except:
 		logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
@@ -413,7 +412,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	# Get target selection residues, if provided:
 	if targetSel:
 		try:
-			targetCA = system.select(targetSel+' and name CA')
+			targetCA = system.select(str(targetSel+' and name CA'))
 		except:
 			logger.exception('Could not select Selection 2 residue group. Aborting now.')
 			return
@@ -746,9 +745,15 @@ if __name__ == '__main__':
 
 	outputFolder = os.path.abspath(args.outfolder[0])
 
-	namd2exe = os.path.abspath(args.namd2exe[0])
+	if os.path.exists(outputFolder+'/'+args.namd2exe[0]):
+		namd2exe = os.path.abspath(args.namd2exe[0])
+	else:
+		namd2exe = args.namd2exe[0]
 
-	gmxExe = os.path.abspath(args.gmxexe[0])
+	if os.path.exists(outputFolder+'/'+args.gmxexe[0]):
+		gmxExe = os.path.abspath(args.gmxexe[0])
+	else:
+		gmxExe = args.gmxexe[0]
 
 	logFile = os.path.abspath(args.logfile[0])
 

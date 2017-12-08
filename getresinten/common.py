@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time
+import re, os, pexpect, panedr, pandas, time, sys
 import numpy as np
 from prody import *
 import logging
@@ -155,9 +155,12 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 					'energy output. Please contact the developer.')
 				return
 
-			energyDict['VdW'] = df[column_string].values
-			energyDict['Elec'] = df[column_string].values
-			energyDict['Total'] = [energyDict['VdW'][i]+energyDict['Elec'][i] for i in range(0,len(energyDict['VdW']))]
+			# Remember that gmx uses the SI units.
+			# In terms of energy, this is usually kJ/mol
+			# We should convert to kcal/mol to be consistent with NAMD units (and with ourselves)
+			energyDict['VdW'] = np.asarray(df[column_string].values)*0.239005736
+			energyDict['Elec'] = np.asarray(df[column_string].values)*0.239005736
+			energyDict['Total'] = [energyDict['VdW'][j]+energyDict['Elec'][j] for j in range(0,len(energyDict['VdW']))]
 
 			key1 = res1_string+'-'+res2_string
 			key1 = key1.replace(' ','')
@@ -240,7 +243,8 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	filename = str(outFolder)+'/interact.ndx'
 
 	proc = pexpect.spawnu('%s make_ndx -f %s -o %s' % (gmxExe,tpr,filename))
-	proc.expect('>.*')
+	proc.logfile = sys.stdout
+	proc.expect(u'>.*')
 	proc.send('q')
 	proc.sendline()
 	proc.sendline()

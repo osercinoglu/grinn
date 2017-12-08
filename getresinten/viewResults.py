@@ -40,9 +40,10 @@ class viewResultsParams(object):
 		self.selectedSourceRes = 0
 		self.selectedTargetRes = 0
 		self.selectedShortestPath = None
+		self.iecPair1 = None
+		self.iecPair2 = None
 
 class MyMplCanvas(FigureCanvas):
-	"""Ultimately, this is a QWidget (as well as a FigureCanvasAgg, etc.)."""
 	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
 		fig = Figure(figsize=(width, height), dpi=dpi)
 		self.fig = fig
@@ -72,7 +73,6 @@ class MyMplCanvas(FigureCanvas):
 			self.axes.clear()
 
 class MyStaticMplCanvas(MyMplCanvas):
-    """Simple canvas with a sine plot."""
     def compute_initial_figure(self):
         t = np.arange(0.0, 3.0, 0.01)
         s = np.sin(2*np.pi*t)
@@ -173,6 +173,28 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_xlabel('Residue')
     		self.axes.set_ylabel('Residue')
 
+    	elif type == 'iec-energies':
+    		pair1_string = viewResultsParams.iecPair1
+    		pair2_string = viewResultsParams.iecPair2
+    		pair1_data = viewResultsParams.intEnTotal[pair1_string].values
+    		pair2_data = viewResultsParams.intEnTotal[pair2_string].values
+    		self.axes.plot(t,pair1_data,'b',label=pair1_string)
+    		self.axes.plot(t,pair2_data,'r',label=pair2_string)
+    		self.axes.set_xlabel('Frame')
+    		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
+    		self.axes.legend()
+    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+
+    	elif type == 'iec':
+    		pair1_string = viewResultsParams.iecPair1
+    		pair2_string = viewResultsParams.iecPair2
+    		pair1_data = viewResultsParams.intEnTotal[pair1_string].values
+    		pair2_data = viewResultsParams.intEnTotal[pair2_string].values
+    		self.axes.plot(pair1_data,pair2_data,'b',linestyle='None',marker='o')
+    		self.axes.set_xlabel(pair1_string + ' [kcal/mol]')
+    		self.axes.set_ylabel(pair2_string + ' [kcal/mol]')
+    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+
     	# elif type == 'network':
     	# 	nx.draw_circular(viewResultsParams.networkRO)
 
@@ -187,7 +209,8 @@ class MyStaticMplCanvas(MyMplCanvas):
     			metric = dict(nx.degree(viewResultsParams.networkRO))
     			title = 'Degree'
 
-    		chainResnameResnums = [getChainResnameResnum(viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
+    		chainResnameResnums = [getChainResnameResnum(
+    			viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
     		# Note that the following does not work in mpl=2.1.0
     		self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
     		self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
@@ -229,12 +252,23 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			dpi=100,toolbar=True)
 		self.verticalLayout.addWidget(self.intEnTimeSeries)
 
-		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+		self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,
+			height=4,
 			dpi=100)
 		self.verticalLayout.addWidget(self.intEnDistributions)
 
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
+
+		self.tableWidget_IEC.setColumnCount(5)
+		self.tableWidget_IEC.setHorizontalHeaderLabels(
+			["P-1 R-1","P-1 R-2","P-2 R-1","P-2 R-2","Correlation"])
+
+		self.iecEnergiesPlot = MyStaticMplCanvas(self.frame_IECcorrelations)
+		self.verticalLayout_12.addWidget(self.iecEnergiesPlot)
+
+		self.iecPlot = MyStaticMplCanvas(self.frame_IECcorrelations)
+		self.verticalLayout_12.addWidget(self.iecPlot)
 
 		self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC,toolbar=True)
 		self.verticalLayout_13.addWidget(self.resCorrTotalMat)
@@ -267,6 +301,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
 		self.tableWidget_sourceTargetResEnergies.cellClicked.connect(self.updatePairwiseEnergiesTable)
+		self.tableWidget_IEC.cellClicked.connect(self.updateIECtable)
 		self.pushButton_findShortestPaths.clicked.connect(self.findShortestPaths)
 		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
 
@@ -302,7 +337,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		if yticklabels and ydata:
 			# Set the selectedTargetRes
 			selectedTargetRes = getResindex(self.viewResultsParams.system,
-				yticklabels[math.ceil(ydata)].get_text()) 
+				yticklabels[int(math.ceil(ydata))].get_text()) 
 
 			# Don't do anything if the residue is already selected in the table
 			if self.viewResultsParams.selectedTargetRes == selectedTargetRes:
@@ -319,7 +354,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		selectedRes = None
 		if event.ydata:
-			selectedRes = math.ceil(event.ydata)
+			selectedRes = int(math.ceil(event.ydata))
 
 		if selectedRes:
 			self.updateProteinResidueMetrics(resIndex=selectedRes)
@@ -340,8 +375,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		axes = self.intEnMeanMat.fig.gca()
 
 		# Get the indices clicked on.
-		selectedSourceRes = math.ceil(xdata)
-		selectedTargetRes = math.ceil(ydata)
+		selectedSourceRes = int(math.ceil(xdata))
+		selectedTargetRes = int(math.ceil(ydata))
 		
 		# Don't do anything is both selected source and target residues are the same with
 		# previously selected ones.
@@ -355,16 +390,19 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.updateProteinResiduePairs()
 
 	def updateOutputFolder(self):
-		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select an output folder containing energy calculation results.',os.getcwd()))
+		name = str(QtWidgets.QFileDialog.getExistingDirectory(
+			self,'Select an output folder containing energy calculation results.',os.getcwd()))
 		if name:
 			isFolderGood = self.isFolderGood(name)
 			if not isFolderGood:
 				return False
-			loadingMessage = QMessageBox.about(self,"Loading...","Please click OK to start loading your data...")
+			loadingMessage = QMessageBox.about(
+				self,"Loading...","Please click OK to start loading your data...")
 
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
-			self.viewResultsParams.system = parsePDB(self.viewResultsParams.outputFolder+'/system_dry.pdb')
+			self.viewResultsParams.system = parsePDB(
+				self.viewResultsParams.outputFolder+'/system_dry.pdb')
 			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
 				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
 			self.viewResultsParams.intEnTotal = pandas.read_csv(
@@ -407,6 +445,18 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 			self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 			self.verticalLayout_5.addWidget(self.intEnMeanMat)
+
+			if hasattr(self,"iecEnergiesPlot"):
+				self.iecEnergiesPlot.setParent(None)
+
+			self.iecEnergiesPlot = MyStaticMplCanvas(self.frame_IECcorrelations)
+			self.verticalLayout_12.addWidget(self.iecEnergiesPlot)
+
+			if hasattr(self,"iecPlot"):
+				self.iecPlot.setParent(None)
+
+			self.iecPlot = MyStaticMplCanvas(self.frame_IECcorrelations)
+			self.verticalLayout_12.addWidget(self.iecPlot)
 
 			if hasattr(self,"resCorrTotalMat"):
 				self.resCorrTotalMat.setParent(None)
@@ -483,8 +533,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		# Load trajectory if it exists in the output folder!
 		# Usually it should exist!
 		if os.path.exists(trajPath):
-			buttonReply = QMessageBox.question(self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?\n"
-			"Warning: This might slow down the display significantly if the trajectory file size is large.", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+			buttonReply = QMessageBox.question(
+				self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?\n"
+			"Warning: This might slow down the display significantly if the trajectory file size is large.", 
+			QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 			if buttonReply == QMessageBox.No:
 				self.horizontalSlider.setEnabled(False)
 				pass
@@ -499,6 +551,32 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		if isinstance(self.viewResultsParams.resCorrTotal,np.ndarray):
 			self.resCorrTotalMat.update_figure(self,'rc')
+
+		if isinstance(self.viewResultsParams.intEnCorrTotal,pandas.core.frame.DataFrame):
+			numPairs = len(self.viewResultsParams.intEnCorrTotal)
+			self.tableWidget_IEC.setRowCount(numPairs)
+			self.tableWidget_IEC.setColumnCount(5)
+			self.tableWidget_IEC.setHorizontalHeaderLabels(
+			["P-1 R-1","P-1 R-2","P-2 R-1","P-2 R-2","Correlation"])
+			self.tableWidget_IEC.setSortingEnabled(True)
+			header = self.tableWidget_sourceTargetResEnergies.horizontalHeader()
+			header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+			header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+
+			for i in range(0,numPairs):
+				self.tableWidget_IEC.setItem(i,0,QtWidgets.QTableWidgetItem(
+					self.viewResultsParams.intEnCorrTotal.at[i,'res11']))
+				self.tableWidget_IEC.setItem(i,1,QtWidgets.QTableWidgetItem(
+					self.viewResultsParams.intEnCorrTotal.at[i,'res12']))
+				self.tableWidget_IEC.setItem(i,2,QtWidgets.QTableWidgetItem(
+					self.viewResultsParams.intEnCorrTotal.at[i,'res21']))
+				self.tableWidget_IEC.setItem(i,3,QtWidgets.QTableWidgetItem(
+					self.viewResultsParams.intEnCorrTotal.at[i,'res22']))
+				self.tableWidget_IEC.setItem(i,4,QtWidgets.QTableWidgetItem(
+					str(self.viewResultsParams.intEnCorrTotal.at[i,'corr'])))
+
+			self.updateIECtable(0,0)
+
 
 	def updateFrame(self):
 		# Set the current frame. Don't forget that first frame is the PDB file, so we assign plus one here.
@@ -524,13 +602,59 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
 		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
-		self.ProteinView._pymol.cmd.show_as('sticks','resi '+source_string[4:]+' and chain '+source_string[0])
-		self.ProteinView._pymol.cmd.show_as('sticks','resi '+target_string[4:]+' and chain '+target_string[0])
-		self.ProteinView._pymol.cmd.color('red','resi '+source_string[4:]+' and chain '+source_string[0])
-		self.ProteinView._pymol.cmd.color('red','resi '+target_string[4:]+' and chain '+target_string[0])
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+source_string[4:]+' and chain '+source_string[0])
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+target_string[4:]+' and chain '+target_string[0])
+		self.ProteinView._pymol.cmd.color(
+			'red','resi '+source_string[4:]+' and chain '+source_string[0])
+		self.ProteinView._pymol.cmd.color(
+			'red','resi '+target_string[4:]+' and chain '+target_string[0])
 		self.ProteinView._pymol.cmd.set('label_size','-2')
-		self.ProteinView._pymol.cmd.label('resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
-		self.ProteinView._pymol.cmd.label('resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymolProcess()
+
+	def updateProteinResidueQuadruples(self):
+		# Get the selected pairs in chainResNameResNum format!
+		selectedPair1 = self.viewResultsParams.iecPair1
+		selectedPair2 = self.viewResultsParams.iecPair2
+		selectedPair1 = selectedPair1.split('-')
+		selectedPair2 = selectedPair2.split('-')
+
+		# Select all and reset the view
+		#self.ProteinView._pymol.cmd.select('all','all')
+		self.ProteinView._pymol.cmd.show_as('cartoon','all')
+		self.ProteinView._pymol.cmd.color('green','all')
+		self.ProteinView._pymol.cmd.label('all','')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0])
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+selectedPair1[1][4:]+' and chain '+selectedPair1[1][0])
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+selectedPair2[0][4:]+' and chain '+selectedPair2[0][0])
+		self.ProteinView._pymol.cmd.show_as(
+			'sticks','resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0])
+		self.ProteinView._pymol.cmd.color(
+			'red','resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0])
+		self.ProteinView._pymol.cmd.color(
+			'red','resi '+selectedPair1[1][4:]+' and chain '+selectedPair1[1][0])
+		self.ProteinView._pymol.cmd.color(
+			'blue','resi '+selectedPair2[0][4:]+' and chain '+selectedPair2[0][0])
+		self.ProteinView._pymol.cmd.color(
+			'blue','resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0])
+		self.ProteinView._pymol.cmd.set('label_size','-2')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+selectedPair1[1][4:]+' and chain '+selectedPair1[1][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+selectedPair2[0][4:]+' and chain '+selectedPair2[0][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinResidueMetrics(self,resIndex,bfacColorScheme=None):
@@ -543,7 +667,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		self.ProteinView._pymol.cmd.show_as('spheres','resi '+res_string[4:]+' and chain '+res_string[0])
 		self.ProteinView._pymol.cmd.color('red','resi '+res_string[4:]+' and chain '+res_string[0])
 		self.ProteinView._pymol.cmd.set('label_size','-2')
-		self.ProteinView._pymol.cmd.label('resi '+res_string[4:]+' and chain '+res_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+		self.ProteinView._pymol.cmd.label(
+			'resi '+res_string[4:]+' and chain '+res_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinShortestPaths(self,path):
@@ -557,7 +682,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			res_pymol_select = 'resi '+res[4:]+' and chain '+res[0]
 			self.ProteinView._pymol.cmd.show_as('sticks',res_pymol_select)
 			self.ProteinView._pymol.cmd.color('red',res_pymol_select)
-			self.ProteinView._pymol.cmd.label(res_pymol_select+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			self.ProteinView._pymol.cmd.label(
+				res_pymol_select+' and name ca','"%s%s%s" % (chain,resn,resi)')
 
 		self.ProteinView._pymolProcess()
 
@@ -575,10 +701,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 					i,2,QtWidgets.QTableWidgetItem(
 						str(self.viewResultsParams.intEnMeanTotal[
 							self.viewResultsParams.selectedSourceRes,i])))
-				self.tableWidget_sourceTargetResEnergies.item(i,0).setBackground(QtGui.QColor(255,255,255))
+				self.tableWidget_sourceTargetResEnergies.item(i,0).setBackground(
+					QtGui.QColor(255,255,255))
 
 			# change background color to let user remember which sourceres was selected
-			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(QtGui.QColor(100,100,150))
+			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(
+				QtGui.QColor(100,100,150))
 
 			# plot bar plot of all other interactions with this residue
 			self.intEnBarPlot.update_figure(self,'bar-plot')
@@ -592,6 +720,45 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			# Update the protein structure
 			self.updateProteinResiduePairs()
 
+	def updateIECtable(self,row,column):
+		# Get the residues clicked on this row.
+		res11 = self.tableWidget_IEC.item(row,0).text()
+		res12 = self.tableWidget_IEC.item(row,1).text()
+		res21 = self.tableWidget_IEC.item(row,2).text()
+		res22 = self.tableWidget_IEC.item(row,3).text()
+
+		# Find the column in intEnTotal data frame that corresponds to this data
+		if isinstance(self.viewResultsParams.intEnTotal,pandas.core.frame.DataFrame):
+			# For the first residue pair in correlation
+			colString11 = res11+'-'+res12
+			colString12 = res12+'-'+res11
+
+			if colString11 in self.viewResultsParams.intEnTotal.columns:
+				colString1 = colString11
+			elif colString12 in self.viewResultsParams.intEnTotal.columns:
+				colString1 = colString12
+			else:
+				return
+
+			self.viewResultsParams.iecPair1 = colString1
+
+			# Second residue pair in correlation
+			colString21 = res21+'-'+res22
+			colString22 = res22+'-'+res21
+
+			if colString21 in self.viewResultsParams.intEnTotal.columns:
+				colString2 = colString21
+			elif colString22 in self.viewResultsParams.intEnTotal.columns:
+				colString2 = colString22
+			else:
+				return
+			self.viewResultsParams.iecPair2 = colString2
+
+			# Update plots and the protein structure
+			self.iecEnergiesPlot.update_figure(self,'iec-energies')
+			self.iecPlot.update_figure(self,'iec')
+			self.updateProteinResidueQuadruples()
+			
 	def findShortestPaths(self):
 		sourceRes_string = str(self.comboBox_SourceResidue.currentText())
 		targetRes_string = str(self.comboBox_TargetResidue.currentText())

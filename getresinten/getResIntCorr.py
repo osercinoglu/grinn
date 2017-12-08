@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 import scipy.stats as stats
 from natsort import natsorted
 import numpy as np
@@ -31,14 +31,14 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 
 	logger.info('Reading input CSV...')
 	# Read in interaction energy time series from the getResIntEn csv output.
-	df = pandas.read_csv(inFile,nrows=10)
+	df = pandas.read_csv(inFile)
 	logger.info('Reading input CSV... completed.')
 
 	# Get number of residues
 	system = parsePDB(pdb)
 	systemProtein = system.select('protein or nucleic')
 	numResidues = len(np.unique(systemProtein.getResindices()))
-
+	print(numResidues)
 	# Convert the interaction energy time series to a 3D matrix
 	intEnMat = np.zeros((numResidues,numResidues,len(df)))
 
@@ -64,7 +64,7 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 				intEnMat[i,j] = np.zeros(len(df))
 				intEnMat[j,i] = np.zeros(len(df))
 
-		percentCalculated = ((i+1)/float(numResidues))*100/2 # /2 because this is only halfway of calculation.
+		percentCalculated = ((i+1)/float(numResidues))*25# /4 because this is only quad of calculation.
 		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
 
@@ -105,16 +105,16 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 					if key not in list(sigcorrs.keys()):
 						sigcorrs[key] = corrs[row,col]
 
-		percentCalculated = 50+((i+1)/float(numResidues))*100/2 # /2 because this is only halfway of calculation.
+		percentCalculated = 25+((i+1)/float(numResidues))*25 # /2 because this is only halfway of calculation.
 		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
 		progbar.update()
 
 	logger.info('Calculating interaction energy correlations... completed.')
-
-	logger.info('Saving correlations to file...')
+	logger.info('Collecting significant correlations...')
 	df_corr = pandas.DataFrame(columns=['res11','res12','res21','res22','corr'])
-
+	print(list(sigcorrs.values()))
+	print(len(sigcorrs))
 	for i in range(0,len(sigcorrs)):
 		key = list(sigcorrs.keys())[i]
 		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
@@ -133,15 +133,19 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 		#	continue
 
 		df_corr.loc[i] = [res11_string,res12_string,res21_string,res22_string,sigcorrs[key]]
+		percentCalculated = 50+(((i+1)/float(len(sigcorrs)))*25)
+		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
+	logger.info('Saving correlations to file...')
 	df_corr.to_csv(outPrefix+'_resIntCorr.csv')
+	logger.info('Saving correlations to file... Done.')
 
 	# Constructing the residue correlation matrix
 	logger.info('Constructing the residue correlation matrix...')
 	rc = np.zeros((numResidues,numResidues))
 
-	progbar = pyprind.ProgBar(len(sigcorrs))
-	for key in list(sigcorrs.keys()):
+	for i in range(0,len(sigcorrs)):
+		key = list(sigcorrs.keys())[i]
 		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
 		rc_key = np.zeros((numResidues,numResidues))
 		if matches:
@@ -162,11 +166,12 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 			rc_key[res22,res12] = corr
 
 			rc = rc + rc_key
-
-		progbar.update()
+		
+		percentCalculated = 75+(((i+1)/float(len(sigcorrs)))*25)
+		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
 	logger.info('Constructing the residue correlation matrix... completed.')
-
+	logger.info('Done.')
 	np.savetxt(outPrefix+'_resCorr.dat',rc)
 
 

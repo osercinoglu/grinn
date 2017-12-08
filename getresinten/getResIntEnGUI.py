@@ -44,7 +44,6 @@ class getResIntEnParams(object):
 	
 class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	stopMonitorProgressThread = pyqtSignal()
-	stopMonitorLogThread = pyqtSignal()
 	
 	def __init__(self,parent=None):
 		super(DesignInteractCalculate,self).__init__(parent)
@@ -62,10 +61,32 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_viewResults.clicked.connect(self.viewResults)
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
+		# Sample data loading (temporary for NAR review)
+		self.pushButton_loadSampleNAMDdata.clicked.connect(self.loadSampleNAMDdata)
+		self.pushButton_loadSampleGMXdata.clicked.connect(self.loadSampleGMXdata)
+
 		# for getResIntEn process
 		self.processGetResIntEn = None
 		self.params = getResIntEnParams()
 
+	def loadSampleGMXdata(self):
+		root_path = sys.path[0]
+		self.lineEdit_outputFolder.setText(root_path+'/getResIntEn_output2')
+
+		self.lineEdit_namd2.setText('gmx')
+		self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
+		self.lineEdit_psf.setText(root_path+'/test/test.top')
+		self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
+
+	def loadSampleNAMDdata(self):
+		root_path = sys.path[0]
+		self.lineEdit_outputFolder.setText(root_path+'/getResIntEn_output2')
+
+		self.lineEdit_namd2.setText('namd2')
+		self.lineEdit_pdb.setText(root_path+'/test/test.pdb')
+		self.lineEdit_psf.setText(root_path+'/test/test.psf')
+		self.lineEdit_dcd.setText(root_path+'/test/test.dcd')
+		self.lineEdit_parameterFile.setText(root_path+'/test/par_all27_prot_lipid_na.inp')
 
 	def closeEvent(self, event):
 			self.stopCalculation()
@@ -134,27 +155,27 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def viewResults(self):
 		subprocess.call(sys.path[0]+'/viewResults.py &',shell=True)
 
-	def done(self):
+	def done(self,message):
 		self.resetProgressElements()
 		#self.monitorProgressThread.exit()
 		#self.monitorLogThread.exit()
-		QtWidgets.QMessageBox.information(self,"Done!","Done with computation!")
+		QtWidgets.QMessageBox.information(self,"Done!",message)
 
 	def error(self,message):
-		self.monitorProgressThread.exit()
-		self.resetProgressElements()
+		if hasattr(self,"monitorProgressThread"):
+			self.monitorProgressThread.exit()
+			self.resetProgressElements()
 		QtWidgets.QMessageBox.information(self,"Error!",message)
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
-		if self.processGetResIntEn:
+		if hasattr(self,"processGetResIntEn"):
 
 			# Stop the calculation
 			os.kill(self.processGetResIntEn.pid,signal.SIGINT)
 
 			# Stop monitoring
 			self.stopMonitorProgressThread.emit()
-			self.stopMonitorLogThread.emit()
 
 			# Reset all progress elements.
 			self.resetProgressElements()
@@ -183,41 +204,25 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def startCalculation(self):
 
-		#### TEMPORARY!!! ####
-		root_path = '/Users/onur/repos/gRINN'
-		root_path = '/home/onur/repos/gRINN'
-		subprocess.call('rm -R getResIntEn_output',shell=True)
-		# self.lineEdit_namd2.setText('gmx')
-		# self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
-		# self.lineEdit_psf.setText(root_path+'/test/test.top')
-		# self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
-
-		self.lineEdit_namd2.setText('/home/onur/repos/gRINN/NAMD_2.12b1/namd2')
-		self.lineEdit_pdb.setText('/home/onur/repos/gRINN/test/test.pdb')
-		self.lineEdit_psf.setText('/home/onur/repos/gRINN/test/test.psf')
-		self.lineEdit_dcd.setText('/home/onur/repos/gRINN/test/test.dcd')
-		self.lineEdit_parameterFile.setText('/home/onur/repos/gRINN/par_all27_prot_lipid_na.inp')
-		#### TEMPORARY!!! ####
-
 		# Get necessary input arguments.
-		self.params.top = self.lineEdit_psf.text()
+		self.params.top = str(self.lineEdit_psf.text())
 		if self.lineEdit_pdb.text().endswith('.pdb'):
-			self.params.pdb = self.lineEdit_pdb.text()
+			self.params.pdb = str(self.lineEdit_pdb.text())
 		elif self.lineEdit_pdb.text().endswith('.tpr'):
-			self.params.tpr = self.lineEdit_pdb.text()
+			self.params.tpr = str(self.lineEdit_pdb.text())
 
-		self.params.traj = self.lineEdit_dcd.text()
-		self.params.sourceSel = self.lineEdit_residueGroup1.text()
-		self.params.targetSel = self.lineEdit_residueGroup2.text()
+		self.params.traj = str(self.lineEdit_dcd.text())
+		self.params.sourceSel = str(self.lineEdit_residueGroup1.text())
+		self.params.targetSel = str(self.lineEdit_residueGroup2.text())
 		self.params.soluteDielectric = float(self.doubleSpinBox_soluteDielectric.value())
 		self.params.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
 		self.params.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
-		self.params.numCores = self.spinBox_numProcessors.value()
+		self.params.numCores = int(self.spinBox_numProcessors.value())
 		self.params.skip = int(self.doubleSpinBox_dcdStride.value())
 		self.params.outputFolder = os.path.abspath(self.lineEdit_outputFolder.text())
-		self.params.namd2exe = self.lineEdit_namd2.text()
-		self.params.paramFile = self.lineEdit_parameterFile.text()
-		self.params.interactCorrAverageIntEnCutoff = self.doubleSpinBox_AverageIntEnCutoff.value()
+		self.params.namd2exe = str(self.lineEdit_namd2.text())
+		self.params.paramFile = str(self.lineEdit_parameterFile.text())
+		self.params.interactCorrAverageIntEnCutoff = float(self.doubleSpinBox_AverageIntEnCutoff.value())
 		
 		# Date-inclusive log file name.
 		# Date: %d.%d.%d %d:%d \n' % (now.year,now.month,now.day,now.hour,
@@ -225,7 +230,12 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		#self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
 		#	now.hour,now.minute,now.second)
 
-		self.params.logFile = self.params.outputFolder+'/grinn.log'
+		self.params.logFile = str(self.params.outputFolder)+'/grinn.log'
+
+		if os.path.exists(os.path.abspath(str(self.params.outputFolder))):
+			self.error("The output folder exists. Please delete or rename this folder before"\
+				 "proceeding. Aborting now.")
+			return
 		
 		# Start calculation in the background
 		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
@@ -265,15 +275,10 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.monitorProgressThread.updateStatusBar.connect(
 			self.updateStatusBar)
 		self.monitorProgressThread.success.connect(self.done)
+		self.monitorProgressThread.error.connect(self.error)
 		self.stopMonitorProgressThread.connect(self.monitorProgressThread.stop)
 
 		self.monitorProgressThread.start()
-
-		# Start error monitoring thread and connect signals
-		self.monitorLogThread = monitorLog(self,self.params)
-		self.monitorLogThread.error.connect(self.error)
-		self.stopMonitorLogThread.connect(self.monitorLogThread.stop)
-		self.monitorLogThread.start()
 
 class monitorProgress(QtCore.QThread):
 	incrementFilteringProgressBar = pyqtSignal(int)
@@ -283,7 +288,8 @@ class monitorProgress(QtCore.QThread):
 	updateETAcalculationLabel = pyqtSignal(str)
 	updateETAcorrelationLabel = pyqtSignal(str)
 	updateStatusBar = pyqtSignal(str)
-	success = pyqtSignal()
+	success = pyqtSignal(str)
+	error = pyqtSignal(str)
 
 	def __init__(self,mainWindow,params):
 		QtCore.QThread.__init__(self)
@@ -297,7 +303,6 @@ class monitorProgress(QtCore.QThread):
 	def run(self):
 
 		# Start monitoring the progress of computation
-		
 		self.mainWindow.progressBar_filtering.setValue(0)
 		self.mainWindow.progressBar_calculation.setValue(0)
 		self._isRunning = True
@@ -314,167 +319,58 @@ class monitorProgress(QtCore.QThread):
 		while not os.path.exists(self.params.logFile):
 			time.sleep(1)
 
-		# Monitor filtering steps
-		percent = 0
+		# Monitor the log file and take action depending the line read.
 		start_time = time.time()
 		lastLogLine = 0
 		continueFlag = False
-		while percent != float(100) and self._isRunning:
-			oldpercent = percent
-			logFile = open(self.params.logFile)
-			lines = logFile.readlines()
-			logFile.close()
-			for i in range(0,len(lines)):
-				line = lines[i]
-				if 'DEBUG' in line: continue
-				matches = re.search('.*Filtered pairs percentage:\s(\d+)',line)
-				if matches:
-					newpercent = float(matches.groups()[0])
-					if newpercent > oldpercent:
-						percent = newpercent
-						print(percent == float(100))
-						current_time = time.time()
-						etaString = 'Filtering progress: ' + getETAstring(start_time,current_time,percent)
-						self.updateETAfilteringLabel.emit(etaString)
-						self.incrementFilteringProgressBar.emit(percent)
-						if i > lastLogLine:
-							self.updateStatusBar.emit(line)
-							lastLogLine = i
-							break
 
-
-		# Monitor calculation
-		continueFlag = False
 		while not continueFlag and self._isRunning:
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
 			logFile.close()
-			for i in range(0,len(lines)):
+			for i in range(lastLogLine,len(lines)):
 				line = lines[i]
 				if 'DEBUG' in line: continue
-				matches = re.search('.*Started an energy calculation thread.',line)
-				if matches:
-					if i > lastLogLine:
-						self.updateStatusBar.emit(line)
-						lastLogLine = i
-						continueFlag = True
 
-		percent = 0
-		start_time = time.time()
-		numFilteredPairs = False
-		while percent < 100 and self._isRunning:
-			oldpercent = percent
-			logFile = open(self.params.logFile)
-			lines = logFile.readlines()
-			logFile.close()
-			for i in range(0,len(lines)):
-				line = lines[i]
-				if 'DEBUG' in line: continue
-				matches = re.search('.*Number of interaction pairs selected after filtering step:\s(\d+)',line)
-				if matches:
-					numFilteredPairs = int(matches.groups()[0])
-					self.updateStatusBar.emit(line)
-					lastLogLine = i
+				matchesFiltering = re.search('.*Filtered pairs percentage:\s(\d+)',line)
+				matchesCalculation = re.search('.*Completed calculation percentage: (\d+)',line)
+				matchesCorrelation = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',line)
+				current_time = time.time()
 
-				if numFilteredPairs:
-					matches = re.search('.*Completed calculation percentage: (\d+)',line)
-					if matches:
-						percent = int(matches.groups()[0])
-						if percent > oldpercent:
-							current_time = time.time()
-							etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
-							self.updateETAcalculationLabel.emit(etaString)
-							self.incrementCalculationProgressBar.emit(percent)
-							if i > lastLogLine:
-								self.updateStatusBar.emit(line)
-								lastLogLine = i
+				if matchesFiltering:
+					percent = float(matchesFiltering.groups()[0])
+					etaString = 'Filtering progress: ' + getETAstring(start_time,current_time,percent)
+					self.updateETAfilteringLabel.emit(etaString)
+					self.incrementFilteringProgressBar.emit(percent)					
 
-		# Monitor interaction correlation calculation.
-		if self.params.interactCorr and self._isRunning:
-			percent = 0
-			start_time = time.time()
-			while percent != 100 and self._isRunning:
-				oldpercent = percent
-				logFile = open(self.params.logFile)
-				lines = logFile.readlines()
-				logFile.close()
-				for i in range(0,len(lines)):
-					line = lines[i]
-					if 'DEBUG' in line: continue
-					matches = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',line)
-					if matches:
-						newpercent = float(matches.groups()[0])
-						if newpercent > oldpercent:
-							percent = newpercent
-							current_time = time.time()
-							etaString = 'Correlation progress: ' + getETAstring(start_time,current_time,percent)
-							self.updateETAcorrelationLabel.emit(etaString)
-							self.incrementCorrelationCalculationProgressBar.emit(percent)
-					if i > lastLogLine:
-						self.updateStatusBar.emit(line)
-						lastLogLine = i
+				elif matchesCalculation:
+					percent = float(matchesCalculation.groups()[0])
+					etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
+					self.updateETAcalculationLabel.emit(etaString)
+					self.incrementCalculationProgressBar.emit(percent)
 
-		continueFlag = True
-		if percent == 100 and self._isRunning:
-			while continueFlag is True:
-				logFile = open(self.params.logFile)
-				lines = logFile.readlines()
-				logFile.close()
-				for i in range(lastLogLine,len(lines)):
-					line = lines[i]
-					self.updateStatusBar.emit(line)
-					lastLogLine = i
-					if 'FINAL: ' in line:
-						self.success.emit()
-						continueFlag = False
-						self.incrementCalculationProgressBar.emit(0)
-						self.incrementCorrelationCalculationProgressBar.emit(0)
-						self._isRunning = False
-						self.exit()
+				elif matchesCorrelation:
+					percent = float(matchesCorrelation.groups()[0])
+					etaString = 'Correlation progress: ' + getETAstring(start_time,current_time,percent)
+					self.updateETAcorrelationLabel.emit(etaString)
+					self.incrementCorrelationCalculationProgressBar.emit(percent)
 
-	def stop(self):
-		self._isRunning = False
-		#self.terminate()
+				elif 'FINAL:' in line:
+					self.success.emit(line)
+					continueFlag = True
+					self._isRunning = False
+					self.incrementCalculationProgressBar.emit(0)
+					self.incrementCorrelationCalculationProgressBar.emit(0)
 
-class monitorLog(QtCore.QThread):
-	error = pyqtSignal(str)
+				elif 'ERROR' in line:
+					self.error.emit(line)
+					continueFlag = True
+					self._isRunning = False
 
-	def __init__(self,mainWindow,params):
-		QtCore.QThread.__init__(self)
-		self.mainWindow = mainWindow
-		self.params = params
-		self._isRunning = True
+				self.updateStatusBar.emit(line)
 
-	#def __del__(self):
-	#	self.wait()
+			lastLogLine = i
 
-	def parseLog(self,logFile):
-		# Parse the log file for errors,mainly.
-		errorFlag = False
-		while errorFlag == False:
-			f = open(logFile,'r')
-			lines = f.readlines()
-			f.close()
-			errorLines = [line for line in lines if 'ERROR' in line]
-			if errorLines:
-				errorFlag = True
-
-		return errorLines
-
-	def run(self):
-		
-		# Wait until the log file is created.
-		while not os.path.exists(self.params.logFile):
-			time.sleep(1)
-
-		# Start monitoring the progress log file produced by getResIntEn.py
-		errorLines = list()
-		while not errorLines and self._isRunning:
-			errorLines = self.parseLog(self.params.logFile)
-			#time.sleep()
-
-		if self._isRunning:
-			self.error.emit(errorLines[0])
 		self.exit()
 
 	def stop(self):

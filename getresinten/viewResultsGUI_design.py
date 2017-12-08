@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'viewResultsGUI.ui'
+# Form implementation generated from reading ui file 'getresinten/viewResultsGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
 # WARNING! All changes made in this file will be lost!
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-import sys
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(1060, 691)
         icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap(sys.path[0]+"/clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         MainWindow.setWindowIcon(icon)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
@@ -178,28 +177,28 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.tableWidget_IEC.sizePolicy().hasHeightForWidth())
         self.tableWidget_IEC.setSizePolicy(sizePolicy)
-        self.tableWidget_IEC.setMinimumSize(QtCore.QSize(300, 0))
-        self.tableWidget_IEC.setMaximumSize(QtCore.QSize(400, 16777215))
+        self.tableWidget_IEC.setMinimumSize(QtCore.QSize(450, 0))
+        self.tableWidget_IEC.setMaximumSize(QtCore.QSize(500, 16777215))
         self.tableWidget_IEC.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.tableWidget_IEC.setFrameShadow(QtWidgets.QFrame.Plain)
         self.tableWidget_IEC.setObjectName("tableWidget_IEC")
         self.tableWidget_IEC.setColumnCount(0)
         self.tableWidget_IEC.setRowCount(0)
         self.horizontalLayout_7.addWidget(self.tableWidget_IEC)
-        self.frame_IEMcorrelations = QtWidgets.QFrame(self.tab_IEC)
+        self.frame_IECcorrelations = QtWidgets.QFrame(self.tab_IEC)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_IEMcorrelations.sizePolicy().hasHeightForWidth())
-        self.frame_IEMcorrelations.setSizePolicy(sizePolicy)
-        self.frame_IEMcorrelations.setMinimumSize(QtCore.QSize(400, 0))
-        self.frame_IEMcorrelations.setFrameShape(QtWidgets.QFrame.NoFrame)
-        self.frame_IEMcorrelations.setFrameShadow(QtWidgets.QFrame.Plain)
-        self.frame_IEMcorrelations.setObjectName("frame_IEMcorrelations")
-        self.verticalLayout_12 = QtWidgets.QVBoxLayout(self.frame_IEMcorrelations)
+        sizePolicy.setHeightForWidth(self.frame_IECcorrelations.sizePolicy().hasHeightForWidth())
+        self.frame_IECcorrelations.setSizePolicy(sizePolicy)
+        self.frame_IECcorrelations.setMinimumSize(QtCore.QSize(300, 0))
+        self.frame_IECcorrelations.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.frame_IECcorrelations.setFrameShadow(QtWidgets.QFrame.Plain)
+        self.frame_IECcorrelations.setObjectName("frame_IECcorrelations")
+        self.verticalLayout_12 = QtWidgets.QVBoxLayout(self.frame_IECcorrelations)
         self.verticalLayout_12.setSizeConstraint(QtWidgets.QLayout.SetMaximumSize)
         self.verticalLayout_12.setObjectName("verticalLayout_12")
-        self.horizontalLayout_7.addWidget(self.frame_IEMcorrelations)
+        self.horizontalLayout_7.addWidget(self.frame_IECcorrelations)
         self.tabWidget.addTab(self.tab_IEC, "")
         self.tab_RC = QtWidgets.QWidget()
         self.tab_RC.setObjectName("tab_RC")
@@ -297,7 +296,7 @@ class Ui_MainWindow(object):
         self.scrollArea_Degree.setWidgetResizable(True)
         self.scrollArea_Degree.setObjectName("scrollArea_Degree")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 67, 18))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 100, 30))
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.scrollAreaWidgetContents)
         self.horizontalLayout_4.setSizeConstraint(QtWidgets.QLayout.SetMaximumSize)
@@ -417,7 +416,7 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(3)
+        self.tabWidget.setCurrentIndex(2)
         self.tabWidget_2.setCurrentIndex(2)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
