@@ -70,23 +70,23 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.params = getResIntEnParams()
 
 	def loadSampleGMXdata(self):
-		root_path = sys.path[0]
-		self.lineEdit_outputFolder.setText(root_path+'/getResIntEn_output2')
+		#root_path = sys.path[0]
+		self.lineEdit_outputFolder.setText('getResIntEn_output2')
 
 		self.lineEdit_namd2.setText('gmx')
-		self.lineEdit_pdb.setText(root_path+'/test/test.tpr')
-		self.lineEdit_psf.setText(root_path+'/test/test.top')
-		self.lineEdit_dcd.setText(root_path+'/test/test_stride.xtc')
+		self.lineEdit_pdb.setText('test/test.tpr')
+		self.lineEdit_psf.setText('test/test.top')
+		self.lineEdit_dcd.setText('test/test_stride.xtc')
 
 	def loadSampleNAMDdata(self):
-		root_path = sys.path[0]
-		self.lineEdit_outputFolder.setText(root_path+'/getResIntEn_output2')
+		#root_path = sys.path[0]
+		self.lineEdit_outputFolder.setText('getResIntEn_output2')
 
 		self.lineEdit_namd2.setText('namd2')
-		self.lineEdit_pdb.setText(root_path+'/test/test.pdb')
-		self.lineEdit_psf.setText(root_path+'/test/test.psf')
-		self.lineEdit_dcd.setText(root_path+'/test/test.dcd')
-		self.lineEdit_parameterFile.setText(root_path+'/test/par_all27_prot_lipid_na.inp')
+		self.lineEdit_pdb.setText('test/test.pdb')
+		self.lineEdit_psf.setText('test/test.psf')
+		self.lineEdit_dcd.setText('test/test.dcd')
+		self.lineEdit_parameterFile.setText('test/par_all27_prot_lipid_na.inp')
 
 	def closeEvent(self, event):
 			self.stopCalculation()
