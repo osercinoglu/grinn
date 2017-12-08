@@ -140,8 +140,12 @@ def calcEnergiesSingleCoreNAMD(args):
 	percent = 0
 
 	for pairsFilteredChunk in pairsFilteredChunks:
-		calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
-			pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+		try:
+			calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
+				pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+		except (KeyboardInterrupt,SystemExit):
+			logger.exception('Keyboard interrupt detected. Aborting now.')
+			sys.exit(0)
 
 		progBar.update()
 		percent = percent + 10
@@ -231,12 +235,35 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 			logger.addHandler(console)
 			logger.info('Creating the output folder %s' % outputFolder)
 			#os.chdir(outputFolder)
+	
+	# Define a worker initializer for graceful exit upon ctrl+c
+	parent_id = os.getpid()
+	def worker_init():
+		def sig_int(signal_num, frame):
+			print('signal: %s' % signal_num)
+			parent = psutil.Process(parent_id)
+			for child in parent.children():
+				if child.pid != os.getpid():
+					print("killing child: %s" % child.pid)
+					child.kill()
+			print("killing parent: %s" % parent_id)
+			parent.kill()
+			print("suicide: %s" % os.getpid())
+			psutil.Process(os.getpid()).kill()
+			os._exit(0)
+		signal.signal(signal.SIGINT, sig_int)
 
-
+	global pool
+	pool = multiprocessing.Pool(numCores,worker_init)
+ 
+	# Catching CTRL+C SIGINT signals.
 	def sigint_handler(signum, frame):
 		logger.exception('Keyboard interrupt detected. Aborting now.')
+		global pool
+		pool.terminate()
+		#time.sleep(5)
 		sys.exit(0)
- 
+
 	signal.signal(signal.SIGINT, sigint_handler)
 
 	logger.info('Started calculation.')
@@ -483,29 +510,9 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	# Start energy calculation in chunks
 	pairsFilteredChunks = np.array_split(np.asarray(pairsFiltered),numCores)
 
-	# Define a worker initializer for graceful exit upon ctrl+c
-	parent_id = os.getpid()
-	def worker_init():
-		def sig_int(signal_num, frame):
-			print('signal: %s' % signal_num)
-			parent = psutil.Process(parent_id)
-			for child in parent.children():
-				if child.pid != os.getpid():
-					print("killing child: %s" % child.pid)
-					child.kill()
-			print("killing parent: %s" % parent_id)
-			parent.kill()
-			print("suicide: %s" % os.getpid())
-			psutil.Process(os.getpid()).kill()
-			os._exit(0)
-		signal.signal(signal.SIGINT, sig_int)
-	    
-	# Start a pool of processors
 	if dataType == 'NAMD':
 
-		pool = multiprocessing.Pool(numCores,worker_init)
-
-		pool.map(calcEnergiesSingleCoreNAMD,
+		results = pool.map_async(calcEnergiesSingleCoreNAMD,
 			zip(pairsFilteredChunks,itertools.repeat(top),
 				itertools.repeat(outputFolder+'/system_dry.pdb'),
 				itertools.repeat(trajPath),
@@ -518,7 +525,9 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 				itertools.repeat(outputFolder),
 				itertools.repeat(namd2exe),
 				itertools.repeat(paramFile),
-				itertools.repeat(logFile)))
+				itertools.repeat(logFile))).get(9999999)
+		#results.get(9999999)# gotta use this get at the end, because of a known Python2.7 bug.
+		#results.wait()
 		
 		#pool.join()
 		# Parse the specified outFolder after energy calculation is done.
@@ -531,9 +540,9 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
-		parsedEnergiesResults = pool.starmap(parseEnergiesSingleCoreNAMD,
+		parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
 			zip(energiesFilePathsChunks,itertools.repeat(outputFolder+'/system_dry.pdb'),
-				itertools.repeat(logFile)))
+				itertools.repeat(logFile))).get(9999999)
 
 		parsedEnergies = dict()
 		for parsedEnergiesResult in parsedEnergiesResults:

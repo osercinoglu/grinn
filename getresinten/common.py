@@ -24,8 +24,11 @@ def getResindex(pdb,chainResnameResnum):
 		resIndex = selection.getResindices()[0]
 		return resIndex
 
-def parseEnergiesSingleCoreNAMD(filePaths,pdb,logFile):
+def parseEnergiesSingleCoreNAMD(args):
 
+	filePaths = args[0]
+	pdb = args[1]
+	logFile = args[2]
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)

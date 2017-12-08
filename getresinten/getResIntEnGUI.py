@@ -93,7 +93,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			event.accept() # let the window close
 
 	def exitHandler(self):
-		self.stopCalculation(self)
+		self.stopCalculation()
 		os._exit(0)
 
 	def updatePDBPath(self):
@@ -169,8 +169,10 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
+		print('detected stop')
 		if hasattr(self,"processGetResIntEn"):
 
+			print('supposed to kill the running process.')
 			# Stop the calculation
 			os.kill(self.processGetResIntEn.pid,signal.SIGINT)
 
@@ -253,6 +255,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 			'pairFilterSkip':1,'frameRange':[False],'resIntCorrAverageIntEnCutoff':1})
 
 		self.processGetResIntEn.start()
+
+		QtWidgets.QMessageBox.information(self,"Info!","PID of process is: "+str(self.processGetResIntEn.pid))
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)
