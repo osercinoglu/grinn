@@ -1,26 +1,24 @@
 #!/usr/bin/env python
 from prody import *
-import mdtraj
-import multiprocessing
-import pexpect
 import numpy as np
-import sys, itertools, argparse, os, pyprind, subprocess
-import re, pickle, types, logging, datetime, psutil, signal, time
-import pandas, glob
+import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
+re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob
 from shutil import copyfile
 from getResIntEnMean import getResIntEnMean
 from common import parseEnergiesSingleCoreNAMD
 from common import getChainResnameResnum
 from common import makeNDXMDPforGMX
 from common import parseEnergiesGMX
+from common import which
 import getResIntCorr
 
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
+	print(args)
 	pairsFiltered = args[0]
-	psfFilePath = args[1]
-	pdbFilePath = args[2]
-	dcdFilePath = args[3]
+	psfFilePath = os.path.abspath(args[1])
+	pdbFilePath = os.path.abspath(args[2])
+	dcdFilePath = os.path.abspath(args[3])
 	skip = args[4]
 	frameRange = args[5]
 	pairFilterCutoff = args[6]
@@ -34,10 +32,11 @@ def calcEnergiesSingleCoreNAMD(args):
 	if frameRange == False:
 		frameRange = [0,-1]
 
-	outputFolder = args[10]
+	outputFolder = os.path.abspath(args[10])
 	namd2exe = args[11]
-	paramFile = args[12]
-	logFile = args[13]
+	# paramFile is a list by default, so we should map to get abspath
+	paramFile = list(map(os.path.abspath,args[12])) 
+	logFile = os.path.abspath(args[13])
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -154,7 +153,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	logger.info('Completed a pairwise energy calculation thread.')
 
 def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
-	pairFilterCutoff,outputFolder,gmxExe,logFile,numCores):
+	pairFilterCutoff,soluteDielectric,outputFolder,gmxExe,logFile,numCores):
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -168,7 +167,7 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 	# Make an index and MDP file with the pairs filtered.
 	#gmxExe = 'gmx'
 	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,
-		tpr=tprFilePath,pairsFiltered=pairsFiltered,outFolder=outputFolder,
+		tpr=tprFilePath,soluteDielectric=soluteDielectric,pairsFiltered=pairsFiltered,outFolder=outputFolder,
 		logger=logger)
 
 	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
@@ -205,7 +204,10 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 	# signal.signal(signal.SIGINT, signal_handler)
 
-	# ARGUMENT CHECKS
+	#############################################
+	### ARGUMENT CHECKS && INITIAL OPERATIONS ###
+	#############################################
+
 	# TEMP
 	pairFilterSkip = skip
 
@@ -235,7 +237,21 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 			logger.addHandler(console)
 			logger.info('Creating the output folder %s' % outputFolder)
 			#os.chdir(outputFolder)
-	
+
+	# Check whether given namd2exe or gmxExe are actually executables!
+	# If not, abort.
+	if namd2exe:
+		isExe = which(namd2exe)
+		if not isExe:
+			logger.exception('Could not detect the NAMD2 or GMX executable. Aborting now.')
+			return
+
+	elif gmxExe:
+		isExe = which(gmxExe)
+		if not isExe:
+			logger.exception('Could not detect the NAMD2 or GMX executable. Aborting now.')
+			return
+
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
 	def worker_init():
@@ -447,6 +463,11 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		numTarget = len(targetCA)
 		targetResids = targetCA.getResindices()
 
+
+	################################
+	### REAL WORK STARTS HERE ######
+	################################
+
 	# Generate all possible unique pairwise residue-residue combinations
 	pairProduct = itertools.product(sourceResids,targetResids)
 	pairSet = set()
@@ -555,7 +576,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	elif dataType == 'GMX':
 		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,
 			pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,trajFilePath=trajPath,skip=skip,
-			frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,outputFolder=outputFolder,
+			frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,soluteDielectric=soluteDielectric,outputFolder=outputFolder,
 			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
 
 		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,

@@ -806,7 +806,6 @@ def main():
 	form.tabWidget.setCurrentIndex(5)
 	form.tabWidget_2.setCurrentIndex(0)
 	form.tabWidget_2.setCurrentIndex(1)
-	form.tabWidget_2.setCurrentIndex(2)
 	form.tabWidget_2.setCurrentIndex(0)
 	form.tabWidget.setCurrentIndex(0)
 

@@ -39,7 +39,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass must come closer than this value for at least the specified percent of the trajectory frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass must come closer than this value for at least the specified percent of the trajectory frames.&lt;/p&gt;&lt;p&gt;This is also the non-bonded interaction energy cutoff for NAMD data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="value">
      <double>12.000000000000000</double>
@@ -55,7 +55,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. &lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;a href=&quot;https://www.onursercinoglu.com&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;More information is here.&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>all</string>
@@ -71,7 +71,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. &lt;/p&gt;&lt;p&gt;&lt;a href=&quot;https://www.onursercinoglu.com&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0000ff;&quot;&gt;More information is here.&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Selection 1 and Selection 2 &lt;/span&gt;define residue groups between which pairwise interaction energies will be computed. Use ProDy Atom Selection syntax. &lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>all</string>
@@ -191,6 +191,9 @@
       <height>61</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Starts the calculation&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string>CALCULATE</string>
     </property>
@@ -232,6 +235,9 @@
       <width>251</width>
       <height>61</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Stops the calculation. &lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Note: This does not pause the calculation. You have to start over if you click on this button.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>STOP</string>
@@ -291,6 +297,9 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;Select the Protein Data Bank (PDB) file describing your system here.&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;Select the &amp;quot;run input file&amp;quot; (TPR) that you've used for simulation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string/>
     </property>
@@ -303,6 +312,9 @@
       <width>271</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;Select the Protein Structure File (PSF) here.&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;Select the topology file (TOP) that you used for simulation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string/>
@@ -317,6 +329,9 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;Select the DCD file containing your simulation trajectory here.&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;Select the XTC or TRR file containing your simulation trajectory here.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string/>
     </property>
@@ -330,6 +345,9 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the full path to the folder where you wish to store calculation results. &lt;/p&gt;&lt;p&gt;The path must not exist prior to calculation; it is going to be created by gRINN.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string>getResIntEn_output</string>
     </property>
@@ -342,6 +360,9 @@
       <width>271</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select the full path to the NAMD or GMX executable here.&lt;/p&gt;&lt;p&gt;You can just type &lt;span style=&quot; font-weight:600;&quot;&gt;namd2 &lt;/span&gt;or &lt;span style=&quot; font-weight:600;&quot;&gt;gmx&lt;/span&gt;, if the executable&lt;span style=&quot; font-weight:600;&quot;/&gt;is already in the executable search path of your system.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>namd2</string>
@@ -360,7 +381,7 @@
      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;NAMD Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the Protein Data Bank (PDB) file describing your system here.&lt;/span&gt;&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;Gromacs Users: &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;Select the &amp;quot;run input file&amp;quot; (TPR) that you've used for simulation.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="toolTipDuration">
-     <number>10</number>
+     <number>-1</number>
     </property>
     <property name="text">
      <string>Browse for PDB/TPR File</string>
@@ -424,7 +445,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select the full path to the NAMD or GMX executable here.&lt;/p&gt;&lt;p&gt;Leave it empty if &lt;span style=&quot; font-weight:600;&quot;&gt;namd2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;or &lt;/span&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;gmx &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;is already in the executable search path of your system.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select the full path to the NAMD or GMX executable here.&lt;/p&gt;&lt;p&gt;You can just type &lt;span style=&quot; font-weight:600;&quot;&gt;namd2 &lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;or &lt;/span&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;gmx&lt;/span&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;, if the executable&lt;/span&gt;&lt;span style=&quot; font-weight:600;&quot;/&gt;&lt;span style=&quot; font-weight:400;&quot;&gt;is already in the executable search path of your system.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string>Browse for NAMD/GMX Executable</string>
@@ -438,6 +459,9 @@
       <width>331</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Clicking on this checkbox will enable residue interaction energy correlation calculations.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="layoutDirection">
      <enum>Qt::RightToLeft</enum>
@@ -455,6 +479,9 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the parameter file you used while conducting the NAMD simulation.&lt;/p&gt;&lt;p&gt;If you have multiple parameter files, you can put them in the same folder and then select all of them in the popup window spawned when you click the &amp;quot;Browse for Parameter File (NAMD)&amp;quot; button.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string>Browse for Parameter File (NAMD)</string>
     </property>
@@ -467,6 +494,9 @@
       <width>271</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the parameter file you used while conducting the NAMD simulation.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;If you have multiple parameter files, you can put them in the same folder and then select all of them in the popup window spawned when you click the &amp;quot;Browse for Parameter File (NAMD)&amp;quot; button.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
      <string/>
@@ -496,6 +526,9 @@
       <width>62</width>
       <height>24</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Only interactions with the average of absolute interaction energy values above this value will be included in interaction energy correlation calculations.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="decimals">
      <number>2</number>
@@ -565,7 +598,7 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If specified, a stride will be applied to the DCD frames, i.e. only 1 out of this many frames will be included in the calculation.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If specified, this value will be applied as a stride to the trajectory frames included in the calculation. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be selected for calculation, yielding a total of 100 frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="maximum">
      <double>100000.000000000000000</double>
@@ -645,7 +678,7 @@
      </rect>
     </property>
     <property name="text">
-     <string>Solute dielectric</string>
+     <string>Solute dielectric (NAMD)</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -662,6 +695,9 @@
       <width>62</width>
       <height>24</height>
      </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the solute dielectric constant used when calculating electrostatic interaction energy with NAMD. A value of 1 describes a vacuum environment. &lt;/p&gt;&lt;p&gt;Note that electrostatic interactions are computed only in the context of the protein. Solvent molecules are not included in the calculation.&lt;/p&gt;&lt;p&gt;Also note that this option does not affect the energy calculation using GMX data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="maximum">
      <double>80.000000000000000</double>
@@ -734,8 +770,14 @@
     <property name="toolTipDuration">
      <number>10</number>
     </property>
+    <property name="styleSheet">
+     <string notr="true">QPushButton {border=1}</string>
+    </property>
     <property name="text">
      <string>Load sample NAMD data and settings</string>
+    </property>
+    <property name="default">
+     <bool>false</bool>
     </property>
    </widget>
    <widget class="QPushButton" name="pushButton_loadSampleGMXdata">
@@ -753,8 +795,14 @@
     <property name="toolTipDuration">
      <number>10</number>
     </property>
+    <property name="whatsThis">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;What is this?&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
     <property name="text">
      <string>Load sample GMX data and settings</string>
+    </property>
+    <property name="flat">
+     <bool>false</bool>
     </property>
    </widget>
   </widget>

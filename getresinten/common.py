@@ -1,9 +1,28 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys
+import re, os, pexpect, panedr, pandas, time, sys, os
 import numpy as np
 from prody import *
 import logging
 
+# A method to check whether a given command is an executable
+def which(program):
+	def is_exe(fpath):
+		return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+	fpath, fname = os.path.split(program)
+	if fpath:
+		if is_exe(program):
+			return program
+	else:
+		for path in os.environ["PATH"].split(os.pathsep):
+			exe_file = os.path.join(path, program)
+			if is_exe(exe_file):
+				return exe_file
+
+	return None
+
+# A method to get a string containing chain ID, residue name and residue number
+# given a ProDy parsed PDB Atom Group and the residue index
 def getChainResnameResnum(pdb,resIndex):
 	# Get a string for chain+resid+resnum when supplied the residue index.
 	selection = pdb.select('resindex %i' % resIndex)
@@ -13,6 +32,7 @@ def getChainResnameResnum(pdb,resIndex):
 	string = chain+resName+str(resNum)
 	return string
 
+# A reverse of the above method
 def getResindex(pdb,chainResnameResnum):
 	# Get the residue index of a chain resname resnum string.
 	matches = re.search('(\D+)(\D{3})(\d+)',chainResnameResnum)
@@ -24,6 +44,7 @@ def getResindex(pdb,chainResnameResnum):
 		resIndex = selection.getResindices()[0]
 		return resIndex
 
+# A method that parses the energy log output of NAMD.
 def parseEnergiesSingleCoreNAMD(args):
 
 	filePaths = args[0]
@@ -78,6 +99,7 @@ def parseEnergiesSingleCoreNAMD(args):
 
 	return energiesDict
 
+# A method that parses GMX edr file content (energy output)
 def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger):
 
 	system = parsePDB(pdb)
@@ -145,13 +167,57 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 			res1_string = getChainResnameResnum(system_dry,pair[0])
 			res2_string = getChainResnameResnum(system_dry,pair[1])
 			energyDict = dict()
-			column_string1 = 'LJ-SR:res%i-res%i' % (pair[0],pair[1])
-			column_string2 = 'LJ-SR:res%i-res%i' % (pair[1],pair[0])
-			if column_string1 in df.columns:
-				column_string = column_string1
+
+			# Lennard-Jones Short Range interaction
+			column_stringLJSR1 = 'LJ-SR:res%i-res%i' % (pair[0],pair[1])
+			column_stringLJSR2 = 'LJ-SR:res%i-res%i' % (pair[1],pair[0])
+			if column_stringLJSR1 in df.columns:
+				column_stringLJSR = column_stringLJSR1
 				
-			elif column_string2 in df.columns:
-				column_string = column_string2
+			elif column_stringLJSR2 in df.columns:
+				column_stringLJSR = column_stringLJSR2
+
+			else:
+				logger.exception('At least one required residue interaction was not found in the pair interaction '
+					'energy output. Please contact the developer.')
+				return
+
+			# Lennard-Jones 1-4 interaction
+			column_stringLJ141 = 'LJ-14:res%i-res%i' % (pair[0],pair[1])
+			column_stringLJ142 = 'LJ-14:res%i-res%i' % (pair[1],pair[0])
+			if column_stringLJ141 in df.columns:
+				column_stringLJ14 = column_stringLJ141
+				
+			elif column_stringLJ142 in df.columns:
+				column_stringLJ14 = column_stringLJ142
+
+			else:
+				logger.exception('At least one required residue interaction was not found in the pair interaction '
+					'energy output. Please contact the developer.')
+				return
+
+			# Coulombic Short Range interaction
+			column_stringCoulSR1 = 'Coul-SR:res%i-res%i' % (pair[0],pair[1])
+			column_stringCoulSR2 = 'Coul-SR:res%i-res%i' % (pair[1],pair[0])
+			if column_stringCoulSR1 in df.columns:
+				column_stringCoulSR = column_stringCoulSR1
+				
+			elif column_stringCoulSR2 in df.columns:
+				column_stringCoulSR = column_stringCoulSR2
+
+			else:
+				logger.exception('At least one required residue interaction was not found in the pair interaction '
+					'energy output. Please contact the developer.')
+				return
+
+			# Coulombic Short Range interaction
+			column_stringCoul141 = 'Coul-14:res%i-res%i' % (pair[0],pair[1])
+			column_stringCoul142 = 'Coul-14:res%i-res%i' % (pair[1],pair[0])
+			if column_stringCoul141 in df.columns:
+				column_stringCoul14 = column_stringCoul141
+				
+			elif column_stringCoul142 in df.columns:
+				column_stringCoul14 = column_stringCoul142
 
 			else:
 				logger.exception('At least one required residue interaction was not found in the pair interaction '
@@ -161,8 +227,17 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 			# Remember that gmx uses the SI units.
 			# In terms of energy, this is usually kJ/mol
 			# We should convert to kcal/mol to be consistent with NAMD units (and with ourselves)
-			energyDict['VdW'] = np.asarray(df[column_string].values)*0.239005736
-			energyDict['Elec'] = np.asarray(df[column_string].values)*0.239005736
+			kj2kcal = 0.239005736
+			enLJSR = np.asarray(df[column_stringLJSR].values)*kj2kcal
+			enLJ14 = np.asarray(df[column_stringLJ14].values)*kj2kcal
+			enLJ = [enLJSR[j]+enLJ14[j] for j in range(0,len(enLJSR))]
+			energyDict['VdW'] = enLJ
+
+			enCoulSR = np.asarray(df[column_stringCoulSR].values)*kj2kcal
+			enCoul14 = np.asarray(df[column_stringCoul14].values)*kj2kcal
+			enCoul = [enCoulSR[j]+enCoul14[j] for j in range(0,len(enCoulSR))]
+			energyDict['Elec'] = enCoul
+
 			energyDict['Total'] = [energyDict['VdW'][j]+energyDict['Elec'][j] for j in range(0,len(energyDict['VdW']))]
 
 			key1 = res1_string+'-'+res2_string
@@ -177,7 +252,8 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 
 	return energiesDict
 
-def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel=None,
+# A method that creates MDP and NDX file(s) necessary for GMX energy interaction calculation.
+def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFiltered=None,sourceSel=None,
 	targetSel=None,outFolder=os.getcwd(),logger=None):
 	
 	system = parsePDB(pdb)
@@ -275,12 +351,12 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	# allow more than 254 energy groups to be defined in an MDP file and
 	# each residue has to be an energy group in our case.
 	pairsFilteredChunks = list()
-	if len(np.unique(np.hstack(pairsFiltered))) <= 200:
+	if len(np.unique(np.hstack(pairsFiltered))) <= 60:
 		pairsFilteredChunks.append(pairsFiltered)
 	else:
 		i = 2
 		maxNumRes = len(np.unique(np.hstack(pairsFiltered)))
-		while maxNumRes >= 200:
+		while maxNumRes >= 60:
 			pairsFilteredChunks = np.array_split(pairsFiltered,i)
 			chunkNumResList = list()
 			for chunk in pairsFilteredChunks:
@@ -302,7 +378,9 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 	for chunk in pairsFilteredChunks:
 		filename = str(outFolder)+'/interact'+str(i)+'.mdp'
 		f = open(filename,'w')
-		f.write('cutoff-scheme = group\n')
+		#f.write('cutoff-scheme = group\n')
+		f.write('cutoff-scheme = Verlet\n')
+		#f.write('epsilon-r = %f\n' % soluteDielectric)
 
 		chunkResidues = np.unique(np.hstack(chunk))
 
@@ -315,14 +393,14 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,pairsFiltered=None,sourceSel
 		f.write('energygrps = '+resString+'\n')
 
 		# Add energygroup exclusions.
-		energygrpExclString = 'energygrp-excl ='
+		#energygrpExclString = 'energygrp-excl ='
 
 		# GOTTA COMMENT OUT THE FOLLOWING DUE TO TOO LONG LINE ERROR IN GROMPP
 		# for key in allSerials:
 		# 	energygrpExclString += ' res%i res%i' % (key,key)
 
-		energygrpExclString += ' SOL SOL'
-		f.write(energygrpExclString)
+		#energygrpExclString += ' SOL SOL'
+		#f.write(energygrpExclString)
 
 		f.close()
 		mdpFiles.append(filename)

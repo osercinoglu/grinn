@@ -69,6 +69,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.processGetResIntEn = None
 		self.params = getResIntEnParams()
 
+		# Set the numCores to the maximum cpu count in this system.
+		numCores = multiprocessing.cpu_count()
+		self.params.numCores = numCores
+		self.spinBox_numProcessors.setValue(int(numCores))
+
 	def loadSampleGMXdata(self):
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText('getResIntEn_output2')
@@ -220,7 +225,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.params.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
 		self.params.numCores = int(self.spinBox_numProcessors.value())
 		self.params.skip = int(self.doubleSpinBox_dcdStride.value())
-		self.params.outputFolder = os.path.abspath(self.lineEdit_outputFolder.text())
+		self.params.outputFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
 		self.params.namd2exe = str(self.lineEdit_namd2.text())
 		self.params.paramFile = str(self.lineEdit_parameterFile.text())
 		self.params.interactCorrAverageIntEnCutoff = float(self.doubleSpinBox_AverageIntEnCutoff.value())
@@ -312,6 +317,9 @@ class monitorProgress(QtCore.QThread):
 
 		# method for ETA calculation
 		def getETAstring(start_time,current_time,percent):
+			# Prevent division by zero below.
+			if percent == float(0):
+				percent += 0.000001
 			elapsed_time = current_time - start_time
 			remaining_time = (100-percent)*elapsed_time/float(percent)
 			remaining_time_hhmm = divmod(remaining_time,60)

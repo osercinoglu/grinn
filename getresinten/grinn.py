@@ -34,7 +34,6 @@ class DesignInteract(QtWidgets.QMainWindow,grinnGUI.Ui_gRINN):
 		self.formResults.tabWidget.setCurrentIndex(5)
 		self.formResults.tabWidget_2.setCurrentIndex(0)
 		self.formResults.tabWidget_2.setCurrentIndex(1)
-		self.formResults.tabWidget_2.setCurrentIndex(2)
 		self.formResults.tabWidget_2.setCurrentIndex(0)
 		self.formResults.tabWidget.setCurrentIndex(0)
 		time.sleep(1)
