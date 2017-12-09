@@ -119,7 +119,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			# Run namd2 to compute the energies
 			pid_namd2 = subprocess.Popen([namd2exe,namdConf],
-				stdout=open(outputFolder+'/%i_%i_energies.log' % (pair[0],pair[1]),'w'))
+				stdout=open(os.path.join(outputFolder,'%i_%i_energies.log' % (pair[0],pair[1])),'w'))
 			pid_namd2.wait()
 
 			#subprocess.call('rm %s' % namdConf,shell=True)
@@ -179,7 +179,7 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 		edrFile = mdpFile.rstrip('.mdp')+'.edr'
 
 		args = [gmxExe,'grompp','-f',mdpFile,'-n',
-			outputFolder+'/interact.ndx','-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20']
+			os.path.join(outputFolder,'interact.ndx'),'-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20']
 		proc = subprocess.Popen(args)
 		proc.wait()
 
@@ -291,32 +291,35 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		# Convert tpr to pdb, selecting just Protein.
 		# Apparently directly spawning gmx in the following does not work as expect in OSX
 		# Prepending bash -c to the command line prior to gmx.
-		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system_dry.pdb'))
+		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,os.path.join(
+			outputFolder,'system_dry.pdb')))
 		proc.expect(u'Select a group:.*')
 		proc.logfile = sys.stdout
 		proc.send('Protein')
 		proc.sendline()
 		#proc.wait() # proc.wait() does not work on MacOSX for some reason...
-		while not os.path.exists(outputFolder+'/system_dry.pdb'):
+		while not os.path.exists(os.path.join(outputFolder,'system_dry.pdb')):
 			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
 		proc.kill(1)
 		
 		# Convert tpr to pdb, full system.
-		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,outputFolder+'/system.pdb'))
+		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,os.path.join(
+			outputFolder,'system.pdb')))
 		proc.expect(u'Select a group:.*')
 		proc.logfile = sys.stdout
 		proc.send('0 0')
 		proc.sendline()
 
-		while not os.path.exists(outputFolder+'/system.pdb'):
+		while not os.path.exists(os.path.join(
+			outputFolder,'system.pdb')):
 			time.sleep(1)
 
 		proc.kill(1)
 
 		logger.info('Detected TPR file, converting to PDB... Done.')
-		pdb = outputFolder+'/system.pdb'
-		copyfile(tpr,outputFolder+'/system.tpr')
-		tpr = outputFolder+'/system.tpr'
+		pdb = os.path.join(outputFolder,'system.pdb')
+		copyfile(tpr,os.path.join(outputFolder,'system.tpr'))
+		tpr = os.path.join(outputFolder,'system.tpr')
 
 	try:
 		system = parsePDB(pdb)
@@ -325,7 +328,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		return
 
 	systemProtein = system.select(str('protein or nucleic'))
-	writePDB(outputFolder+'/system_dry.pdb',systemProtein)
+	writePDB(os.path.join(outputFolder,'system_dry.pdb'),systemProtein)
 	systemCA = system.select(str('name CA'))
 	numResidues = len(np.unique(systemProtein.getResindices()))
 
@@ -402,20 +405,20 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		logger.info('Detected GMX trajectory... Converting to DCD...')
 		try:
 			if traj.endswith('.xtc'):
-				traj = mdtraj.load_xtc(trajPath,top=outputFolder+'/system.pdb',stride=skip)
+				traj = mdtraj.load_xtc(trajPath,top=os.path.join(outputFolder,'system.pdb'),stride=skip)
 				traj.save_trr(outputFolder+'/traj.trr')
 				trajPath = outputFolder+'/traj.trr'
 			elif traj.endswith('.trr'):
-				traj = mdtraj.load_trr(trajPath,top=outputFolder+'/system.pdb',stride=skip)
+				traj = mdtraj.load_trr(trajPath,top=os.path.join(outputFolder,'system.pdb'),stride=skip)
 
 			dataType = 'GMX' # Specify a data type to use later on!
 		except:
 			logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
 			return
 
-		traj.save_dcd(outputFolder+'/traj.dcd')
+		traj.save_dcd(os.path.join(outputFolder,'traj.dcd'))
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
-		traj = Trajectory(str(outputFolder+'/traj.dcd'))
+		traj = Trajectory(os.path.join(str(outputFolder,'traj.dcd')))
 		traj.link(system)
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 
@@ -430,7 +433,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 	logger.info('Deleting waters from the trajectory...')
 	traj.setAtoms(system.select(str('protein')))
-	writeDCD(str(outputFolder+'/traj_dry.dcd'),traj,step=skip if dataType=='NAMD' else 1)
+	writeDCD(os.path.join(str(outputFolder),'traj_dry.dcd'),traj,step=skip if dataType=='NAMD' else 1)
 	logger.info('Deleting waters from the trajectory... Done.')
 
 	# Load pdb with prody and get some useful numbers.
@@ -535,7 +538,8 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		results = pool.map_async(calcEnergiesSingleCoreNAMD,
 			zip(pairsFilteredChunks,itertools.repeat(top),
-				itertools.repeat(outputFolder+'/system_dry.pdb'),
+				itertools.repeat(os.path.join(
+					outputFolder,'system_dry.pdb')),
 				itertools.repeat(trajPath),
 				itertools.repeat(skip),
 				itertools.repeat(frameRange),
@@ -557,12 +561,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		energiesFilePaths = list()
 		for fileName in outFolderFileList:
 			if fileName.endswith('energies.log'):
-				energiesFilePaths.append(outputFolder+'/'+fileName)
+				energiesFilePaths.append(os.path.join(outputFolder,fileName))
 
 		energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
 
 		parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
-			zip(energiesFilePathsChunks,itertools.repeat(outputFolder+'/system_dry.pdb'),
+			zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+				outputFolder,'system_dry.pdb')),
 				itertools.repeat(logFile))).get(9999999)
 
 		parsedEnergies = dict()
@@ -575,11 +580,12 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 	elif dataType == 'GMX':
 		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,
-			pdbFilePath=outputFolder+'/system.pdb',tprFilePath=tpr,trajFilePath=trajPath,skip=skip,
+			pdbFilePath=os.path.join(outputFolder,'system.pdb'),tprFilePath=tpr,trajFilePath=trajPath,skip=skip,
 			frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,soluteDielectric=soluteDielectric,outputFolder=outputFolder,
 			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
 
-		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=outputFolder+'/system.pdb',pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,
+		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=os.path.join(
+			outputFolder,'system.pdb'),pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,
 			edrFiles=edrFiles,logger=logger)
 	
 	# while not parsedEnergiesResults.ready():
@@ -598,11 +604,11 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		df_elec[key] = value['Elec']
 		df_vdw[key] = value['VdW']
 
-	logger.info('Saving results to '+outputFolder+'/energies_intEnTotal.csv')
+	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnTotal.csv'))
 	df_total.to_csv(outputFolder+'/energies_intEnTotal.csv')
-	logger.info('Saving results to '+outputFolder+'/energies_intEnElec.csv')
+	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnElec.csv'))
 	df_elec.to_csv(outputFolder+'/energies_intEnElec.csv')
-	logger.info('Saving results to '+outputFolder+'/energies_intEnVdW.csv')
+	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnVdW.csv'))
 	df_vdw.to_csv(outputFolder+'/energies_intEnVdW.csv')
 
 	logger.info('Saving results to '+outputFolder+'.pickle')
@@ -615,30 +621,36 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 	logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
 	if toPickle:
-		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=outputFolder+'/energies')
+		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=os.path.join(outputFolder,'energies'))
 
 	if resIntCorr:
 		logger.info('Beginning residue interaction energy correlation calculation...')
-		getResIntCorr.getResIntCorr(inFile=outputFolder+'/'+'energies_intEnTotal.csv',
+		getResIntCorr.getResIntCorr(inFile=os.path.join(
+			outputFolder,'energies_intEnTotal.csv'),
 			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
-			outPrefix=outputFolder+'/energies',logger=logger)
+			outPrefix=os.path.join(outputFolder,'energies'),logger=logger)
 
 	logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
-	for item in glob.glob(outputFolder+'/*_energies.log'):
+	for item in glob.glob(os.path.join(
+		outputFolder,'*_energies.log')):
 		os.remove(item)
 
-	for item in glob.glob(outputFolder+'/*temp*'):
+	for item in glob.glob(os.path.join(
+		outputFolder,'*temp*')):
 		os.remove(item)
 
-	for item in glob.glob(outputFolder+'/interact*'):
+	for item in glob.glob(os.path.join(
+		outputFolder,'interact*')):
 		os.remove(item)
 
-	for item in glob.glob(outputFolder+'/*.trr'):
+	for item in glob.glob(os.path.join(
+		outputFolder,'*.trr')):
 		os.remove(item)
 
-	if os.path.exists(outputFolder+'/traj.dcd'):
-		os.remove(outputFolder+'/traj.dcd')
+	if os.path.exists(os.path.join(
+		outputFolder,'traj.dcd')):
+		os.remove(os.path.join(outputFolder,'traj.dcd'))
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	
@@ -775,12 +787,12 @@ if __name__ == '__main__':
 
 	outputFolder = os.path.abspath(args.outfolder[0])
 
-	if os.path.exists(outputFolder+'/'+args.namd2exe[0]):
+	if os.path.exists(os.path.join(outputFolder,args.namd2exe[0])):
 		namd2exe = os.path.abspath(args.namd2exe[0])
 	else:
 		namd2exe = args.namd2exe[0]
 
-	if os.path.exists(outputFolder+'/'+args.gmxexe[0]):
+	if os.path.exists(os.path.join(outputFolder,args.gmxexe[0])):
 		gmxExe = os.path.abspath(args.gmxexe[0])
 	else:
 		gmxExe = args.gmxexe[0]

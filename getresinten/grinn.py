@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -6,7 +7,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 import viewResults
 import getResIntEnGUI
 import grinnGUI
-import sys, time
+import sys, time, os
 
 class DesignInteract(QtWidgets.QMainWindow,grinnGUI.Ui_gRINN):
 
@@ -50,4 +51,8 @@ def main():
 	app.exec_()
 
 if __name__ == '__main__':
+	# Set some environment variable for pyinstaller executable function.
+	os.environ['FONTCONFIG_FILE'] = os.path.join(sys.path[0],'etc','fonts','fonts.conf')
+	os.environ['FONTCONFIG_PATH'] = os.path.join(sys.path[0],'etc','fonts')
+	os.environ['QT_XKB_CONFIG_ROOT'] = os.path.join(sys.path[0],'usr','share','X11','xkb')
 	main()

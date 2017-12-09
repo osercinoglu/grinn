@@ -123,7 +123,7 @@ def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger
 
 	# WITH PANEDR parse edr files to pandas dataframes
 	logger.info('Parsing GMX energy output... This may take a while...')
-	df = panedr.edr_to_df(outputFolder+'/interact0.edr')
+	df = panedr.edr_to_df(os.path.join(outputFolder,'interact0.edr'))
 	logger.info('Parsed 1 EDR file.')
 	for i in range(1,len(edrFiles)):
 		edrFile = edrFiles[i]

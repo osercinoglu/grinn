@@ -401,20 +401,22 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 			self.lineEdit_selectOutputFolder.setText(name)
 			self.viewResultsParams.outputFolder = name
-			self.viewResultsParams.system = parsePDB(
-				self.viewResultsParams.outputFolder+'/system_dry.pdb')
-			self.viewResultsParams.intEnMeanTotal = np.loadtxt(
-				self.viewResultsParams.outputFolder+'/energies_intEnMeanTotal.dat')
-			self.viewResultsParams.intEnTotal = pandas.read_csv(
-				self.viewResultsParams.outputFolder+'/energies_intEnTotal.csv')
+			self.viewResultsParams.system = parsePDB(os.path.join(
+				self.viewResultsParams.outputFolder,'system_dry.pdb'))
+			self.viewResultsParams.intEnMeanTotal = np.loadtxt(os.path.join(
+				self.viewResultsParams.outputFolder,'energies_intEnMeanTotal.dat'))
+			self.viewResultsParams.intEnTotal = pandas.read_csv(os.path.join(
+				self.viewResultsParams.outputFolder,'energies_intEnTotal.csv'))
 			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
 				self.viewResultsParams.outputFolder)
 
-			intEnCorrTotalPath = self.viewResultsParams.outputFolder+'/energies_resIntCorr.csv'
+			intEnCorrTotalPath = os.path.join(
+				self.viewResultsParams.outputFolder,'energies_resIntCorr.csv')
 			if os.path.exists(intEnCorrTotalPath):
 				self.viewResultsParams.intEnCorrTotal = pandas.read_csv(intEnCorrTotalPath)
 
-			resCorrTotalPath = self.viewResultsParams.outputFolder+'/energies_resCorr.dat'
+			resCorrTotalPath = os.path.join(
+				self.viewResultsParams.outputFolder,'energies_resCorr.dat')
 			if os.path.exists(resCorrTotalPath):
 				self.viewResultsParams.resCorrTotal =np.loadtxt(resCorrTotalPath)
 
@@ -523,8 +525,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 
 		self.intEnMeanMat.update_figure(self,'iem')
 
-		self.ProteinView.loadMolFile(self.viewResultsParams.outputFolder+'/system_dry.pdb')
-		trajPath = self.viewResultsParams.outputFolder+'/traj_dry.dcd'
+		self.ProteinView.loadMolFile(os.path.join(
+			self.viewResultsParams.outputFolder,'system_dry.pdb'))
+		trajPath = os.path.join(
+			self.viewResultsParams.outputFolder,'traj_dry.dcd')
 		self.ProteinView._pymol.idle()
 		self.ProteinView._pymol.draw()
 		self.ProteinView._pymolProcess()
@@ -721,14 +725,15 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 			self.updateProteinResiduePairs()
 
 	def updateIECtable(self,row,column):
-		# Get the residues clicked on this row.
-		res11 = self.tableWidget_IEC.item(row,0).text()
-		res12 = self.tableWidget_IEC.item(row,1).text()
-		res21 = self.tableWidget_IEC.item(row,2).text()
-		res22 = self.tableWidget_IEC.item(row,3).text()
 
 		# Find the column in intEnTotal data frame that corresponds to this data
 		if isinstance(self.viewResultsParams.intEnTotal,pandas.core.frame.DataFrame):
+			# Get the residues clicked on this row.
+			res11 = self.tableWidget_IEC.item(row,0).text()
+			res12 = self.tableWidget_IEC.item(row,1).text()
+			res21 = self.tableWidget_IEC.item(row,2).text()
+			res22 = self.tableWidget_IEC.item(row,3).text()
+			
 			# For the first residue pair in correlation
 			colString11 = res11+'-'+res12
 			colString12 = res12+'-'+res11

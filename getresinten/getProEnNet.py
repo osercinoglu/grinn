@@ -148,10 +148,10 @@ def getProEnNet(inFolder=False,resMeanIntEnFile=False,resCorrFile=False,includeC
 	resCorrCutoff=0.4,outPrefix=False):
 	
 	if inFolder:
-		resMeanIntEnFile = inFolder+'/energies_intEnMeanTotal.dat'
-		pdb = inFolder+'/system_dry.pdb'
-		if os.path.exists(inFolder+'/energies_resCorr.dat'):
-			resCorrFile = inFolder+'/energies_resCorr.dat'
+		resMeanIntEnFile = os.path.join(inFolder,'energies_intEnMeanTotal.dat')
+		pdb = os.path.join(inFolder,'system_dry.pdb')
+		if os.path.exists(os.path.join(inFolder,'energies_resCorr.dat')):
+			resCorrFile = os.path.join(inFolder,'energies_resCorr.dat')
 
 	if not resMeanIntEnFile:
 		print('You have to provide the mean interaction energy file.')

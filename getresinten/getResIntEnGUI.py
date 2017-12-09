@@ -17,6 +17,7 @@ import threading
 # Below only for pyinstallers compatibility
 import getResIntEn
 import getResIntCorr
+import viewResults
 import common
 import time
 
@@ -58,7 +59,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		self.pushButton_BrowseNAMD.clicked.connect(self.updateNAMDPath)
 		self.pushButton_BrowseParameterFile.clicked.connect(self.updateParameterFilePath)
 		self.pushButton_Stop.clicked.connect(self.stopCalculation)
-		self.pushButton_viewResults.clicked.connect(self.viewResults)
+		self.pushButton_viewResults.clicked.connect(self.viewResultsStart)
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
 		# Sample data loading (temporary for NAR review)
@@ -157,8 +158,22 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 	def updateStatusBar(self,string):
 		self.statusbar.showMessage(string)
 
-	def viewResults(self):
-		subprocess.call(sys.path[0]+'/viewResults.py &',shell=True)
+	def viewResultsStart(self):
+		self.formResults = viewResults.DesignInteractResults(self)
+		self.formResults.show()
+
+		#Skip through tab widgets to show each GUI component (apparently necessary for plots to draw correctly...
+		self.formResults.tabWidget.setCurrentIndex(0)
+		self.formResults.tabWidget.setCurrentIndex(2)
+		self.formResults.tabWidget.setCurrentIndex(3)
+		self.formResults.tabWidget.setCurrentIndex(4)
+		self.formResults.tabWidget.setCurrentIndex(5)
+		self.formResults.tabWidget_2.setCurrentIndex(0)
+		self.formResults.tabWidget_2.setCurrentIndex(1)
+		self.formResults.tabWidget_2.setCurrentIndex(0)
+		self.formResults.tabWidget.setCurrentIndex(0)
+		time.sleep(1)
+		folderLoaded = self.formResults.updateOutputFolder()
 
 	def done(self,message):
 		self.resetProgressElements()
@@ -236,7 +251,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 		#self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
 		#	now.hour,now.minute,now.second)
 
-		self.params.logFile = str(self.params.outputFolder)+'/grinn.log'
+		self.params.logFile = os.path.join(str(self.params.outputFolder),'grinn.log')
 
 		if os.path.exists(os.path.abspath(str(self.params.outputFolder))):
 			self.error("The output folder exists. Please delete or rename this folder before"\
@@ -260,7 +275,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,design.Ui_MainWindow):
 
 		self.processGetResIntEn.start()
 
-		QtWidgets.QMessageBox.information(self,"Info!","PID of process is: "+str(self.processGetResIntEn.pid))
+		#QtWidgets.QMessageBox.information(self,"Info!","PID of process is: "+str(self.processGetResIntEn.pid))
 
 		self.pushButton_Stop.setEnabled(True)
 		self.pushButton_Calculate.setEnabled(False)

@@ -136,43 +136,46 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 		percentCalculated = 50+(((i+1)/float(len(sigcorrs)))*25)
 		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
-	logger.info('Saving correlations to file...')
-	df_corr.to_csv(outPrefix+'_resIntCorr.csv')
-	logger.info('Saving correlations to file... Done.')
+	if len(df_corr) == 0:
+		logger.info('No significant correlations (with Pearsons r above 0.4) was found. Skipping construction of residue correlation matrix.')
+	else:
+		logger.info('Saving correlations to file...')
+		df_corr.to_csv(outPrefix+'_resIntCorr.csv')
+		logger.info('Saving correlations to file... Done.')
 
-	# Constructing the residue correlation matrix
-	logger.info('Constructing the residue correlation matrix...')
-	rc = np.zeros((numResidues,numResidues))
+		# Constructing the residue correlation matrix
+		logger.info('Constructing the residue correlation matrix...')
+		rc = np.zeros((numResidues,numResidues))
 
-	for i in range(0,len(sigcorrs)):
-		key = list(sigcorrs.keys())[i]
-		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
-		rc_key = np.zeros((numResidues,numResidues))
-		if matches:
-			res11 = int(matches.groups()[0])
-			res12 = int(matches.groups()[1])
-			res21 = int(matches.groups()[2])
-			res22 = int(matches.groups()[3])
+		for i in range(0,len(sigcorrs)):
+			key = list(sigcorrs.keys())[i]
+			matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
+			rc_key = np.zeros((numResidues,numResidues))
+			if matches:
+				res11 = int(matches.groups()[0])
+				res12 = int(matches.groups()[1])
+				res21 = int(matches.groups()[2])
+				res22 = int(matches.groups()[3])
 
-			corr = np.abs(sigcorrs[key])
+				corr = np.abs(sigcorrs[key])
 
-			rc_key[res11,res21] = corr
-			rc_key[res11,res22] = corr
-			rc_key[res12,res21] = corr
-			rc_key[res12,res22] = corr
-			rc_key[res21,res11] = corr
-			rc_key[res21,res12] = corr
-			rc_key[res22,res11] = corr
-			rc_key[res22,res12] = corr
+				rc_key[res11,res21] = corr
+				rc_key[res11,res22] = corr
+				rc_key[res12,res21] = corr
+				rc_key[res12,res22] = corr
+				rc_key[res21,res11] = corr
+				rc_key[res21,res12] = corr
+				rc_key[res22,res11] = corr
+				rc_key[res22,res12] = corr
 
-			rc = rc + rc_key
-		
-		percentCalculated = 75+(((i+1)/float(len(sigcorrs)))*25)
-		logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
+				rc = rc + rc_key
+			
+			percentCalculated = 75+(((i+1)/float(len(sigcorrs)))*25)
+			logger.info('Interaction energy correlation calculated percentage: %f' % percentCalculated)
 
-	logger.info('Constructing the residue correlation matrix... completed.')
-	logger.info('Done.')
-	np.savetxt(outPrefix+'_resCorr.dat',rc)
+		logger.info('Constructing the residue correlation matrix... completed.')
+		logger.info('Done.')
+		np.savetxt(outPrefix+'_resCorr.dat',rc)
 
 
 def convert_arg_line_to_args(arg_line):
