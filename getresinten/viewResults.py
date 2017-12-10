@@ -51,7 +51,7 @@ class MyMplCanvas(FigureCanvas):
 		self.axes.clear()
 		# We want the axes cleared every time plot() is called
 
-		self.compute_initial_figure()
+		#self.compute_initial_figure()
 
 		FigureCanvas.__init__(self, fig)
 		self.toolbar = NavigationToolbar(fig.canvas, self)
@@ -59,7 +59,6 @@ class MyMplCanvas(FigureCanvas):
 			self.toolbar.hide()
 		
 		self.setParent(parent)
-
 		FigureCanvas.setSizePolicy(self,
 			QSizePolicy.Expanding,
 			QSizePolicy.Expanding)
@@ -233,16 +232,11 @@ class DesignInteractResults(QtWidgets.QMainWindow,viewResultsGUI_design.Ui_MainW
 		super(DesignInteractResults,self).__init__(parent)
 		
 		self.setupUi(self)
-
 		#Ppopulate viewResultsParams object
 		self.viewResultsParams = viewResultsParams()
 
 		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(
 			["Residue","Residue","IE [kcal/mol]"])
-		
-		#self.networkPlot = MyStaticMplCanvas(self.frame_NetworkPlot,width=4,height=2,
-		#	dpi=100)
-		#self.verticalLayout_10.addWidget(self.networkPlot)
 
 		self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
 			dpi=100)
@@ -798,7 +792,10 @@ def main():
 	app = QtWidgets.QApplication(sys.argv)
 	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
-	form = DesignInteractResults()
+	try:
+		form = DesignInteractResults()
+	except Exception as ins:
+		print(ins)
 	# Directly call output folder selection dialog.
 	form.show() # First, show the form, somehow in some systems OpenGL requires to be activated via
 	# showing to the user!
@@ -823,4 +820,8 @@ def main():
 		#app.quit()
 
 if __name__ == '__main__':
+	print('Starting the application now...')
+	os.environ['FONTCONFIG_FILE'] = os.path.join(sys.path[0],'etc','fonts','fonts.conf')
+	os.environ['FONTCONFIG_PATH'] = os.path.join(sys.path[0],'etc','fonts')
+	os.environ['QT_XKB_CONFIG_ROOT'] = os.path.join(sys.path[0],'usr','share','X11','xkb')
 	main()

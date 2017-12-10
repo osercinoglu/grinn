@@ -157,15 +157,13 @@ def getProEnNet(inFolder=False,resMeanIntEnFile=False,resCorrFile=False,includeC
 		print('You have to provide the mean interaction energy file.')
 		raise SystemExit(0)
 
-	print('Constructing the Ribeiro-Ortiz network using average residue interaction energies.')
 	networkRO = getRibeiroOrtizNetwork(pdb=pdb,resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,
 		intEnCutoff=intEnCutoff,outName=outPrefix)
 
 	networkKK = False
 	if not resCorrFile:
-		print('Skipping construction of the Kong-Karplus network.')
+		pass
 	else:
-		print('Constructing the Kong-Karplus network using residue interaction energy correlations.')
 		getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
 			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
 			intEnCutoff=intEnCutoff,outName=outPrefix)
@@ -233,5 +231,3 @@ if __name__ == '__main__':
 	_,_ = getProEnNet(inFolder=inFolder,resMeanIntEnFile=resMeanIntEnFile,resCorrFile=resCorrFile,
 		includeCovalents=includeCovalents,intEnCutoff=intEnCutoff,resCorrCutoff=resCorrCutoff,
 		outPrefix=outPrefix)
-	
-	print('Done.')

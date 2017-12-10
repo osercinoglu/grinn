@@ -230,7 +230,7 @@ class Ui_MainWindow(object):
         self.label_4.setText(_translate("MainWindow", "Filtering distance cutoff (Angstroms)"))
         self.label_5.setText(_translate("MainWindow", "Percent cutoff (%)"))
         self.doubleSpinBox_filteringPercent.setToolTip(_translate("MainWindow", "<html><head/><body><p>For a residue pair to be selected for computations, their Centers of Mass must come closer than the filtering distance cutoff value for at least this percent of the trajectory frames.</p></body></html>"))
-        self.label_6.setText(_translate("MainWindow", "DCD stride"))
+        self.label_6.setText(_translate("MainWindow", "Trajectory stride"))
         self.spinBox_numProcessors.setToolTip(_translate("MainWindow", "<html><head/><body><p>Number of processors to use for the calculation.</p></body></html>"))
         self.label_7.setText(_translate("MainWindow", "<html><head/><body><p>Number of processors</p></body></html>"))
         self.pushButton_Calculate.setToolTip(_translate("MainWindow", "<html><head/><body><p>Starts the calculation</p></body></html>"))

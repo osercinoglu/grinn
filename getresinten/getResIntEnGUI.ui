@@ -144,7 +144,7 @@
      <enum>Qt::RightToLeft</enum>
     </property>
     <property name="text">
-     <string>DCD stride</string>
+     <string>Trajectory stride</string>
     </property>
     <property name="alignment">
      <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
