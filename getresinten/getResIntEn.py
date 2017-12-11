@@ -10,6 +10,7 @@ from common import getChainResnameResnum
 from common import makeNDXMDPforGMX
 from common import parseEnergiesGMX
 from common import which
+from common import has_handle
 import getResIntCorr
 
 def calcEnergiesSingleCoreNAMD(args):
@@ -297,9 +298,17 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		proc.logfile = sys.stdout
 		proc.send('Protein')
 		proc.sendline()
+
 		#proc.wait() # proc.wait() does not work on MacOSX for some reason...
-		while not os.path.exists(os.path.join(outputFolder,'system_dry.pdb')):
+		while not os.path.exists(os.path.join(
+			outputFolder,'system_dry.pdb')):
 			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
+		
+		# Check whether the file is still being written to...
+		while has_handle(os.path.join(
+			outputFolder,'system_dry.pdb')):
+			time.sleep(1)
+
 		proc.kill(1)
 		
 		# Convert tpr to pdb, full system.
@@ -310,7 +319,13 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 		proc.send('0 0')
 		proc.sendline()
 
+		# Check whether file has been created. If not, wait.
 		while not os.path.exists(os.path.join(
+			outputFolder,'system.pdb')):
+			time.sleep(1)
+
+		# Check whether the file is still being written to...
+		while has_handle(os.path.join(
 			outputFolder,'system.pdb')):
 			time.sleep(1)
 
@@ -418,7 +433,7 @@ def getResIntEn(top,pdb,tpr,traj,numCores,sourceSel,targetSel,environment,solute
 
 		traj.save_dcd(os.path.join(outputFolder,'traj.dcd'))
 		# Load back this DCD and continue with it (for code compatibility with ProDy)
-		traj = Trajectory(os.path.join(str(outputFolder,'traj.dcd')))
+		traj = Trajectory(os.path.join(str(outputFolder),'traj.dcd'))
 		traj.link(system)
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 

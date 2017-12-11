@@ -1,8 +1,20 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys, os
+import re, os, pexpect, panedr, pandas, time, sys, os, psutil
 import numpy as np
 from prody import *
 import logging
+
+# A method to check whether a file has a handle on it.
+def has_handle(fpath):
+	for proc in psutil.process_iter():
+		try:
+			for item in proc.open_files():
+				if fpath == item.path:
+					return True
+		except Exception:
+			pass
+
+	return False
 
 # A method to check whether a given command is an executable
 def which(program):

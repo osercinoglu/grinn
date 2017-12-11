@@ -3,7 +3,8 @@ import glob
 
 block_cipher = None
 # Icons and other stuff that I discover to be necessary by trial-and-error
-datas = [('clover.ico','.'),
+datas = [('clover.icns','.'),
+('clover.ico','.'),
 ('/Users/onur/anaconda2/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
@@ -41,7 +42,8 @@ exe = EXE(pyz,
           debug=False,
           strip=False,
           upx=True,
-          console=False )
+          console=False,
+          icon='clover.ico')
 
 #coll = COLLECT(exe,
 #               a.binaries,
@@ -53,7 +55,7 @@ exe = EXE(pyz,
 
 app = BUNDLE(exe,
              name='grinn.app',
-             icon='clover.ico',
+             icon='clover.icns',
              bundle_identifier=None,
              info_plist={
               'NSHighResolutionCapable': 'True'
