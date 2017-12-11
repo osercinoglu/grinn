@@ -1,5 +1,3 @@
-#!/usr/local/env python3
-
 from PyQt5.QtOpenGL import *
 from PyQt5 import QtCore
 from PyQt5.Qt import Qt
