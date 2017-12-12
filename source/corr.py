@@ -7,7 +7,7 @@ import os
 import math
 import itertools
 import multiprocessing
-import getResIntEn
+import calc
 import argparse
 import datetime
 import logging
