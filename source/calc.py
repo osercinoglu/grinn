@@ -278,33 +278,41 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 	return edrFiles, pairsFilteredChunks
 
+def filterPairs(params):
+	pass
+
+def calcNAMD(params):
+	pass
+
+def calcGMX(params):
+	pass
+
 # Method to convert TPR to PDB files.
-def tpr2pdb(params):
+def tpr2pdb(params,tpr,pdb,gmxGroup):
 	# Convert tpr to pdb, selecting just Protein.
 	# Apparently directly spawning gmx in the following does not work as expect in OSX
 	# Prepending bash -c to the command line prior to gmx.
 	proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % 
-		(params.exe,params.traj,params.tpr,os.path.join(
-		params.outFolder,'system_dry.pdb')))
+		(params.exe,params.traj,tpr,pdb))
 	try:
 		proc.expect(u'Select a group:.*')
-		proc.logfile = sys.stdout
-		proc.send('Protein')
-		proc.sendline()
+		#proc.logfile = sys.stdout
 	except pexpect.EOF:
-		traceback.print_exc()
+		print('error')
+		return False, proc.before
 
+	proc.send(gmxGroup)
+	proc.sendline()
 	#proc.wait() # proc.wait() does not work on MacOSX for some reason...
-	while not os.path.exists(os.path.join(
-		params.outFolder,'system_dry.pdb')):
+	while not os.path.exists(pdb):
 		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
 		
 	# Check whether the file is still being written to...
-	while has_handle(os.path.join(
-		params.outFolder,'system_dry.pdb')):
+	while has_handle(pdb):
 		time.sleep(1)
 
 	proc.kill(1)
+	return True, "Success'"
 
 # Method to check args and get params if they are valid
 def getParams(args):
@@ -413,11 +421,11 @@ def getParams(args):
 		message = "You have not specified a NAMD2 or GMX executable!"
 		return params, False, message
 	if os.path.exists(os.path.join(os.getcwd(),args.exe[0])):
-		exe = os.path.abspath(args.exe[0])
+		params.exe = os.path.abspath(args.exe[0])
 	else:
-		exe = args.exe[0]
+		params.exe = args.exe[0]
 
-	isExe = which(exe)
+	isExe = which(params.exe)
 	if not isExe:
 		message = "NAMD2/GMX exe you specified does not appear to be a valid executable. "
 		"Aborting now."
@@ -475,10 +483,18 @@ def getParams(args):
 			return params, False, message
 
 		# Check whether a PDB can be extracted from the TPR.
-		isPDB = tpr2pdb(params)
+		isPDB,messageOut = tpr2pdb(params,params.tpr,'dummy.pdb','System')
+		if not isPDB:
+			message = 'Could not extract a structure from input TPR.'
+			message = message + ' Executable produced the following :\n' 
+			message = message + messageOut
+			return params, False, message
+		else:
+			os.remove('dummy.pdb')
 
 	return params, True, "Success"
 
+# Main method starting the work
 def getResIntEn(args):
 	
 	# Check whether input arguments are valid and get parameters!
@@ -518,9 +534,17 @@ def getResIntEn(args):
 
 	# Proceed with the appropriate method depending on the input data type.
 	if params.dataType == 'namd':
-		return
+		pass
+		#calcNAMD(params)
+	elif params.dataType == 'gmx':
+		pass
+		#calcGMX(params)
+	
+	return
 
+	###### WARNING !!! ################
 	# BELOW THIS POINT EVIL LIVES!!! ###
+	###### THE CODE IS LEFTOVER CODE ###
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -871,15 +895,6 @@ def getResIntEn(args):
 		os.remove(os.path.join(outputFolder,'traj.dcd'))
 
 	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
-	
-def convert_arg_line_to_args(arg_line):
-	# To override the same method of the ArgumentParser (to read options from a file)
-	# Credit and source: hpaulj from StackOverflow
-	# http://stackoverflow.com/questions/29111801/using-fromfile-prefix-chars-with-multiple-arguments-nargs#
-	for arg in arg_line.split():
-		if not arg.strip():
-			continue
-		yield arg
 
 if __name__ == '__main__':
 	print('Please do not call this method directly. Use python grinn.py -calc <arguments> '

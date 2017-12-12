@@ -67,7 +67,7 @@ def main():
 		os.path.dirname(os.path.abspath(__file__)),
 		'resources','clover.ico'))
 	icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
-	form.setWindowIcon(icon)
+	app.setWindowIcon(icon)
 	form.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
 	form.label.setText("")
 	form.label.setScaledContents(True)

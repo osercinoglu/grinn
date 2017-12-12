@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-
+import matplotlib
+matplotlib.use("Qt5Agg")
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -9,9 +10,7 @@ import sys
 import pandas
 import numpy as np
 import seaborn
-import matplotlib
 import os
-matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -228,7 +227,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 	
 	def __init__(self,parent=None):
 		
-		matplotlib.use('Qt5Agg')
 		super(DesignInteractResults,self).__init__(parent)
 		
 		self.setupUi(self)
@@ -790,7 +788,8 @@ def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)
-	app.setWindowIcon(QtGui.QIcon(sys.path[0]+'/clover.ico'));
+	app.setWindowIcon(QtGui.QIcon(os.path.dirname(
+	os.path.dirname(os.path.abspath(__file__))),'resources','clover.ico'));
 	#app.setStyle(QtWidgets.QStyleFactory.create('Macintosh'))
 	try:
 		form = DesignInteractResults()
