@@ -688,7 +688,6 @@ def getResIntEn(args):
 		traj.link(system)
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 
-	else:
 
 	logger.info('Deleting waters from the trajectory...')
 	traj.setAtoms(system.select(str('protein')))
