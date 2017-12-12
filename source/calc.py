@@ -283,11 +283,30 @@ def getParams(args):
 
 	params.numCores = args.numcores[0]
 	params.frameRange = args.framerange
+
+	if len(frameRange) > 1:
+		frameRange = np.asarray(frameRange)
+	else:
+		frameRange = frameRange[0]
+
+	paramFile = paramFile
+	if paramFile and not type(paramFile) == str:
+		paramFile = paramFile[0]
+
+	if paramFile:
+		paramFile = paramFile.split(' ')
+		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
+
 	params.stride = args.stride[0]
 
 	params.dielectric = args.dielectric[0]
 
 	params.pairFilterCutoff = args.pairfiltercutoff[0]
+
+	if params.pairFilterCutoff < 4:
+		message = 'Filtering distance cutoff value can not be smaller than 4. Aborting now.'
+		return params, False, message
+
 	params.pairFilterPercentage = args.pairfilterpercentage[0]
 	params.pairFilterStride= args.pairfilterstride[0]
 
@@ -393,7 +412,7 @@ def getParams(args):
 			message = 'Could not load the DCD file provided. Aborting now.'
 			return params, False, message
 
-		# Check whether the system has enough memory to multiple processing of the DCD
+		# Check whether the system has enough memory for multiple processing of the DCD
 		trajStats = os.stat(params.traj)
 		size = trajStats.st_size
 
@@ -557,22 +576,6 @@ def getResIntEn(args):
 		if len(index) > 1:
 			logger.exception('There are residues with the same residue index in your PDB file. This is not allowed. Aborting now...')
 			return
-
-	paramFile = paramFile
-	if paramFile and not type(paramFile) == str:
-		paramFile = paramFile[0]
-
-	if paramFile:
-		paramFile = paramFile.split(' ')
-		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
-
-	if len(frameRange) > 1:
-		frameRange = np.asarray(frameRange)
-	else:
-		frameRange = frameRange[0]
-
-	if pairFilterCutoff < 4:
-		logger.exception('Filtering distance cutoff value can not be smaller than 4. Aborting now.')
 
 	# Load psf with prody and get some useful numbers.
 	### COMMENTING THIS OUT DUE TO INCOMPATIBILITY PROBLEMS WITH python3.6
