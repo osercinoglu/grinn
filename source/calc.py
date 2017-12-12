@@ -97,6 +97,12 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	
 	return intEnDict
 
+def prepareFilesNAMD(params):
+	pass
+
+def prepareFilesGMX(params):
+	pass
+
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
 	print(args)
@@ -237,6 +243,9 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
+def calcEnergiesNAMD(params):
+	pass
+
 def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
 	pairFilterCutoff,soluteDielectric,outputFolder,gmxExe,logFile,numCores):
 
@@ -282,7 +291,8 @@ def filterPairs(params):
 	pass
 
 def calcNAMD(params):
-	pass
+	# Prepare input files for NAMD energy calculation.
+	params = prepareFilesNAMD(params)
 
 def calcGMX(params):
 	pass
@@ -390,11 +400,28 @@ def getParams(args):
 	if args.pdb[0]:
 		try:
 			system = parsePDB(os.path.abspath(args.pdb[0]))
+			systemProtein = system.select(str('protein or nucleic'))
 			params.pdb = os.path.abspath(args.pdb[0])
 			params.dataType = 'namd'
 		except:
 			message = "Could not load your PDB file. Aborting now."
 			return params, False, message
+
+		try:
+			sysSel1 = system.select(params.sel1)
+			sysSel2 = system.select(params.sel2)
+		except:
+			message = 'Could not select sel1 or sel2 in the PDB file. Aborting now.'
+			return params, False, message
+
+		numResidues = len(np.unique(systemProtein.getResindices()))
+		for resindex in np.unique(systemProtein.getResindices()):
+			residue = systemProtein.select(str('resindex %i' % resindex))
+			index = np.unique(residue.getResnames())
+			if len(index) > 1:
+				message = 'There are multiple residues with the same residue index in your PDB file. '
+				' This is not allowed. Aborting now...'
+				return params, False, message
 
 	elif args.tpr[0]:
 		# Unfortunately I don't know of a good way to check valid GMX tpr data.
@@ -490,7 +517,23 @@ def getParams(args):
 			message = message + messageOut
 			return params, False, message
 		else:
-			os.remove('dummy.pdb')
+			try:
+				system = parsePDB('dummy.pdb')
+				systemProtein = system.select(str('protein or nucleic'))
+				os.remove('dummy.pdb')
+			except:
+				os.remove('dummy.pdb')
+				message = 'Could not load the extracted PDB file from TPR. '
+				'Aborting now.'
+				return params, False, message
+
+			try:
+				sysSel1 = system.select(params.sel1)
+				sysSel2 = system.select(params.sel2)
+			except:
+				message = 'Could not select sel1 or sel2 in the PDB file extracted from the '
+				'TPR. Aborting now.'
+				return params, False, message
 
 	return params, True, "Success"
 
@@ -534,8 +577,7 @@ def getResIntEn(args):
 
 	# Proceed with the appropriate method depending on the input data type.
 	if params.dataType == 'namd':
-		pass
-		#calcNAMD(params)
+		calcNAMD(params)
 	elif params.dataType == 'gmx':
 		pass
 		#calcGMX(params)
@@ -609,24 +651,6 @@ def getResIntEn(args):
 		copyfile(tpr,os.path.join(outputFolder,'system.tpr'))
 		tpr = os.path.join(outputFolder,'system.tpr')
 
-	try:
-		system = parsePDB(pdb)
-	except:
-		logger.exception('Could not load the PDB file. Aborting now.')
-		return
-
-	systemProtein = system.select(str('protein or nucleic'))
-	writePDB(os.path.join(outputFolder,'system_dry.pdb'),systemProtein)
-	systemCA = system.select(str('name CA'))
-	numResidues = len(np.unique(systemProtein.getResindices()))
-
-	for resindex in np.unique(systemProtein.getResindices()):
-		residue = systemProtein.select(str('resindex %i' % resindex))
-		index = np.unique(residue.getResnames())
-		if len(index) > 1:
-			logger.exception('There are residues with the same residue index in your PDB file. This is not allowed. Aborting now...')
-			return
-
 	# Load psf with prody and get some useful numbers.
 	### COMMENTING THIS OUT DUE TO INCOMPATIBILITY PROBLEMS WITH python3.6
 	### WE DON'T NEED TO USE PSF IN PYTHON ANYWAY
@@ -665,13 +689,6 @@ def getResIntEn(args):
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
 
 	else:
-		try:
-			traj = Trajectory(trajPath)
-			traj.link(system)
-			dataType = 'NAMD'
-		except:
-			logger.exception('Could not load the DCD file provided. Please check your input DCD file.')
-			return
 
 	logger.info('Deleting waters from the trajectory...')
 	traj.setAtoms(system.select(str('protein')))
