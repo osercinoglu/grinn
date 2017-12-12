@@ -2,7 +2,8 @@
 from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
-re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob
+re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
+traceback
 from shutil import copyfile, rmtree
 from common import *
 import corr
@@ -277,6 +278,34 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 
 	return edrFiles, pairsFilteredChunks
 
+# Method to convert TPR to PDB files.
+def tpr2pdb(params):
+	# Convert tpr to pdb, selecting just Protein.
+	# Apparently directly spawning gmx in the following does not work as expect in OSX
+	# Prepending bash -c to the command line prior to gmx.
+	proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % 
+		(params.exe,params.traj,params.tpr,os.path.join(
+		params.outFolder,'system_dry.pdb')))
+	try:
+		proc.expect(u'Select a group:.*')
+		proc.logfile = sys.stdout
+		proc.send('Protein')
+		proc.sendline()
+	except pexpect.EOF:
+		traceback.print_exc()
+
+	#proc.wait() # proc.wait() does not work on MacOSX for some reason...
+	while not os.path.exists(os.path.join(
+		params.outFolder,'system_dry.pdb')):
+		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
+		
+	# Check whether the file is still being written to...
+	while has_handle(os.path.join(
+		params.outFolder,'system_dry.pdb')):
+		time.sleep(1)
+
+	proc.kill(1)
+
 # Method to check args and get params if they are valid
 def getParams(args):
 
@@ -325,8 +354,8 @@ def getParams(args):
 	currentFolder = os.getcwd()
 	if outFolder != currentFolder:
 		if os.path.exists(outFolder):
-			print("The output folder exists. Please delete or rename this folder before "
-				 "proceeding. Aborting now.")
+			print("The output folder exists. Please delete this folder or "
+				" specify a folder path that does not exist. Aborting now.")
 			sys.exit(0)
 		else:
 			params.outFolder = outFolder
@@ -433,12 +462,20 @@ def getParams(args):
 			params.parameterFile = [os.path.abspath(paramFile) for paramFile in paramFile]
 		
 	elif params.dataType == 'gmx':
+
+		if platform.system() == 'Windows':
+			message = 'GROMACS data on Windows is not supported. Aborting now.'
+			return params, False, message
+
 		_,tprExt = os.path.splitext(params.tpr)
 		_,topExt = os.path.splitext(params.top)
 		exts = [topExt.lower(),tprExt.lower(),trajExt.lower()]
 		if exts != ['.top','.tpr','.trr'] and exts != ['.top','.tpr','.xtc']:
 			message = 'Invalid TOP/TPR/XTC/TRR file extensions. Aborting now.'
 			return params, False, message
+
+		# Check whether a PDB can be extracted from the TPR.
+		isPDB = tpr2pdb(params)
 
 	return params, True, "Success"
 
@@ -483,6 +520,8 @@ def getResIntEn(args):
 	if params.dataType == 'namd':
 		return
 
+	# BELOW THIS POINT EVIL LIVES!!! ###
+
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
 	def worker_init():
@@ -519,27 +558,7 @@ def getResIntEn(args):
 		#gmxExe = 'gmx' # TEMPORARY
 
 		logger.info('Detected TPR file, converting to PDB...')
-		# Convert tpr to pdb, selecting just Protein.
-		# Apparently directly spawning gmx in the following does not work as expect in OSX
-		# Prepending bash -c to the command line prior to gmx.
-		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,os.path.join(
-			outputFolder,'system_dry.pdb')))
-		proc.expect(u'Select a group:.*')
-		proc.logfile = sys.stdout
-		proc.send('Protein')
-		proc.sendline()
 
-		#proc.wait() # proc.wait() does not work on MacOSX for some reason...
-		while not os.path.exists(os.path.join(
-			outputFolder,'system_dry.pdb')):
-			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
-		
-		# Check whether the file is still being written to...
-		while has_handle(os.path.join(
-			outputFolder,'system_dry.pdb')):
-			time.sleep(1)
-
-		proc.kill(1)
 		
 		# Convert tpr to pdb, full system.
 		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,os.path.join(
