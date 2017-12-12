@@ -28,6 +28,8 @@ class parameters(object):
 		self.calcCorr = None
 		self.outFolder = None
 		self.dataType = None
+		self.logFile = None
+		self.logger = None
 
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
@@ -282,20 +284,16 @@ def getParams(args):
 	params = parameters()
 
 	params.numCores = args.numcores[0]
-	params.frameRange = args.framerange
+	frameRange = args.framerange
 
 	if len(frameRange) > 1:
-		frameRange = np.asarray(frameRange)
+		params.frameRange = np.asarray(frameRange)
+	elif len(frameRange) == 1:
+		if not frameRange[0]:
+			params.frameRange = False
 	else:
-		frameRange = frameRange[0]
-
-	paramFile = paramFile
-	if paramFile and not type(paramFile) == str:
-		paramFile = paramFile[0]
-
-	if paramFile:
-		paramFile = paramFile.split(' ')
-		paramFile = [os.path.abspath(paramFile) for paramFile in paramFile]
+		message = 'Invalid frame range. Aborting now.'
+		return params, False, message
 
 	params.stride = args.stride[0]
 
@@ -417,13 +415,22 @@ def getParams(args):
 		size = trajStats.st_size
 
 		memory = psutil.virtual_memory()
-		print(memory.available)
-		print(size*params.numCores)
 		if size*params.numCores > memory.available*1.1:
 			message = 'System does not have enough memory to handle the computation. '
 			'Please either decrease the number of processors (numCores) or reduce '
 			'the size of input DCD trajectory. Aborting now.'
 			return params, False, message
+
+		# Check whether a parameter file is supplied.
+		parameterFile = args.parameterfile
+		if parameterFile and not type(parameterFile) == str:
+			if not parameterFile[0]:
+				message = 'You must supply a parameter file for NAMD. Aborting now.'
+				return params, False, message
+
+		elif parameterFile:
+			parameterFile = parameterFile.split(' ')
+			params.parameterFile = [os.path.abspath(paramFile) for paramFile in paramFile]
 		
 	elif params.dataType == 'gmx':
 		_,tprExt = os.path.splitext(params.tpr)
@@ -451,25 +458,25 @@ def getResIntEn(args):
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
 		filename=params.logFile)
-	logger = logging.getLogger(__name__)
+	params.logger = logging.getLogger(__name__)
 	
 	# Also print messages to the terminal
 	console = logging.StreamHandler()
 	console.setLevel(logging.INFO)
 	console.setFormatter(logging.Formatter(loggingFormat))
-	logger.addHandler(console)
+	params.logger.addHandler(console)
 
-	logger.info('Checking whether input arguments are valid...')
+	params.logger.info('Checking whether input arguments are valid...')
 
 	# Check whether the arguments are valid. If not, remove the output folder and abort.
 	if not isArgsValid:
-		logger.exception(message)
+		params.logger.exception(message)
 		# Check whether the script was called from a terminal.
 		if sys.stdin.isatty():
 			rmtree(params.outFolder)
 		return
 
-	logger.info('Argument check completed. Proceeding...')
+	params.logger.info('Argument check completed. Proceeding...')
 	return
 
 	# Proceed with the appropriate method depending on the input data type.
