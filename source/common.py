@@ -64,21 +64,19 @@ def which(program):
 	return None
 
 
-# A method to make dry PSF files in grinn -calc output directories.
-def makeDryPSF(psf,pdb,outFolder):
-	vmd.evaltcl('package require psfgen')
-	vmd.evaltcl('mol new %s' % psf)
-	vmd.evaltcl('mol addfile %s' % pdb)
-	vmd.evaltcl('readpsf %s' % psf)
-	vmd.evaltcl('coordpdb %s' % pdb)
-	vmd.evaltcl('set a [atomselect top water]')
-	vmd.evaltcl('set l [lsort -unique [$a get segid]]')
-	vmd.evaltcl('foreach a $l { delatom $s }')
-	vmd.evaltcl('set b [atomselect top "segname ION"]')
-	vmd.evaltcl('set k [lsort -unique [$b get segid]]')
-	vmd.evaltcl('foreach d $k { delatom $d }')
-	vmd.evaltcl('writepsf %s' % os.path.join(outFolder,'system_dry.psf'))
-	vmd.evaltcl('writepdb %s' % os.path.join(outFolder,'system_dry.pdb'))
+def isMemoryEnough(params,traj):
+	# Check whether the system has enough memory for multiple processing of the DCD
+	trajStats = os.stat(params.traj)
+	size = trajStats.st_size
+
+	memory = psutil.virtual_memory()
+	if size*params.numCores > memory.available*1.1:
+		message = 'System does not have enough memory to handle the computation. '
+		'Please either decrease the number of processors (numCores) or increase '
+		'the trajectory stride parameter. Aborting now.'
+		return False, message
+	else:
+		return True, "Success"
 
 # A method to get a string containing chain ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index

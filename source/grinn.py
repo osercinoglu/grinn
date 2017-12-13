@@ -5,6 +5,7 @@ from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 import resultsGUI, calcGUI, grinnGUI_design, calc
 import sys, time, os, argparse, multiprocessing
+import vmd
 
 class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 
@@ -188,6 +189,11 @@ if __name__ == '__main__':
 		help='Folder path for storing calculation results. If not specified, a folder named '
 		'grinn_output will be created in the current working folder. Applies only to grinn '
 		'-calc <arguments> calls.')
+
+	parser.add_argument('--vmd',default=[False],type=str,nargs=1,
+		help='Path of the Visual Molecular Dynamics (VMD) executable. Only used if -calc '
+		'mode detects non-protein atoms in input files to remove these as the interaction '
+		'energy calculation are conducted in vacuum environment.')
 
 	# Parse arguments.
 	args = parser.parse_args()

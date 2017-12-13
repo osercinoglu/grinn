@@ -3,7 +3,7 @@ from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
-traceback
+traceback, vmd
 from shutil import copyfile, rmtree
 from common import *
 import corr
@@ -73,27 +73,87 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	
 	return intEnDict
 
-def prepareFilesNAMD(params):
-	# Load the PDB and PSF files, get rid of non-protein sections.
-	params.logger.info('Parsing PDB file...')
-	pdb = parsePDB(params.pdb)
+def isStructureDry(pdb,psf):
+	# Load the PDB and PSF files
+	pdb = parsePDB(pdb)
 	pdbProtein = pdb.select('protein')
-	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+	pdbNonProtein = pdb.select('not protein')
 
-	params.logger.info('Parsing PSF file...')
-	# The problem with PSF files is, there is no good package for manipulating them
-	# in python. One option is to use ProDy parsePSF, but it does not read dihedrals etc.
-	# which are required by NAMD.
-	# I implemented a method in common module for deleting waters/ions from PSF while keeping
-	# dihedrals etc. in the output file using vmd-python from Robin Metz.
-	makeDryPSF(psf=params.top,pdb=params.pdb,outFolder=params.outFolder)
+	psf = parsePSF(psf)
+	psfNonProtein = psf.select('not protein')
 
-	params.logger.info('Reading DCD file...')
-	# Load the DCD file, get rid of non-protein sections.
-	traj = Trajectory(params.traj)
-	traj.link(pdb)
-	traj.setAtoms(pdbProtein)
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
+	if not pdbNonProtein == None and not psfNonProtein == None:
+		return False
+	else:
+		return True
+
+def makeDryPSF(params):
+	# Prepare a set of Tcl commands to execute in the VMD console now.
+	vmd_cmds = 'package require psfgen\n'
+	vmd_cmds += 'mol new %s\n' % (params.top)
+	vmd_cmds += 'mol addfile %s\n' % (params.pdb)
+	vmd_cmds += 'set a [atomselect top "not protein"]\n'
+	vmd_cmds += 'set l [lsort -unique [$a get segid]]\n'
+	vmd_cmds += 'readpsf %s\n' % (params.top)
+	vmd_cmds += 'coordpdb %s\n' % (params.pdb)
+	vmd_cmds += 'foreach s $l { delatom $s }\n'
+	vmd_cmds += 'writepsf %s\n' % os.path.join(params.outFolder,'system_dry.psf')
+	vmd_cmds += 'writepdb %s\n' % os.path.join(params.outFolder,'system_dry.pdb')
+	vmd_cmds += 'exit'
+
+	# Save the commands to a dummy file.
+	f = open('temp.tcl','w')
+	f.write(vmd_cmds)
+	f.close()
+
+	os.system(params.vmd+' -dispdev text -e temp.tcl')
+	#os.remove('temp.tcl')
+
+def prepareFilesNAMD(params):
+	# Detect whether there are non-protein components in the system.
+	params.logger.info('Checking whether the structure has non-protein atoms...')
+	dryStructure = isStructureDry(params.pdb,params.top)
+
+	if not dryStructure:
+		params.logger.info('Non-protein atoms detected in structure...')
+		# There are non-protein atoms in the system.
+		# See whether user supplied a VMD executable path.
+		if not params.vmd:
+			if sys.stdin.isatty():
+			# Prompt the user whether he/she would like to specify the path to vmd
+			# Only if the terminal was used to call this method
+				pass
+
+		if params.vmd:
+			# Alright, try to remove the non-protein parts and save to outputfolder.
+			params.logger.info('Attempting to remove non-protein parts from structure...')
+			makeDryPSF(params)
+		else:
+			params.logger.info('No non-protein atoms are present in the structure...')
+			# Well, simply copy over all PDB/PSF/DCD to outputfolder.
+			# Although this is a horrible way to continue, I have to let the user do this.
+			copyfile(params.pdb,os.path.join(params.outFolder,'system_dry.pdb'))
+			copyfile(params.psf,os.path.join(params.outFolder,'system_dry.psf'))
+			traj = Trajectory(params.traj)
+			pdb = parsePDB(params.pdb)
+			traj.link(pdb)
+			traj.setAtoms(pdb)
+			writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
+	else:
+		# There no non-protein atoms in the system
+		# Just copy psf and pdb files and the trajectory with stride to output folder.
+		writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+		copyfile(params.psf,os.path.join(params.outFolder,'system_dry.psf'))
+		# Load the DCD file, get rid of non-protein sections.
+		traj = Trajectory(params.traj)
+		traj.link(pdb)
+		traj.setAtoms(pdbProtein)
+		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
+
+	# Check whether system has enough memory to handle the computation...
+	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
+	if not proceed:
+		errorSuicide(params,message)
 
 def prepareFilesGMX(params):
 	pass
@@ -497,6 +557,10 @@ def cleanUp(params):
 	if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
 		os.remove(os.path.join(params.outFolder,'traj.dcd'))
 
+def errorSuicide(params,message):
+	params.logger.exception(message)
+	sys.exit(1)
+
 def calcNAMD(params):
 	# Prepare input files for NAMD energy calculation.
 	prepareFilesNAMD(params)
@@ -549,6 +613,11 @@ def getParams(args):
 	# Make a new parameters object.
 	params = parameters()
 
+	if args.vmd[0]:
+		params.vmd = args.vmd[0]
+	elif not args.vmd[0]:
+		params.vmd = False
+
 	params.numCores = args.numcores[0]
 	frameRange = args.framerange
 
@@ -590,6 +659,7 @@ def getParams(args):
 	currentFolder = os.getcwd()
 	if outFolder != currentFolder:
 		if os.path.exists(outFolder):
+			print(outFolder)
 			print("The output folder exists. Please delete this folder or "
 				" specify a folder path that does not exist. Aborting now.")
 			sys.exit(0)
@@ -687,20 +757,9 @@ def getParams(args):
 			return params, False, message
 
 		try:
-			trajectory = parseDCD(params.traj)
+			trajectory = Trajectory(params.traj)
 		except:
 			message = 'Could not load the DCD file provided. Aborting now.'
-			return params, False, message
-
-		# Check whether the system has enough memory for multiple processing of the DCD
-		trajStats = os.stat(params.traj)
-		size = trajStats.st_size
-
-		memory = psutil.virtual_memory()
-		if size*params.numCores > memory.available*1.1:
-			message = 'System does not have enough memory to handle the computation. '
-			'Please either decrease the number of processors (numCores) or reduce '
-			'the size of input DCD trajectory. Aborting now.'
 			return params, False, message
 
 		# Check whether a parameter file is supplied.
@@ -760,6 +819,7 @@ def getResIntEn(args):
 	
 	# Check whether input arguments are valid and get parameters!
 	global params
+	print('Checking input arguments...')
 	params, isArgsValid, message = getParams(args)
 
 	# Create the output folder now so that we can start logging.
@@ -780,8 +840,6 @@ def getResIntEn(args):
 	console.setLevel(logging.INFO)
 	console.setFormatter(logging.Formatter(loggingFormat))
 	params.logger.addHandler(console)
-
-	params.logger.info('Checking whether input arguments are valid...')
 
 	# Check whether the arguments are valid. If not, remove the output folder and abort.
 	if not isArgsValid:

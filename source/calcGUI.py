@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+import vmd
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -19,7 +21,6 @@ import calc
 import corr
 import resultsGUI
 import common
-import time
 import argparse
 	
 class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow):
@@ -65,13 +66,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
-		self.lineEdit_outputFolder.setText('getResIntEn_output2')
+		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
-		self.lineEdit_namd2.setText('namd2')
-		self.lineEdit_pdb.setText('test/test.pdb')
-		self.lineEdit_psf.setText('test/test.psf')
-		self.lineEdit_dcd.setText('test/test.dcd')
-		self.lineEdit_parameterFile.setText('test/par_all27_prot_lipid_na.inp')
+		self.lineEdit_namd2.setText('/media/onur/FREA/Software/NAMD_2.12_Linux-x86_64-multicore/namd2')
+		self.lineEdit_pdb.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/ionized.pdb')
+		self.lineEdit_psf.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/ionized.psf')
+		self.lineEdit_dcd.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/restart_10000_250010000.dcd')
+		self.lineEdit_parameterFile.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/par_all27_prot_lipid_na.inp')
 
 	def closeEvent(self, event):
 			self.stopCalculation()
@@ -206,23 +207,23 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		# Converting a parameter object to an argument parser namespace
 		args = argparse.Namespace()
 		args.calc = True
-		args.pdb = calcParams.pdb
-		args.tpr = calcParams.tpr
-		args.top = calcParams.top
-		args.traj = calcParams.traj
-		args.numcores = calcParams.numCores
-		args.dielectric = calcParams.dielectric
-		args.sel1 = calcParams.sel1
-		args.sel2 = calcParams.sel2
-		args.pairfiltercutoff = calcParams.pairFilterCutoff
-		args.pairfilterpercentage = calcParams.pairFilterPercentage
-		args.stride = calcParams.stride
+		args.pdb = [calcParams.pdb]
+		args.tpr = [calcParams.tpr]
+		args.top = [calcParams.top]
+		args.traj = [calcParams.traj]
+		args.numcores = [calcParams.numCores]
+		args.dielectric = [calcParams.dielectric]
+		args.sel1 = [calcParams.sel1]
+		args.sel2 = [calcParams.sel2]
+		args.pairfiltercutoff = [calcParams.pairFilterCutoff]
+		args.pairfilterpercentage = [calcParams.pairFilterPercentage]
+		args.stride = [calcParams.stride]
 		args.framerange = [False]
-		args.exe = calcParams.exe
-		args.parameterfile = calcParams.parameterFile
+		args.exe = [calcParams.exe]
+		args.parameterfile = [calcParams.parameterFile]
 		args.calccorr = calcParams.calcCorr
-		args.corrintencutoff = calcParams.corrIntEnCutoff
-		args.outfolder = calcParams.outFolder
+		args.corrintencutoff = [calcParams.corrIntEnCutoff]
+		args.outfolder = [calcParams.outFolder]
 		return args
 
 	def startCalculation(self):
@@ -256,8 +257,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.logFile = os.path.join(str(self.calcParams.outFolder),'grinn.log')
 
 		if os.path.exists(os.path.abspath(str(self.calcParams.outFolder))):
-			self.error("The output folder exists. Please delete or rename this folder before"\
-				 "proceeding. Aborting now.")
+			self.error("The output folder exists. Please delete or rename this folder."
+				 " Aborting now.")
 			return
 		
 		args = self.params2parser(self.calcParams)
