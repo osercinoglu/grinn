@@ -1,8 +1,38 @@
+
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys, os, psutil
+import re, os, pexpect, panedr, pandas, time, sys, os, psutil, vmd
 import numpy as np
 from prody import *
 import logging
+
+class parameters(object):
+	def __init__(self):
+		f = open(os.path.join(
+			os.path.dirname(os.path.abspath(__file__)),'VERSION'),'r')
+		self.__version__ = f.readlines()[0]
+		f.close()
+		self.pdb = None
+		self.tpr = None
+		self.top = None
+		self.traj = None
+		self.numCores = None
+		self.dielectric = None
+		self.sel1 = None
+		self.sel2 = None
+		self.pairFilterCutoff = None
+		self.pairFilterPercentage = None
+		self.stride = None
+		self.frameRange = None
+		self.namd2exe = None
+		self.gmxexe = None
+		self.parameterFile = None
+		self.calcCorr = None
+		self.outFolder = None
+		self.dataType = None
+		self.logFile = None
+		self.logger = None
+		self.pairsFiltered = None
+		self.pool = None
 
 # A method to check whether a file has a handle on it.
 def has_handle(fpath):
@@ -32,6 +62,23 @@ def which(program):
 				return exe_file
 
 	return None
+
+
+# A method to make dry PSF files in grinn -calc output directories.
+def makeDryPSF(psf,pdb,outFolder):
+	vmd.evaltcl('package require psfgen')
+	vmd.evaltcl('mol new %s' % psf)
+	vmd.evaltcl('mol addfile %s' % pdb)
+	vmd.evaltcl('readpsf %s' % psf)
+	vmd.evaltcl('coordpdb %s' % pdb)
+	vmd.evaltcl('set a [atomselect top water]')
+	vmd.evaltcl('set l [lsort -unique [$a get segid]]')
+	vmd.evaltcl('foreach a $l { delatom $s }')
+	vmd.evaltcl('set b [atomselect top "segname ION"]')
+	vmd.evaltcl('set k [lsort -unique [$b get segid]]')
+	vmd.evaltcl('foreach d $k { delatom $d }')
+	vmd.evaltcl('writepsf %s' % os.path.join(outFolder,'system_dry.psf'))
+	vmd.evaltcl('writepdb %s' % os.path.join(outFolder,'system_dry.pdb'))
 
 # A method to get a string containing chain ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index

@@ -8,30 +8,6 @@ from shutil import copyfile, rmtree
 from common import *
 import corr
 
-class parameters(object):
-	def __init__(self):
-		self.pdb = None
-		self.tpr = None
-		self.top = None
-		self.traj = None
-		self.numCores = None
-		self.dielectric = None
-		self.sel1 = None
-		self.sel2 = None
-		self.pairFilterCutoff = None
-		self.pairFilterPercentage = None
-		self.pairFilterStride = None
-		self.stride = None
-		self.frameRange = None
-		self.namd2exe = None
-		self.gmxexe = None
-		self.parameterFile = None
-		self.calcCorr = None
-		self.outFolder = None
-		self.dataType = None
-		self.logFile = None
-		self.logger = None
-
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Load interaction energy pickle file
@@ -98,36 +74,48 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	return intEnDict
 
 def prepareFilesNAMD(params):
-	pass
+	# Load the PDB and PSF files, get rid of non-protein sections.
+	params.logger.info('Parsing PDB file...')
+	pdb = parsePDB(params.pdb)
+	pdbProtein = pdb.select('protein')
+	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+
+	params.logger.info('Parsing PSF file...')
+	# The problem with PSF files is, there is no good package for manipulating them
+	# in python. One option is to use ProDy parsePSF, but it does not read dihedrals etc.
+	# which are required by NAMD.
+	# I implemented a method in common module for deleting waters/ions from PSF while keeping
+	# dihedrals etc. in the output file using vmd-python from Robin Metz.
+	makeDryPSF(psf=params.top,pdb=params.pdb,outFolder=params.outFolder)
+
+	params.logger.info('Reading DCD file...')
+	# Load the DCD file, get rid of non-protein sections.
+	traj = Trajectory(params.traj)
+	traj.link(pdb)
+	traj.setAtoms(pdbProtein)
+	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
 
 def prepareFilesGMX(params):
 	pass
 
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
-	print(args)
 	pairsFiltered = args[0]
-	psfFilePath = os.path.abspath(args[1])
-	pdbFilePath = os.path.abspath(args[2])
-	dcdFilePath = os.path.abspath(args[3])
-	skip = args[4]
-	frameRange = args[5]
-	pairFilterCutoff = args[6]
-	environment = args[7]
-	soluteDielectric = args[8]
-	solventDielectric = args[9]
+	params = args[1]
+	psfFilePath = os.path.join(params.outFolder,'system_dry.psf')
+	pdbFilePath = os.path.join(params.outFolder,'system_dry.pdb')
+	dcdFilePath = os.path.join(params.outFolder,'traj_dry.dcd')
+	skip = 1 # We implemented this stride (skip) in the DCD file already.
+	pairFilterCutoff = params.pairFilterCutoff
+	environment = 'vacuum'
+	soluteDielectric = params.dielectric
+	solventDielectric = 80
 
-	# If frameRange is False, then the user did not request a frame range and thus
-	# wants to include all frames in the analysis. In this case create an array 
-	# for frameRange [0,-1] to indicate that we want all frames to the external tcl script
-	if frameRange == False:
-		frameRange = [0,-1]
-
-	outputFolder = os.path.abspath(args[10])
-	namd2exe = args[11]
+	outputFolder = os.path.abspath(params.outFolder)
+	namd2exe = params.exe
 	# paramFile is a list by default, so we should map to get abspath
-	paramFile = list(map(os.path.abspath,args[12])) 
-	logFile = os.path.abspath(args[13])
+	paramFile = params.parameterFile
+	logFile = os.path.abspath(params.logFile)
 
 	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
@@ -136,7 +124,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
-	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
+	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,
 		pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
 		logger):
 		for pair in pairsFiltered:
@@ -231,7 +219,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	for pairsFilteredChunk in pairsFilteredChunks:
 		try:
-			calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,frameRange,
+			calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 				pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
 		except (KeyboardInterrupt,SystemExit):
 			logger.exception('Keyboard interrupt detected. Aborting now.')
@@ -244,7 +232,77 @@ def calcEnergiesSingleCoreNAMD(args):
 	logger.info('Completed a pairwise energy calculation thread.')
 
 def calcEnergiesNAMD(params):
-	pass
+	# Start energy calculation in chunks
+	params.logger.info('Splitting the pairs into chunks...')
+	params.pairsFilteredChunks = np.array_split(np.asarray(params.pairsFiltered),params.numCores)
+
+	# Define a worker initializer for graceful exit upon ctrl+c
+	parent_id = os.getpid()
+	def worker_init():
+		def sig_int(signal_num, frame):
+			print('signal: %s' % signal_num)
+			parent = psutil.Process(parent_id)
+			for child in parent.children():
+				if child.pid != os.getpid():
+					print("killing child: %s" % child.pid)
+					child.kill()
+			print("killing parent: %s" % parent_id)
+			parent.kill()
+			print("suicide: %s" % os.getpid())
+			psutil.Process(os.getpid()).kill()
+			os._exit(0)
+		signal.signal(signal.SIGINT, sig_int)
+
+	global pool
+	pool = multiprocessing.Pool(params.numCores,worker_init)
+ 
+	# Catching CTRL+C SIGINT signals.
+	def sigint_handler(signum, frame):
+		params.logger.exception('Keyboard interrupt detected. Aborting now.')
+		global pool
+		pool.terminate()
+		#time.sleep(5)
+		sys.exit(0)
+
+	signal.signal(signal.SIGINT, sigint_handler)
+
+	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
+	# energy calculation threads.
+	# get(9999999) below is necessary to let the map respond without blocking the spawned threads.
+	# This is a python bug in 2.7
+	params.logger.info('Starting threads for interaction energy calculation...')
+	# Strip logger away from params temporarily to be able to map.
+	logger = params.logger
+	params.logger = None
+	results = pool.map_async(calcEnergiesSingleCoreNAMD,
+			zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+	params.logger = logger
+
+	# Parse the specified outFolder after energy calculation is done.
+	outFolderFileList = os.listdir(params.outFolder)
+
+	energiesFilePaths = list()
+	for fileName in outFolderFileList:
+		if fileName.endswith('energies.log'):
+			energiesFilePaths.append(os.path.join(params.outFolder,fileName))
+
+	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
+		params.numCores)
+
+	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
+		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+			params.outFolder,'system_dry.pdb')),
+			itertools.repeat(params.logFile))).get(9999999)
+
+	parsedEnergies = dict()
+	for parsedEnergiesResult in parsedEnergiesResults:
+		parsedEnergies.update(parsedEnergiesResult)
+
+	pool.close()
+	pool.join()
+
+	params.parsedEnergies = parsedEnergies
+	return params
 
 def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
 	pairFilterCutoff,soluteDielectric,outputFolder,gmxExe,logFile,numCores):
@@ -288,11 +346,172 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 	return edrFiles, pairsFilteredChunks
 
 def filterPairs(params):
-	pass
+	
+	system = parsePDB(os.path.join(params.outFolder,'system_dry.pdb'))
+	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+
+	try:
+		sourceCA = system.select(str(params.sel1)+' and name CA')
+	except:
+		params.logger.exception('Could not select Selection 1 residue group. Aborting now.')
+		return
+
+	numSource = len(sourceCA)
+	sourceResids = sourceCA.getResindices()
+	sourceResnums = sourceCA.getResnums()
+	sourceSegnames = sourceCA.getSegnames()
+
+	allResiduesCA = system.select('name CA')
+	numResidues = len(allResiduesCA)
+	numTarget = numResidues
+
+	# By default, targetResids are all residues.
+	targetResids = np.arange(numResidues)
+	
+	# Get target selection residues
+	try:
+		targetCA = system.select(str(params.sel2+' and name CA'))
+	except:
+		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
+		return
+
+		numTarget = len(targetCA)
+		targetResids = targetCA.getResindices()
+
+	# Generate all possible unique pairwise residue-residue combinations
+	pairProduct = itertools.product(sourceResids,targetResids)
+	pairSet = set()
+	for x,y in pairProduct:
+		if x != y:
+			pairSet.add(frozenset((x,y)))
+
+	# Split the pair set list into chunks according to number of cores
+	pairChunks = np.array_split(list(pairSet),params.numCores)
+
+	params.logger.info('Starting the filtering step...')
+
+	# Continue with filtering operation
+	traj.setAtoms(allResiduesCA)
+	coordSets = traj.getCoordsets()
+
+	# Start a contact matrix (Kirchhoff matrix)
+	kh = np.zeros((numResidues,numResidues))
+
+	# Accumulate contact matrix as the sim progresses
+	calculatedPercentage = 0
+	monitor = 0
+
+	for i in range(0,len(coordSets),1):
+		coordSet = coordSets[i]
+		gnm = GNM('GNM')
+		gnm.buildKirchhoff(coordSet,cutoff=params.pairFilterCutoff)
+		kh = kh + gnm.getKirchhoff()
+		monitor = monitor + 1
+		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		if calculatedPercentage > 100: calculatedPercentage = 100
+		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+
+	# Get whether contacts are below cutoff for the specified percentage of simulation
+	pairsFilteredFlag = np.abs(kh)/(len(traj)/float(1)) > params.pairFilterCutoff*0.01
+
+	pairsFiltered = list()
+	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
+	for sourceResid in sourceResids:
+		for targetResid in targetResids:
+			if sourceResid == targetResid:
+				continue
+			elif pairsFilteredFlag[sourceResid,targetResid]:
+				pairsFiltered.append(sorted([sourceResid,targetResid]))
+
+	pairsFiltered = sorted(pairsFiltered)
+	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+	
+	# file = open('pairsFiltered.txt','w')
+	# for pair in pairsFiltered:
+	# 	file.write('%i-%i\n' % (pair[0],pair[1]))
+	# file.close()
+
+	if not pairsFiltered:
+		params.logger.exception('Filtering step did not yield any pairs. '
+			'Either your cutoff value is too small or the percentage criteria is too high.')
+		return
+
+	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
+
+	params.pairsFiltered = pairsFiltered
+	return params
+
+def collectResults(params):
+	params.logger.info('Collecting results...')
+
+	# Prepare a pandas data table from parsed energies, write it to new files depending on type of energy
+	df_total = pandas.DataFrame()
+	df_elec = pandas.DataFrame()
+	df_vdw = pandas.DataFrame()
+	for key,value in list(params.parsedEnergies.items()):
+		df_total[key] = value['Total']
+		df_elec[key] = value['Elec']
+		df_vdw[key] = value['VdW']
+
+	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnTotal.csv'))
+	df_total.to_csv(params.outFolder+'/energies_intEnTotal.csv')
+	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnElec.csv'))
+	df_elec.to_csv(params.outFolder+'/energies_intEnElec.csv')
+	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnVdW.csv'))
+	df_vdw.to_csv(params.outFolder+'/energies_intEnVdW.csv')
+
+	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies.pickle'))
+	file = open(os.path.join(params.outFolder,'energies.pickle'),'wb')
+	pickle.dump(params.parsedEnergies,file)
+	file.close()
+
+	params.logger.info('Getting mean interaction energies...')
+	# Save average interaction energies as well!
+	getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
+		os.path.join(params.outFolder,'system_dry.pdb'),
+		prefix=os.path.join(params.outFolder,'energies'))
+
+	return params
+	if resIntCorr:
+		logger.info('Beginning residue interaction energy correlation calculation...')
+		getResIntCorr.getResIntCorr(inFile=os.path.join(
+			outputFolder,'energies_intEnTotal.csv'),
+			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
+			outPrefix=os.path.join(outputFolder,'energies'),logger=logger)
+
+def cleanUp(params):
+	params.logger.info('Cleaning up...')
+	# Delete all namd-generated energies file from output folder.
+	for item in glob.glob(os.path.join(params.outFolder,'*_energies.log')):
+		os.remove(item)
+
+	for item in glob.glob(os.path.join(params.outFolder,'*temp*')):
+		os.remove(item)
+
+	for item in glob.glob(os.path.join(params.outFolder,'interact*')):
+		os.remove(item)
+
+	for item in glob.glob(os.path.join(params.outFolder,'*.trr')):
+		os.remove(item)
+
+	if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
+		os.remove(os.path.join(params.outFolder,'traj.dcd'))
 
 def calcNAMD(params):
 	# Prepare input files for NAMD energy calculation.
-	params = prepareFilesNAMD(params)
+	prepareFilesNAMD(params)
+
+	# Filter pairs.
+	params = filterPairs(params)
+
+	# Calculate interaction energies.
+	params = calcEnergiesNAMD(params)
+
+	# Collect results.
+	params = collectResults(params)
+
+	# Clean up
+	cleanUp(params)
 
 def calcGMX(params):
 	pass
@@ -353,7 +572,6 @@ def getParams(args):
 		return params, False, message
 
 	params.pairFilterPercentage = args.pairfilterpercentage[0]
-	params.pairFilterStride= args.pairfilterstride[0]
 
 	if not type(args.sel1) == str:
 		if len(args.sel1) > 1:
@@ -487,14 +705,14 @@ def getParams(args):
 
 		# Check whether a parameter file is supplied.
 		parameterFile = args.parameterfile
-		if parameterFile and not type(parameterFile) == str:
-			if not parameterFile[0]:
+		for paramFile in parameterFile:
+			if not paramFile:
 				message = 'You must supply a parameter file for NAMD. Aborting now.'
 				return params, False, message
 
-		elif parameterFile:
-			parameterFile = parameterFile.split(' ')
-			params.parameterFile = [os.path.abspath(paramFile) for paramFile in paramFile]
+		params.parameterFile = [os.path.abspath(paramFile) for paramFile in parameterFile]
+		#print(params.parameterFile)
+		#return params, False, "what the hell?"
 		
 	elif params.dataType == 'gmx':
 
@@ -541,6 +759,7 @@ def getParams(args):
 def getResIntEn(args):
 	
 	# Check whether input arguments are valid and get parameters!
+	global params
 	params, isArgsValid, message = getParams(args)
 
 	# Create the output folder now so that we can start logging.
@@ -573,7 +792,8 @@ def getResIntEn(args):
 		return
 
 	params.logger.info('Argument check completed. Proceeding...')
-	return
+
+	params.logger.info('Started calculation.')
 
 	# Proceed with the appropriate method depending on the input data type.
 	if params.dataType == 'namd':
@@ -582,43 +802,12 @@ def getResIntEn(args):
 		pass
 		#calcGMX(params)
 	
+	params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	return
 
 	###### WARNING !!! ################
 	# BELOW THIS POINT EVIL LIVES!!! ###
 	###### THE CODE IS LEFTOVER CODE ###
-
-	# Define a worker initializer for graceful exit upon ctrl+c
-	parent_id = os.getpid()
-	def worker_init():
-		def sig_int(signal_num, frame):
-			print('signal: %s' % signal_num)
-			parent = psutil.Process(parent_id)
-			for child in parent.children():
-				if child.pid != os.getpid():
-					print("killing child: %s" % child.pid)
-					child.kill()
-			print("killing parent: %s" % parent_id)
-			parent.kill()
-			print("suicide: %s" % os.getpid())
-			psutil.Process(os.getpid()).kill()
-			os._exit(0)
-		signal.signal(signal.SIGINT, sig_int)
-
-	global pool
-	pool = multiprocessing.Pool(numCores,worker_init)
- 
-	# Catching CTRL+C SIGINT signals.
-	def sigint_handler(signum, frame):
-		logger.exception('Keyboard interrupt detected. Aborting now.')
-		global pool
-		pool.terminate()
-		#time.sleep(5)
-		sys.exit(0)
-
-	signal.signal(signal.SIGINT, sigint_handler)
-
-	logger.info('Started calculation.')
 	
 	if tpr:
 		#gmxExe = 'gmx' # TEMPORARY
@@ -687,154 +876,10 @@ def getResIntEn(args):
 		traj = Trajectory(os.path.join(str(outputFolder),'traj.dcd'))
 		traj.link(system)
 		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
-
-
-	logger.info('Deleting waters from the trajectory...')
-	traj.setAtoms(system.select(str('protein')))
-	writeDCD(os.path.join(str(outputFolder),'traj_dry.dcd'),traj,step=skip if dataType=='NAMD' else 1)
-	logger.info('Deleting waters from the trajectory... Done.')
-
-	# Load pdb with prody and get some useful numbers.
-	try:
-		sourceCA = system.select(str(sourceSel)+' and name CA')
-	except:
-		logger.exception('Could not select Selection 1 residue group. Aborting now.')
-		return
-
-	numSource = len(sourceCA)
-	sourceResids = sourceCA.getResindices()
-	sourceResnums = sourceCA.getResnums()
-	sourceSegnames = sourceCA.getSegnames()
-
-	allResiduesCA = system.select('name CA')
-	numResidues = len(allResiduesCA)
-	numTarget = numResidues
-
-	# By default, targetResids are all residues.
-	targetResids = np.arange(numResidues)
-	
-	# Get target selection residues, if provided:
-	if targetSel:
-		try:
-			targetCA = system.select(str(targetSel+' and name CA'))
-		except:
-			logger.exception('Could not select Selection 2 residue group. Aborting now.')
-			return
-
-		numTarget = len(targetCA)
-		targetResids = targetCA.getResindices()
-
-
-	################################
-	### REAL WORK STARTS HERE ######
-	################################
-
-	# Generate all possible unique pairwise residue-residue combinations
-	pairProduct = itertools.product(sourceResids,targetResids)
-	pairSet = set()
-	for x,y in pairProduct:
-		if x != y:
-			pairSet.add(frozenset((x,y)))
-
-	# Split the pair set list into chunks according to number of cores
-	pairChunks = np.array_split(list(pairSet),numCores)
-
-	logger.info('Starting the filtering step...')
-
-	# Continue with filtering operation
-	traj.setAtoms(systemCA)
-	coordSets = traj.getCoordsets()
-
-	# Start a contact matrix (Kirchhoff matrix)
-	kh = np.zeros((numResidues,numResidues))
-
-	# Accumulate contact matrix as the sim progresses
-	calculatedPercentage = 0
-	monitor = 0
-
-	for i in range(0,len(coordSets),pairFilterSkip):
-		coordSet = coordSets[i]
-		gnm = GNM('GNM')
-		gnm.buildKirchhoff(coordSet,cutoff=pairFilterCutoff)
-		kh = kh + gnm.getKirchhoff()
-		monitor = monitor + pairFilterSkip
-		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
-		if calculatedPercentage > 100: calculatedPercentage = 100
-		logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
-
-	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsFilteredFlag = np.abs(kh)/(len(traj)/float(pairFilterSkip)) > pairFilterCutoff*0.01
-
-	pairsFiltered = list()
-	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
-	for sourceResid in sourceResids:
-		for targetResid in targetResids:
-			if sourceResid == targetResid:
-				continue
-			elif pairsFilteredFlag[sourceResid,targetResid]:
-				pairsFiltered.append(sorted([sourceResid,targetResid]))
-
-	pairsFiltered = sorted(pairsFiltered)
-	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
-	
-	# file = open('pairsFiltered.txt','w')
-	# for pair in pairsFiltered:
-	# 	file.write('%i-%i\n' % (pair[0],pair[1]))
-	# file.close()
-
-	if not pairsFiltered:
-		logger.exception('Filtering step did not yield any pairs. '
-			'Either your cutoff value is too small or the percentage criteria is too high.')
-		return
-
-	logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
-
-	# Start energy calculation in chunks
-	pairsFilteredChunks = np.array_split(np.asarray(pairsFiltered),numCores)
-
-	if dataType == 'NAMD':
-
-		results = pool.map_async(calcEnergiesSingleCoreNAMD,
-			zip(pairsFilteredChunks,itertools.repeat(top),
-				itertools.repeat(os.path.join(
-					outputFolder,'system_dry.pdb')),
-				itertools.repeat(trajPath),
-				itertools.repeat(skip),
-				itertools.repeat(frameRange),
-				itertools.repeat(pairFilterCutoff),
-				itertools.repeat(environment),
-				itertools.repeat(soluteDielectric),
-				itertools.repeat(solventDielectric),
-				itertools.repeat(outputFolder),
-				itertools.repeat(namd2exe),
-				itertools.repeat(paramFile),
-				itertools.repeat(logFile))).get(9999999)
 		#results.get(9999999)# gotta use this get at the end, because of a known Python2.7 bug.
 		#results.wait()
 		
 		#pool.join()
-		# Parse the specified outFolder after energy calculation is done.
-		outFolderFileList = os.listdir(outputFolder)
-
-		energiesFilePaths = list()
-		for fileName in outFolderFileList:
-			if fileName.endswith('energies.log'):
-				energiesFilePaths.append(os.path.join(outputFolder,fileName))
-
-		energiesFilePathsChunks = np.array_split(list(energiesFilePaths),numCores)
-
-		parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
-			zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-				outputFolder,'system_dry.pdb')),
-				itertools.repeat(logFile))).get(9999999)
-
-		parsedEnergies = dict()
-		for parsedEnergiesResult in parsedEnergiesResults:
-			parsedEnergies.update(parsedEnergiesResult)
-
-
-		pool.close()
-		pool.join()
 
 	elif dataType == 'GMX':
 		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,
@@ -851,69 +896,9 @@ def getResIntEn(args):
 	# 	time.sleep(1)
 
 	# parsedEnergiesResults = parsedEnergiesResults.get()
-	logger.info('Collecting results...')
-
-	# Prepare a pandas data table from parsed energies, write it to new files depending on type of energy
-	df_total = pandas.DataFrame()
-	df_elec = pandas.DataFrame()
-	df_vdw = pandas.DataFrame()
-	for key,value in list(parsedEnergies.items()):
-		df_total[key] = value['Total']
-		df_elec[key] = value['Elec']
-		df_vdw[key] = value['VdW']
-
-	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnTotal.csv'))
-	df_total.to_csv(outputFolder+'/energies_intEnTotal.csv')
-	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnElec.csv'))
-	df_elec.to_csv(outputFolder+'/energies_intEnElec.csv')
-	logger.info('Saving results to '+os.path.join(outputFolder,'energies_intEnVdW.csv'))
-	df_vdw.to_csv(outputFolder+'/energies_intEnVdW.csv')
-
-	logger.info('Saving results to '+outputFolder+'.pickle')
-	# If saving to a pickle is requested:
-	if toPickle:
-		file = open(outputFolder+'.pickle','wb')
-		pickle.dump(parsedEnergies,file)
-		file.close()
-
-	logger.info('Getting mean interaction energies...')
-	# Save average interaction energies as well!
-	if toPickle:
-		getResIntEnMean(outputFolder+'.pickle',pdb,prefix=os.path.join(outputFolder,'energies'))
-
-	if resIntCorr:
-		logger.info('Beginning residue interaction energy correlation calculation...')
-		getResIntCorr.getResIntCorr(inFile=os.path.join(
-			outputFolder,'energies_intEnTotal.csv'),
-			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
-			outPrefix=os.path.join(outputFolder,'energies'),logger=logger)
-
-	logger.info('Cleaning up...')
-	# Delete all namd-generated energies file from output folder.
-	for item in glob.glob(os.path.join(
-		outputFolder,'*_energies.log')):
-		os.remove(item)
-
-	for item in glob.glob(os.path.join(
-		outputFolder,'*temp*')):
-		os.remove(item)
-
-	for item in glob.glob(os.path.join(
-		outputFolder,'interact*')):
-		os.remove(item)
-
-	for item in glob.glob(os.path.join(
-		outputFolder,'*.trr')):
-		os.remove(item)
-
-	if os.path.exists(os.path.join(
-		outputFolder,'traj.dcd')):
-		os.remove(os.path.join(outputFolder,'traj.dcd'))
-
-	logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 
 if __name__ == '__main__':
-	print('Please do not call this method directly. Use python grinn.py -calc <arguments> '
+	print('Please do not call this script directly. Use python grinn.py -calc <arguments> '
 		'instead.')
 	sys.exit(0)
 

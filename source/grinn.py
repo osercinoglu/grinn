@@ -150,10 +150,6 @@ if __name__ == '__main__':
 		'other for at least PAIRFILTERPERCENTAGE percent of the trajectory will be taken '
 		'into account in further evaluations. When not given, it defaults to 0.75 (75%%)')
 
-	parser.add_argument('--pairfilterstride',type=int,default=[1],nargs=1,
-		help='If specified, a stride with value of PAIRFILTERSKIP will be applied to the '
-		'trajectory during the filtering step.')
-
 	parser.add_argument('--stride',default=[1],type=int,nargs=1,
 		help='If specified, a stride with value of STRIDE will be applied to the trajectory '
 		'during interaction energy calculation.')

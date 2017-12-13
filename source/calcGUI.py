@@ -20,28 +20,7 @@ import corr
 import resultsGUI
 import common
 import time
-
-class params(object):
-	def __init__(self):
-		self.pdb = None
-		self.traj = None
-		self.tpr = None
-		self.top = None
-		self.sourceSel = None
-		self.targetSel = None
-		self.environment = 'vacuum'
-		self.soluteDielectric = 1
-		self.solventDielectric = 78.5
-		self.pairFilterPercentage = None
-		self.prePairFilterCutoff = None
-		self.pairFilterCutoff = None
-		self.numCores = None
-		self.skip = None
-		self.outputFolder = None
-		self.namd2exe = None
-		self.logFile = None
-		self.interactCorr = False
-		self.interactCorrCutoff = None
+import argparse
 	
 class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow):
 	stopMonitorProgressThread = pyqtSignal()
@@ -68,11 +47,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		# for getResIntEn process
 		self.processGetResIntEn = None
-		self.params = params()
+		self.calcParams = common.parameters()
 
 		# Set the numCores to the maximum cpu count in this system.
 		numCores = multiprocessing.cpu_count()
-		self.params.numCores = numCores
+		self.calcParams.numCores = numCores
 		self.spinBox_numProcessors.setValue(int(numCores))
 
 	def loadSampleGMXdata(self):
@@ -131,10 +110,10 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		state = self.checkBox_interactionCorrelation.checkState()
 		if state == 2:
 			self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
-			self.params.interactCorr = True
+			self.calcParams.calcCorr = True
 		elif state == 0:
 			self.doubleSpinBox_AverageIntEnCutoff.setEnabled(False)
-			self.params.interactCorr = False
+			self.calcParams.calcCorr = False
 
 	def incrementFilteringProgressBar(self,percent):
 		if percent > self.progressBar_filtering.value():
@@ -223,27 +202,50 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		#	mainProcess.kill()
 		#	self.pid = None
 
+	def params2parser(self,calcParams):
+		# Converting a parameter object to an argument parser namespace
+		args = argparse.Namespace()
+		args.calc = True
+		args.pdb = calcParams.pdb
+		args.tpr = calcParams.tpr
+		args.top = calcParams.top
+		args.traj = calcParams.traj
+		args.numcores = calcParams.numCores
+		args.dielectric = calcParams.dielectric
+		args.sel1 = calcParams.sel1
+		args.sel2 = calcParams.sel2
+		args.pairfiltercutoff = calcParams.pairFilterCutoff
+		args.pairfilterpercentage = calcParams.pairFilterPercentage
+		args.stride = calcParams.stride
+		args.framerange = [False]
+		args.exe = calcParams.exe
+		args.parameterfile = calcParams.parameterFile
+		args.calccorr = calcParams.calcCorr
+		args.corrintencutoff = calcParams.corrIntEnCutoff
+		args.outfolder = calcParams.outFolder
+		return args
+
 	def startCalculation(self):
 
 		# Get necessary input arguments.
-		self.params.top = str(self.lineEdit_psf.text())
+		self.calcParams.top = str(self.lineEdit_psf.text())
 		if self.lineEdit_pdb.text().endswith('.pdb'):
-			self.params.pdb = str(self.lineEdit_pdb.text())
+			self.calcParams.pdb = str(self.lineEdit_pdb.text())
 		elif self.lineEdit_pdb.text().endswith('.tpr'):
-			self.params.tpr = str(self.lineEdit_pdb.text())
+			self.calcParams.tpr = str(self.lineEdit_pdb.text())
 
-		self.params.traj = str(self.lineEdit_dcd.text())
-		self.params.sourceSel = str(self.lineEdit_residueGroup1.text())
-		self.params.targetSel = str(self.lineEdit_residueGroup2.text())
-		self.params.soluteDielectric = float(self.doubleSpinBox_soluteDielectric.value())
-		self.params.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
-		self.params.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
-		self.params.numCores = int(self.spinBox_numProcessors.value())
-		self.params.skip = int(self.doubleSpinBox_dcdStride.value())
-		self.params.outputFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
-		self.params.namd2exe = str(self.lineEdit_namd2.text())
-		self.params.paramFile = str(self.lineEdit_parameterFile.text())
-		self.params.interactCorrAverageIntEnCutoff = float(self.doubleSpinBox_AverageIntEnCutoff.value())
+		self.calcParams.traj = str(self.lineEdit_dcd.text())
+		self.calcParams.sel1 = str(self.lineEdit_residueGroup1.text())
+		self.calcParams.sel2 = str(self.lineEdit_residueGroup2.text())
+		self.calcParams.dielectric = float(self.doubleSpinBox_soluteDielectric.value())
+		self.calcParams.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
+		self.calcParams.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
+		self.calcParams.numCores = int(self.spinBox_numProcessors.value())
+		self.calcParams.stride = int(self.doubleSpinBox_dcdStride.value())
+		self.calcParams.outFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
+		self.calcParams.exe = str(self.lineEdit_namd2.text())
+		self.calcParams.parameterFile = str(self.lineEdit_parameterFile.text())
+		self.calcParams.corrIntEnCutoff = float(self.doubleSpinBox_AverageIntEnCutoff.value())
 		
 		# Date-inclusive log file name.
 		# Date: %d.%d.%d %d:%d \n' % (now.year,now.month,now.day,now.hour,
@@ -251,27 +253,18 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		#self.params.logFile = 'getResIntEnLog_%02d%02d%02d_%02d%02d%02d.log' % (now.year,now.month,now.day,
 		#	now.hour,now.minute,now.second)
 
-		self.params.logFile = os.path.join(str(self.params.outputFolder),'grinn.log')
+		self.calcParams.logFile = os.path.join(str(self.calcParams.outFolder),'grinn.log')
 
-		if os.path.exists(os.path.abspath(str(self.params.outputFolder))):
+		if os.path.exists(os.path.abspath(str(self.calcParams.outFolder))):
 			self.error("The output folder exists. Please delete or rename this folder before"\
 				 "proceeding. Aborting now.")
 			return
 		
+		args = self.params2parser(self.calcParams)
+
 		# Start calculation in the background
-		self.processGetResIntEn = multiprocessing.Process(target=getResIntEn.getResIntEn,
-			kwargs={'top':self.params.top,'pdb':self.params.pdb,'tpr':self.params.tpr,
-			'traj':self.params.traj,'numCores':self.params.numCores,
-			'sourceSel':self.params.sourceSel,'targetSel':self.params.targetSel,
-			'environment':self.params.environment,'soluteDielectric':self.params.soluteDielectric,
-			'solventDielectric':self.params.solventDielectric,
-			'pairCalc':True,'pairFilterCutoff':self.params.pairFilterCutoff,
-			'pairFilterPercentage':self.params.pairFilterPercentage*0.1,
-			'skip':self.params.skip,'namd2exe':self.params.namd2exe,
-			'gmxExe':self.params.namd2exe,'paramFile':self.params.paramFile,
-			'outputFolder':self.params.outputFolder,'logFile':self.params.logFile,'toPickle':True,
-			'resIntCorr':self.params.interactCorr,'pairFilterBasis':'com',
-			'pairFilterSkip':1,'frameRange':[False],'resIntCorrAverageIntEnCutoff':1})
+		self.processGetResIntEn = multiprocessing.Process(target=calc.getResIntEn,
+			args=(args,))
 
 		self.processGetResIntEn.start()
 
@@ -282,7 +275,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.pushButton_viewResults.setEnabled(False)
 
 		# Start progress monitoring thread and connect signals
-		self.monitorProgressThread = monitorProgress(self,self.params)
+		self.monitorProgressThread = monitorProgress(self,self.calcParams)
 		self.monitorProgressThread.incrementFilteringProgressBar.connect(
 			self.incrementFilteringProgressBar)
 		self.monitorProgressThread.incrementCalculationProgressBar.connect(
