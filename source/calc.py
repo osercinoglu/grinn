@@ -3,7 +3,7 @@ from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
-traceback, vmd
+traceback
 from shutil import copyfile, rmtree
 from common import *
 import corr
@@ -106,7 +106,14 @@ def makeDryPSF(params):
 	f.write(vmd_cmds)
 	f.close()
 
-	os.system(params.vmd+' -dispdev text -e temp.tcl')
+	# Save a dummy bash shell.
+	f = open('temp.sh','w')
+	f.write('#!/bin/bash\n')
+	f.write(params.vmd+' -dispdev text -e temp.tcl')
+	f.close()
+
+	#subprocess.check_output(['./temp.sh'])
+	subprocess.call(['xterm','-e','./temp.sh'],env=os.environ)
 	#os.remove('temp.tcl')
 
 def prepareFilesNAMD(params):

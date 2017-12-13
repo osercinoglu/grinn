@@ -4,8 +4,7 @@ from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
 import resultsGUI, calcGUI, grinnGUI_design, calc
-import sys, time, os, argparse, multiprocessing
-import vmd
+import sys, time, os, argparse, multiprocessing, subprocess
 
 class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 
@@ -84,6 +83,7 @@ def convert_arg_line_to_args(arg_line):
 		yield arg
 
 if __name__ == '__main__':
+	sys.exit(0)
 	# Construct an argument parser.
 	parser = argparse.ArgumentParser(fromfile_prefix_chars='@',
 		description='gRINN: get Residue Interaction eNergies and Networks. '
