@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import scipy.stats as stats
 from natsort import natsorted
 import numpy as np
 import pyprind
@@ -16,29 +15,42 @@ import pandas
 import psutil
 import re
 from prody import *
-from common import parseEnergiesSingleCoreNAMD
 from common import getChainResnameResnum
 
-def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
-	numCores=1,meanIntEnCutoff=float(1),outPrefix=''):
+def getResIntCorr(args,logFile=None,logger=None):
+
+	inFile = args.corrinfile[0]
+	pdb = args.pdb[0]
+	meanIntEnCutoff = args.corrintencutoff[0]
+	numCores = args.numcores[0]
+	outPrefix = args.corrprefix[0]
+	if not logFile:
+		logFile = 'grinncorr.log'
 	
 	if not logger and logFile:
-		logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+		# Start logging.
+		loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
+		logging.basicConfig(format=loggingFormat,datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,
+			filename=logFile)
 		logger = logging.getLogger(__name__)
+		
+		# Also print messages to the terminal
+		console = logging.StreamHandler()
+		console.setLevel(logging.INFO)
+		console.setFormatter(logging.Formatter(loggingFormat))
+		logger.addHandler(console)
 	
 	logger.info('Started residue interaction energy calculation.')
 
 	logger.info('Reading input CSV...')
 	# Read in interaction energy time series from the getResIntEn csv output.
-	df = pandas.read_csv(inFile)
+	df = pandas.read_csv(inFile,engine='python')
 	logger.info('Reading input CSV... completed.')
 
 	# Get number of residues
 	system = parsePDB(pdb)
 	systemProtein = system.select('protein or nucleic')
 	numResidues = len(np.unique(systemProtein.getResindices()))
-	print(numResidues)
 	# Convert the interaction energy time series to a 3D matrix
 	intEnMat = np.zeros((numResidues,numResidues,len(df)))
 
@@ -113,8 +125,6 @@ def getResIntCorr(inFile,pdb,logFile=None,logger=None,frameRange=False,
 	logger.info('Calculating interaction energy correlations... completed.')
 	logger.info('Collecting significant correlations...')
 	df_corr = pandas.DataFrame(columns=['res11','res12','res21','res22','corr'])
-	print(list(sigcorrs.values()))
-	print(len(sigcorrs))
 	for i in range(0,len(sigcorrs)):
 		key = list(sigcorrs.keys())[i]
 		matches = re.search('(\d+)-(\d+)-(\d+)-(\d+)',key)
@@ -188,43 +198,4 @@ def convert_arg_line_to_args(arg_line):
 		yield arg
 
 if __name__ == '__main__':
-
-	# INPUT PARSING
-	parser = argparse.ArgumentParser(fromfile_prefix_chars='@',
-		description='Calculate pearson correlation factor between residue-residue interactions \
-		calculated by getResIntEn.py')
-
-	# Overriding convert_arg_line_to_args in the input parser with our own function.
-	parser.convert_arg_line_to_args = convert_arg_line_to_args
-
-	parser.add_argument('--infile',type=str,nargs=1,help='Path to the CSV file where interaction\
-		energies are located in')
-
-	parser.add_argument('--pdb',type=str,nargs=1,help='Path to the PDB file of the protein system')
-
-	parser.add_argument('--meanintencutoff',type=float,nargs=1,default=[1],
-		help='Mean (average) interaction energy cutoff for filtering interaction energies \
-		(kcal/mol). If an interaction energy time series absolute average value is below this \
-		cutoff, that interaction energy will not be taken in correlation calculations.\
-		By default, the cutoff is 1 kcal/mol.')
-
-	parser.add_argument('--outprefix',type=str,nargs=1,default=[''],
-		help='Path of the file for storing calculation results. If not specified, the default value\
-		is resIntCorr.dat in the current working directory')
-
-	now = datetime.datetime.now()
-	logFile = 'getResIntCorrLog_%d%d%d_%d%d%d.log' % (now.year,now.month,now.day,
-			now.hour,now.minute,now.second)
-	parser.add_argument('--logfile',default=[logFile],type=str,nargs=1,help='Log file name')
-
-	# Parse input arguments
-	args = parser.parse_args()
-
-	inFile = args.infile[0]
-	pdb = args.pdb[0]
-	meanIntEnCutoff = args.meanintencutoff[0]
-	outPrefix = args.outprefix[0]
-	logFile = args.logfile[0]
-
-	getResIntCorr(inFile=inFile,pdb=pdb,meanIntEnCutoff=meanIntEnCutoff,
-		outPrefix=outPrefix,logFile=logFile)
+	print('Please do not call this method directly. Use grinn -corr instead.')

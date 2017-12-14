@@ -3,7 +3,7 @@
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
-import resultsGUI, calcGUI, grinnGUI_design, calc
+import resultsGUI, calcGUI, grinnGUI_design, calc, corr
 import sys, time, os, argparse, multiprocessing, subprocess
 
 class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
@@ -177,12 +177,18 @@ if __name__ == '__main__':
 		'interaction energy calculation in -calc mode. Equivalent to a grinn -corr call '
 		'after grinn -calc. Applies only to grinn -calc <arguments> calls.')
 
+	parser.add_argument('--corrinfile',type=str,nargs=1,help='Path to the CSV file where interaction\
+		energies are located in')
+
 	parser.add_argument('--corrintencutoff',default=[1],type=float,nargs=1,help='\
 		Mean (average) interaction energy cutoff for filtering interaction energies '
 		'(kcal/mol) prior to correlation calculation. If an interaction energy time series '
 		'absolute average value is below this cutoff, that interaction energy will not be '
 		'taken in correlation calculations.	Defaults to 1 kcal/mol. Applied to grinn -calc '
 		'<arguments> and grinn -corr <arguments> calls.')
+
+	parser.add_argument('--corrprefix',type=str,nargs=1,default=[''],
+		help='Prefix to the file names for storing calculation results.')
 
 	parser.add_argument('--outfolder',default=[os.path.join(os.getcwd(),
 		'grinn_output')],type=str,nargs=1,
@@ -207,12 +213,9 @@ if __name__ == '__main__':
 		if calcMode:
 			# User requested command-line calculation of interaction energies.
 			calc.getResIntEn(args)
-			# TO-DO: re-write calc.py
 		elif corrMode:
-			pass
 			# User requested command-line calculation of interaction energy correlations.
-			# TO-DO:
-			# Re-write corr.py
+			corr.getResIntCorr(args,logFile=None)
 		elif resultsMode:
 			# User requested to view results of a completed calculation.
 			prepareEnvironment()

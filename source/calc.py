@@ -859,6 +859,9 @@ def getParams(args):
 				'TPR. Aborting now.'
 				return params, False, message
 
+	params.calcCorr = args.calccorr
+	print('calcCorr is ' + repr(params.calcCorr))
+
 	return params, True, "Success"
 
 # Main method starting the work
@@ -905,7 +908,13 @@ def getResIntEn(args):
 		calcNAMD(params)
 	elif params.dataType == 'gmx':
 		calcGMX(params)
-	
+
+	# Get correlations, if the user requested.
+	if params.calcCorr:
+		args.corrprefix = os.path.join(params.outFolder,'energies_')
+		args.corrinfile = [os.path.join(params.outFolder,'energies_intEnTotal.csv')]
+		corr.getResIntCorr(args,logFile=None,logger=params.logger)
+
 	params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	return
 

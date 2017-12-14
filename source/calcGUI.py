@@ -110,10 +110,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		state = self.checkBox_interactionCorrelation.checkState()
 		if state == 2:
 			self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
-			self.calcParams.calcCorr = True
 		elif state == 0:
 			self.doubleSpinBox_AverageIntEnCutoff.setEnabled(False)
-			self.calcParams.calcCorr = False
 
 	def incrementFilteringProgressBar(self,percent):
 		if percent > self.progressBar_filtering.value():
@@ -246,6 +244,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.outFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
 		self.calcParams.exe = str(self.lineEdit_namd2.text())
 		self.calcParams.parameterFile = str(self.lineEdit_parameterFile.text())
+		state = self.checkBox_interactionCorrelation.checkState()
+		if state == 2:
+			self.calcParams.calcCorr = True
+		elif state == 0:
+			self.calcParams.calcCorr = False
 		self.calcParams.corrIntEnCutoff = float(self.doubleSpinBox_AverageIntEnCutoff.value())
 		
 		# Date-inclusive log file name.
