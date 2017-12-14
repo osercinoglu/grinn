@@ -3,7 +3,7 @@ from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
-traceback
+traceback, click
 from shutil import copyfile, rmtree
 from common import *
 import corr
@@ -87,35 +87,6 @@ def isStructureDry(pdb,psf):
 	else:
 		return True
 
-def makeDryPSF(params):
-	# Prepare a set of Tcl commands to execute in the VMD console now.
-	vmd_cmds = 'package require psfgen\n'
-	vmd_cmds += 'mol new %s\n' % (params.top)
-	vmd_cmds += 'mol addfile %s\n' % (params.pdb)
-	vmd_cmds += 'set a [atomselect top "not protein"]\n'
-	vmd_cmds += 'set l [lsort -unique [$a get segid]]\n'
-	vmd_cmds += 'readpsf %s\n' % (params.top)
-	vmd_cmds += 'coordpdb %s\n' % (params.pdb)
-	vmd_cmds += 'foreach s $l { delatom $s }\n'
-	vmd_cmds += 'writepsf %s\n' % os.path.join(params.outFolder,'system_dry.psf')
-	vmd_cmds += 'writepdb %s\n' % os.path.join(params.outFolder,'system_dry.pdb')
-	vmd_cmds += 'exit'
-
-	# Save the commands to a dummy file.
-	f = open('temp.tcl','w')
-	f.write(vmd_cmds)
-	f.close()
-
-	# Save a dummy bash shell.
-	f = open('temp.sh','w')
-	f.write('#!/bin/bash\n')
-	f.write(params.vmd+' -dispdev text -e temp.tcl')
-	f.close()
-
-	#subprocess.check_output(['./temp.sh'])
-	subprocess.call(['xterm','-e','./temp.sh'],env=os.environ)
-	#os.remove('temp.tcl')
-
 def prepareFilesNAMD(params):
 	# Detect whether there are non-protein components in the system.
 	params.logger.info('Checking whether the structure has non-protein atoms...')
@@ -123,39 +94,25 @@ def prepareFilesNAMD(params):
 
 	if not dryStructure:
 		params.logger.info('Non-protein atoms detected in structure...')
-		# There are non-protein atoms in the system.
-		# See whether user supplied a VMD executable path.
-		if not params.vmd:
-			if sys.stdin.isatty():
-			# Prompt the user whether he/she would like to specify the path to vmd
-			# Only if the terminal was used to call this method
-				pass
+		params.logger.info('There are non-protein elements in your input files. Please '
+			'consider generating PSF/PDB/DCD files containing only the protein in your '
+			'structure.') # Maybe add here a link where the user can check his/her options.
 
-		if params.vmd:
-			# Alright, try to remove the non-protein parts and save to outputfolder.
-			params.logger.info('Attempting to remove non-protein parts from structure...')
-			makeDryPSF(params)
-		else:
-			params.logger.info('No non-protein atoms are present in the structure...')
-			# Well, simply copy over all PDB/PSF/DCD to outputfolder.
-			# Although this is a horrible way to continue, I have to let the user do this.
-			copyfile(params.pdb,os.path.join(params.outFolder,'system_dry.pdb'))
-			copyfile(params.psf,os.path.join(params.outFolder,'system_dry.psf'))
-			traj = Trajectory(params.traj)
-			pdb = parsePDB(params.pdb)
-			traj.link(pdb)
-			traj.setAtoms(pdb)
-			writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
-	else:
-		# There no non-protein atoms in the system
-		# Just copy psf and pdb files and the trajectory with stride to output folder.
-		writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
-		copyfile(params.psf,os.path.join(params.outFolder,'system_dry.psf'))
-		# Load the DCD file, get rid of non-protein sections.
-		traj = Trajectory(params.traj)
-		traj.link(pdb)
-		traj.setAtoms(pdbProtein)
-		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
+		if sys.stdin.isatty():
+			if not click.confirm('Do you want to continue?', default=True):
+				params.logger.exception('User requested abort. Aborting now.')
+				sys.exit(0)
+
+	# Proceeding.
+	# Just copy psf and pdb files and the trajectory with stride to output folder.
+	copyfile(params.pdb,os.path.join(params.outFolder,'system_dry.pdb'))
+	copyfile(params.top,os.path.join(params.outFolder,'system_dry.psf'))
+	# Load the DCD file, get rid of non-protein sections.
+	traj = Trajectory(params.traj)
+	pdb = parsePDB(params.pdb)
+	traj.link(pdb)
+	traj.setAtoms(pdb)
+	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
 
 	# Check whether system has enough memory to handle the computation...
 	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
@@ -163,7 +120,71 @@ def prepareFilesNAMD(params):
 		errorSuicide(params,message)
 
 def prepareFilesGMX(params):
-	pass
+	params.logger.info('Converting TPR to PDB...')
+
+	# Convert tpr to pdb, full system.
+	proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % 
+		(params.exe,params.traj,params.tpr,os.path.join(
+			params.outFolder,'system.pdb')))
+	proc.expect(u'Select a group:.*')
+	proc.logfile = sys.stdout
+	proc.send('0 0')
+	proc.sendline()
+
+	# Check whether file has been created. If not, wait.
+	while not os.path.exists(os.path.join(
+		params.outFolder,'system.pdb')):
+		time.sleep(1)
+
+	# Check whether the file is still being written to...
+	while has_handle(os.path.join(
+		params.outFolder,'system.pdb')):
+		time.sleep(1)
+
+	proc.kill(1)
+
+	params.pdb = os.path.join(params.outFolder,'system.pdb')
+
+	params.logger.info('Converting TPR to PDB... Done.')
+	pdb = os.path.join(params.outFolder,'system.pdb')
+	copyfile(params.tpr,os.path.join(params.outFolder,'system.tpr'))
+	tpr = os.path.join(params.outFolder,'system.tpr')
+
+	# Make dry PDB out of the resulting PDB.
+	pdb = parsePDB(pdb)
+	pdbProtein = pdb.select('protein')
+	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+
+	# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
+	params.logger.info('Converting XTC/TRR to DCD...')
+	try:
+		if params.traj.endswith('.xtc'):
+			traj = mdtraj.load_xtc(params.traj,
+				top=os.path.join(params.outFolder,'system.pdb'),
+				stride=params.stride)
+		elif params.traj.endswith('.trr'):
+			traj = mdtraj.load_trr(params.traj,
+				top=os.path.join(params.outFolder,'system.pdb'),
+				stride=params.stride)
+
+		traj.save_trr(os.path.join(params.outFolder,'traj.trr'))
+		params.traj = os.path.join(params.outFolder,'traj.trr')
+
+		dataType = 'GMX' # Specify a data type to use later on!
+	except:
+		params.logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
+		return
+
+	traj.save_dcd(os.path.join(params.outFolder,'traj.dcd'))
+	# Load back this DCD and continue with it (for code compatibility with ProDy)
+	traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
+	traj.link(pdb)
+	traj.setAtoms(pdbProtein)
+	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+	os.remove(os.path.join(params.outFolder,'traj.dcd'))
+	params.logger.info('Converting to XTC/TRR to DCD... Done.')
+
+	return params
 
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
@@ -371,23 +392,19 @@ def calcEnergiesNAMD(params):
 	params.parsedEnergies = parsedEnergies
 	return params
 
-def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePath,skip,frameRange,
-	pairFilterCutoff,soluteDielectric,outputFolder,gmxExe,logFile,numCores):
+def calcEnergiesGMX(params):
 
-	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
-	logger = logging.getLogger(__name__)
-
-	logger.info('Started an energy calculation thread.')
+	params.logger.info('Started an energy calculation thread.')
 
 	# Prevent backup making while calculating energies.
 	os.environ["GMX_MAXBACKUP"] = "-1"
 
 	# Make an index and MDP file with the pairs filtered.
 	#gmxExe = 'gmx'
-	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=gmxExe,pdb=pdbFilePath,
-		tpr=tprFilePath,soluteDielectric=soluteDielectric,pairsFiltered=pairsFiltered,outFolder=outputFolder,
-		logger=logger)
+	mdpFiles,pairsFilteredChunks = makeNDXMDPforGMX(gmxExe=params.exe,
+		pdb=params.pdb,tpr=params.tpr,soluteDielectric=params.dielectric,
+		pairsFiltered=params.pairsFiltered,outFolder=params.outFolder,
+		logger=params.logger)
 
 	# Call gromacs pre-processor (grompp) and make a new TPR file for each pair and calculate energies for each pair.
 	i = 0
@@ -397,18 +414,26 @@ def calcEnergiesGMX(pairsFiltered,topFilePath,pdbFilePath,tprFilePath,trajFilePa
 		tprFile = mdpFile.rstrip('.mdp')+'.tpr'
 		edrFile = mdpFile.rstrip('.mdp')+'.edr'
 
-		args = [gmxExe,'grompp','-f',mdpFile,'-n',
-			os.path.join(outputFolder,'interact.ndx'),'-p',topFilePath,'-c',tprFilePath,'-o',tprFile,'-maxwarn','20']
+		args = [params.exe,'grompp','-f',mdpFile,'-n',
+			os.path.join(params.outFolder,'interact.ndx'),'-p',params.top,'-c',
+			params.tpr,'-o',tprFile,'-maxwarn','20']
 		proc = subprocess.Popen(args)
 		proc.wait()
 
-		proc = subprocess.Popen([gmxExe,'mdrun','-rerun',trajFilePath,'-s',tprFile,
-			'-e',edrFile,'-nt',str(numCores)])
+		# Catching CTRL+C SIGINT signals.
+		def sigint_handler(signum, frame):
+			params.logger.exception('Keyboard interrupt detected. Aborting now.')
+			proc.kill()
+			sys.exit(0)
+
+		signal.signal(signal.SIGINT,sigint_handler)
+		proc = subprocess.Popen([params.exe,'mdrun','-rerun',params.traj,'-s',tprFile,
+			'-e',edrFile,'-nt',str(params.numCores)])
 		proc.wait()
 
 		edrFiles.append(edrFile)
 
-		logger.info('Completed calculation percentage: '+str((i+1)/float(len(mdpFiles))*100))
+		params.logger.info('Completed calculation percentage: '+str((i+1)/float(len(mdpFiles))*100))
 
 	return edrFiles, pairsFilteredChunks
 
@@ -521,11 +546,11 @@ def collectResults(params):
 		df_vdw[key] = value['VdW']
 
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnTotal.csv'))
-	df_total.to_csv(params.outFolder+'/energies_intEnTotal.csv')
+	df_total.to_csv(os.path.join(params.outFolder,'energies_intEnTotal.csv'))
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnElec.csv'))
-	df_elec.to_csv(params.outFolder+'/energies_intEnElec.csv')
+	df_elec.to_csv(os.path.join(params.outFolder,'energies_intEnElec.csv'))
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnVdW.csv'))
-	df_vdw.to_csv(params.outFolder+'/energies_intEnVdW.csv')
+	df_vdw.to_csv(os.path.join(params.outFolder,'energies_intEnVdW.csv'))
 
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies.pickle'))
 	file = open(os.path.join(params.outFolder,'energies.pickle'),'wb')
@@ -585,7 +610,27 @@ def calcNAMD(params):
 	cleanUp(params)
 
 def calcGMX(params):
-	pass
+	# Prepare input files for GMX energy calculation.
+	params = prepareFilesGMX(params)
+
+	# Filter pairs.
+	params = filterPairs(params)
+
+	# Calculate interaction energies.
+	edrFiles,pairsFilteredChunks = calcEnergiesGMX(params)
+
+	# Parse resulting energy EDR files.
+	params.parsedEnergies = parseEnergiesGMX(gmxExe=params.exe,
+		pdb=os.path.join(params.outFolder,'system.pdb'),
+		pairsFilteredChunks=pairsFilteredChunks,
+		outputFolder=params.outFolder,edrFiles=edrFiles,
+		logger=params.logger)
+
+	# Collect results
+	params = collectResults(params)
+
+	# Clean up
+	cleanUp(params)
 
 # Method to convert TPR to PDB files.
 def tpr2pdb(params,tpr,pdb,gmxGroup):
@@ -619,11 +664,6 @@ def getParams(args):
 
 	# Make a new parameters object.
 	params = parameters()
-
-	if args.vmd[0]:
-		params.vmd = args.vmd[0]
-	elif not args.vmd[0]:
-		params.vmd = False
 
 	params.numCores = args.numcores[0]
 	frameRange = args.framerange
@@ -864,103 +904,10 @@ def getResIntEn(args):
 	if params.dataType == 'namd':
 		calcNAMD(params)
 	elif params.dataType == 'gmx':
-		pass
-		#calcGMX(params)
+		calcGMX(params)
 	
 	params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
 	return
-
-	###### WARNING !!! ################
-	# BELOW THIS POINT EVIL LIVES!!! ###
-	###### THE CODE IS LEFTOVER CODE ###
-	
-	if tpr:
-		#gmxExe = 'gmx' # TEMPORARY
-
-		logger.info('Detected TPR file, converting to PDB...')
-
-		
-		# Convert tpr to pdb, full system.
-		proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % (gmxExe,traj,tpr,os.path.join(
-			outputFolder,'system.pdb')))
-		proc.expect(u'Select a group:.*')
-		proc.logfile = sys.stdout
-		proc.send('0 0')
-		proc.sendline()
-
-		# Check whether file has been created. If not, wait.
-		while not os.path.exists(os.path.join(
-			outputFolder,'system.pdb')):
-			time.sleep(1)
-
-		# Check whether the file is still being written to...
-		while has_handle(os.path.join(
-			outputFolder,'system.pdb')):
-			time.sleep(1)
-
-		proc.kill(1)
-
-		logger.info('Detected TPR file, converting to PDB... Done.')
-		pdb = os.path.join(outputFolder,'system.pdb')
-		copyfile(tpr,os.path.join(outputFolder,'system.tpr'))
-		tpr = os.path.join(outputFolder,'system.tpr')
-
-	# Load psf with prody and get some useful numbers.
-	### COMMENTING THIS OUT DUE TO INCOMPATIBILITY PROBLEMS WITH python3.6
-	### WE DON'T NEED TO USE PSF IN PYTHON ANYWAY
-	# try:
-	# 	system = parsePSF(psf)
-	# except:
-	# 	logger.exception('Could not load the PSF file provided. Please check your input PDB file.\
-	# 		 Aborting now.')
-	# 	return
-
-	# Saving traj argument here to a string (cause we change it later on)
-	trajPath = traj
-
-
-	# Check the input trajectory and convert to DCD if necessary.
-	if not trajPath.endswith('.dcd') and (trajPath.endswith('.xtc') or trajPath.endswith('.trr')):
-		# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
-		logger.info('Detected GMX trajectory... Converting to DCD...')
-		try:
-			if traj.endswith('.xtc'):
-				traj = mdtraj.load_xtc(trajPath,top=os.path.join(outputFolder,'system.pdb'),stride=skip)
-				traj.save_trr(outputFolder+'/traj.trr')
-				trajPath = outputFolder+'/traj.trr'
-			elif traj.endswith('.trr'):
-				traj = mdtraj.load_trr(trajPath,top=os.path.join(outputFolder,'system.pdb'),stride=skip)
-
-			dataType = 'GMX' # Specify a data type to use later on!
-		except:
-			logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
-			return
-
-		traj.save_dcd(os.path.join(outputFolder,'traj.dcd'))
-		# Load back this DCD and continue with it (for code compatibility with ProDy)
-		traj = Trajectory(os.path.join(str(outputFolder),'traj.dcd'))
-		traj.link(system)
-		logger.info('Detected GMX trajectory... Converting to DCD... Done.')
-		#results.get(9999999)# gotta use this get at the end, because of a known Python2.7 bug.
-		#results.wait()
-		
-		#pool.join()
-
-	elif dataType == 'GMX':
-		edrFiles,pairsFilteredChunks = calcEnergiesGMX(pairsFiltered=pairsFiltered,topFilePath=top,
-			pdbFilePath=os.path.join(outputFolder,'system.pdb'),tprFilePath=tpr,trajFilePath=trajPath,skip=skip,
-			frameRange=frameRange,pairFilterCutoff=pairFilterCutoff,soluteDielectric=soluteDielectric,outputFolder=outputFolder,
-			gmxExe=gmxExe,logFile=logFile,numCores=numCores)
-
-		parsedEnergies = parseEnergiesGMX(gmxExe=gmxExe,pdb=os.path.join(
-			outputFolder,'system.pdb'),pairsFilteredChunks=pairsFilteredChunks,outputFolder=outputFolder,
-			edrFiles=edrFiles,logger=logger)
-	
-	# while not parsedEnergiesResults.ready():
-	# 	print("num left: {}".format(parsedEnergiesResults._number_left))
-	# 	time.sleep(1)
-
-	# parsedEnergiesResults = parsedEnergiesResults.get()
 
 if __name__ == '__main__':
 	print('Please do not call this script directly. Use python grinn.py -calc <arguments> '

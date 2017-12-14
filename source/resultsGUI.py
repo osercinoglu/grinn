@@ -199,10 +199,10 @@ class MyStaticMplCanvas(MyMplCanvas):
     	elif type.startswith('network'):
     		if type == 'network-bc':
     			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Betweennes \n centrality'
+    			title = 'Betweennes centrality'
     		elif type == 'network-cc':
     			metric = nx.closeness_centrality(viewResultsParams.networkRO)
-    			title = 'Closeness \n centrality'
+    			title = 'Closeness centrality'
     		elif type == 'network-degree':
     			metric = dict(nx.degree(viewResultsParams.networkRO))
     			title = 'Degree'
@@ -214,7 +214,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     		self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
     		self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
     		self.axes.set_ylim([0,len(metric.keys())])
-    		self.axes.set_title(title)
+    		self.axes.set_title(title,fontsize=10)
     		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.01,top=0.99)
 
     	# Note that the following does not work in mpl=2.0.2
@@ -399,7 +399,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 				self.viewResultsParams.outputFolder,'energies_intEnMeanTotal.dat'))
 			self.viewResultsParams.intEnTotal = pandas.read_csv(os.path.join(
 				self.viewResultsParams.outputFolder,'energies_intEnTotal.csv'))
-			self.viewResultsParams.networkRO,_ = getProEnNet.getProEnNet(inFolder=
+			self.viewResultsParams.networkRO,_ = pen.getProEnNet(inFolder=
 				self.viewResultsParams.outputFolder)
 
 			intEnCorrTotalPath = os.path.join(

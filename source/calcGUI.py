@@ -57,22 +57,22 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 	def loadSampleGMXdata(self):
 		#root_path = sys.path[0]
-		self.lineEdit_outputFolder.setText('getResIntEn_output2')
+		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
 		self.lineEdit_namd2.setText('gmx')
-		self.lineEdit_pdb.setText('test/test.tpr')
-		self.lineEdit_psf.setText('test/test.top')
-		self.lineEdit_dcd.setText('test/test_stride.xtc')
+		self.lineEdit_pdb.setText('../samples/test.tpr')
+		self.lineEdit_psf.setText('../samples/test.top')
+		self.lineEdit_dcd.setText('../samples/test_stride.xtc')
 
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
-		self.lineEdit_namd2.setText('/media/onur/FREA/Software/NAMD_2.12_Linux-x86_64-multicore/namd2')
-		self.lineEdit_pdb.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/ionized.pdb')
-		self.lineEdit_psf.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/ionized.psf')
-		self.lineEdit_dcd.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/restart_10000_250010000.dcd')
-		self.lineEdit_parameterFile.setText('/media/onur/FREA/Dropbox/experiments/getResIntEnPlugin/2017_11_16_bptiTrypsinCorrectSim/3otj_trypsin/par_all27_prot_lipid_na.inp')
+		self.lineEdit_namd2.setText('/home/onur/repos/NAMD_2.12b1/namd2')
+		self.lineEdit_pdb.setText('../samples/test.pdb')
+		self.lineEdit_psf.setText('../samples/test.psf')
+		self.lineEdit_dcd.setText('../samples/test.dcd')
+		self.lineEdit_parameterFile.setText('../samples/par_all27_prot_lipid_na.inp')
 
 	def closeEvent(self, event):
 			self.stopCalculation()
@@ -173,6 +173,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 			if self.processGetResIntEn:
 				# Stop the calculation
+				print('killing process id '+str(self.processGetResIntEn.pid))
 				os.kill(self.processGetResIntEn.pid,signal.SIGINT)
 
 			# Stop monitoring

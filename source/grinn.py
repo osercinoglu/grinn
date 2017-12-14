@@ -83,7 +83,7 @@ def convert_arg_line_to_args(arg_line):
 		yield arg
 
 if __name__ == '__main__':
-	sys.exit(0)
+
 	# Construct an argument parser.
 	parser = argparse.ArgumentParser(fromfile_prefix_chars='@',
 		description='gRINN: get Residue Interaction eNergies and Networks. '
@@ -190,11 +190,6 @@ if __name__ == '__main__':
 		'grinn_output will be created in the current working folder. Applies only to grinn '
 		'-calc <arguments> calls.')
 
-	parser.add_argument('--vmd',default=[False],type=str,nargs=1,
-		help='Path of the Visual Molecular Dynamics (VMD) executable. Only used if -calc '
-		'mode detects non-protein atoms in input files to remove these as the interaction '
-		'energy calculation are conducted in vacuum environment.')
-
 	# Parse arguments.
 	args = parser.parse_args()
 
@@ -205,7 +200,7 @@ if __name__ == '__main__':
 	# Check which mode is requested. Either one is selected or none is selected to
 	# enter GUI mode.
 	if [calcMode,corrMode,resultsMode].count(True) > 1:
-		print('You should specify either -calc, -corr, -results or specify none of them '
+		print('You should specify either -calc or -corr or specify none of them '
 			'to enter the GUI mode.')
 		sys.exit(0)
 	elif [calcMode,corrMode,resultsMode].count(True) == 1:
