@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1060</width>
+    <width>1200</width>
     <height>691</height>
    </rect>
   </property>
@@ -124,7 +124,7 @@
              <enum>QTabWidget::Rounded</enum>
             </property>
             <property name="currentIndex">
-             <number>4</number>
+             <number>1</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -193,13 +193,13 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>200</width>
+                  <width>100</width>
                   <height>0</height>
                  </size>
                 </property>
                 <property name="maximumSize">
                  <size>
-                  <width>100</width>
+                  <width>200</width>
                   <height>16777215</height>
                  </size>
                 </property>
@@ -298,6 +298,22 @@
                 </layout>
                </widget>
               </item>
+              <item>
+               <widget class="QSlider" name="verticalSlider_IEM">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Fixed" vsizetype="Expanding">
+                  <horstretch>0</horstretch>
+                  <verstretch>1</verstretch>
+                 </sizepolicy>
+                </property>
+                <property name="pageStep">
+                 <number>1</number>
+                </property>
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
             <widget class="QWidget" name="tab_IEC">
@@ -318,7 +334,7 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>450</width>
+                  <width>500</width>
                   <height>0</height>
                  </size>
                 </property>

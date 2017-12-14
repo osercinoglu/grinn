@@ -1,21 +1,28 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'getresinten/grinnGUI.ui'
+# Form implementation generated from reading ui file 'grinnGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
 # WARNING! All changes made in this file will be lost!
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-import sys, os
 
 class Ui_gRINN(object):
     def setupUi(self, gRINN):
         gRINN.setObjectName("gRINN")
         gRINN.resize(659, 447)
+        icon = QtGui.QIcon()
+        icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        gRINN.setWindowIcon(icon)
         self.centralWidget = QtWidgets.QWidget(gRINN)
         self.centralWidget.setObjectName("centralWidget")
         self.label = QtWidgets.QLabel(self.centralWidget)
+        self.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
+        self.label.setText("")
+        self.label.setPixmap(QtGui.QPixmap("clover.ico"))
+        self.label.setScaledContents(True)
+        self.label.setObjectName("label")
         self.label_2 = QtWidgets.QLabel(self.centralWidget)
         self.label_2.setGeometry(QtCore.QRect(240, 10, 411, 161))
         font = QtGui.QFont()
@@ -77,8 +84,7 @@ class Ui_gRINN(object):
 " Calculation"))
         self.pushButton_2.setText(_translate("gRINN", "View\n"
 " Results"))
-        self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
-        self.label_3.setOpenExternalLinks(True)
+        self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"https://www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
         self.label_4.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
         self.label_5.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
         self.label_6.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))

@@ -41,6 +41,7 @@ class viewResultsParams(object):
 		self.selectedShortestPath = None
 		self.iecPair1 = None
 		self.iecPair2 = None
+		self.vmaxIEM = 8
 
 class MyMplCanvas(FigureCanvas):
 	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
@@ -142,8 +143,9 @@ class MyStaticMplCanvas(MyMplCanvas):
     	elif type in ['iem','rc']:
     		if type=='iem':
     			matrix = intEnMeanTotal
-    			vmax = 10
-    			vmin = -10
+    			vmax = viewResultsParams.vmaxIEM
+    			vmin = -viewResultsParams.vmaxIEM
+    			print(vmax,vmin)
     			cmap = seaborn.color_palette("BrBG", 10)
 
     		elif type=='rc':
@@ -463,6 +465,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			# Connect some callbacks that need to be connected only once some data is loaded.
 			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnBarPlot)
 			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
+			self.verticalSlider_IEM.valueChanged.connect(self.updateIEMrange)
 			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
@@ -490,6 +493,11 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 					self.viewResultsParams.system,i)))
 
 		self.updatePairwiseEnergiesTable(0,0)
+
+		self.verticalSlider_IEM.setMinimum(1)
+		self.verticalSlider_IEM.setMaximum(np.max(np.abs(
+			self.viewResultsParams.intEnMeanTotal)))
+		self.verticalSlider_IEM.setTickInterval(1) 
 
 		#self.networkPlot.update_figure(self,'network')
 
@@ -715,6 +723,22 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			
 			# Update the protein structure
 			self.updateProteinResiduePairs()
+
+	def updateIEMrange(self):
+		# Get the current value of the slider.
+		self.viewResultsParams.vmaxIEM = self.verticalSlider_IEM.value()+1
+
+		# Got to delete the current plot and add it again, 
+		# cause simply updating it causes really weird behaviour.
+		if hasattr(self,"intEnMeanMat"):
+			self.intEnMeanMat.setVisible(False)
+			self.intEnMeanMat.setParent(None)
+
+		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
+		self.verticalLayout_5.addWidget(self.intEnMeanMat)
+		self.intEnMeanMat.setVisible(True)
+		
+		self.intEnMeanMat.update_figure(self,'iem')
 
 	def updateIECtable(self,row,column):
 

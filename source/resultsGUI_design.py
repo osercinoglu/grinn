@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'viewResultsGUI.ui'
+# Form implementation generated from reading ui file 'resultsGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
@@ -11,7 +11,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1060, 691)
+        MainWindow.resize(1200, 691)
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         MainWindow.setWindowIcon(icon)
@@ -113,8 +113,8 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.frame_tabPairWiseEnergiesBarPlot.sizePolicy().hasHeightForWidth())
         self.frame_tabPairWiseEnergiesBarPlot.setSizePolicy(sizePolicy)
-        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(200, 0))
-        self.frame_tabPairWiseEnergiesBarPlot.setMaximumSize(QtCore.QSize(100, 16777215))
+        self.frame_tabPairWiseEnergiesBarPlot.setMinimumSize(QtCore.QSize(100, 0))
+        self.frame_tabPairWiseEnergiesBarPlot.setMaximumSize(QtCore.QSize(200, 16777215))
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.frame_tabPairWiseEnergiesBarPlot.setFrameShadow(QtWidgets.QFrame.Raised)
         self.frame_tabPairWiseEnergiesBarPlot.setObjectName("frame_tabPairWiseEnergiesBarPlot")
@@ -164,6 +164,16 @@ class Ui_MainWindow(object):
         self.verticalLayout_5.setSizeConstraint(QtWidgets.QLayout.SetMaximumSize)
         self.verticalLayout_5.setObjectName("verticalLayout_5")
         self.horizontalLayout_5.addWidget(self.frame_tabIEM)
+        self.verticalSlider_IEM = QtWidgets.QSlider(self.tab_IEM)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(1)
+        sizePolicy.setHeightForWidth(self.verticalSlider_IEM.sizePolicy().hasHeightForWidth())
+        self.verticalSlider_IEM.setSizePolicy(sizePolicy)
+        self.verticalSlider_IEM.setPageStep(1)
+        self.verticalSlider_IEM.setOrientation(QtCore.Qt.Vertical)
+        self.verticalSlider_IEM.setObjectName("verticalSlider_IEM")
+        self.horizontalLayout_5.addWidget(self.verticalSlider_IEM)
         self.tabWidget.addTab(self.tab_IEM, "")
         self.tab_IEC = QtWidgets.QWidget()
         self.tab_IEC.setObjectName("tab_IEC")
@@ -177,7 +187,7 @@ class Ui_MainWindow(object):
         sizePolicy.setVerticalStretch(1)
         sizePolicy.setHeightForWidth(self.tableWidget_IEC.sizePolicy().hasHeightForWidth())
         self.tableWidget_IEC.setSizePolicy(sizePolicy)
-        self.tableWidget_IEC.setMinimumSize(QtCore.QSize(450, 0))
+        self.tableWidget_IEC.setMinimumSize(QtCore.QSize(500, 0))
         self.tableWidget_IEC.setMaximumSize(QtCore.QSize(500, 16777215))
         self.tableWidget_IEC.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.tableWidget_IEC.setFrameShadow(QtWidgets.QFrame.Plain)
@@ -373,7 +383,7 @@ class Ui_MainWindow(object):
         MainWindow.setStatusBar(self.statusbar)
 
         self.retranslateUi(MainWindow)
-        self.tabWidget.setCurrentIndex(4)
+        self.tabWidget.setCurrentIndex(1)
         self.tabWidget_2.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 

@@ -600,6 +600,15 @@
     <property name="toolTip">
      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If specified, this value will be applied as a stride to the trajectory frames included in the calculation. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be selected for calculation, yielding a total of 100 frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
+    <property name="minimum">
+     <number>0</number>
+    </property>
+    <property name="maximum">
+     <number>100000</number>
+    </property>
+    <property name="singleStep">
+     <number>0</number>
+    </property>
     <property name="value">
      <number>1</number>
     </property>
