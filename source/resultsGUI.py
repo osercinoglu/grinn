@@ -145,7 +145,6 @@ class MyStaticMplCanvas(MyMplCanvas):
     			matrix = intEnMeanTotal
     			vmax = viewResultsParams.vmaxIEM
     			vmin = -viewResultsParams.vmaxIEM
-    			print(vmax,vmin)
     			cmap = seaborn.color_palette("BrBG", 10)
 
     		elif type=='rc':
@@ -495,8 +494,14 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.updatePairwiseEnergiesTable(0,0)
 
 		self.verticalSlider_IEM.setMinimum(1)
-		self.verticalSlider_IEM.setMaximum(np.max(np.abs(
-			self.viewResultsParams.intEnMeanTotal)))
+		maxIntEnMeanTotal = np.max(np.abs(
+			self.viewResultsParams.intEnMeanTotal))
+		self.verticalSlider_IEM.setMaximum(maxIntEnMeanTotal)
+		if 8 < maxIntEnMeanTotal:
+			self.verticalSlider_IEM.setValue(8)
+		else:
+			self.verticalSlider_IEM.setValue(maxIntEnMeanTotal)
+
 		self.verticalSlider_IEM.setTickInterval(1) 
 
 		#self.networkPlot.update_figure(self,'network')
@@ -736,6 +741,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
 		self.verticalLayout_5.addWidget(self.intEnMeanMat)
+		self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
 		self.intEnMeanMat.setVisible(True)
 		
 		self.intEnMeanMat.update_figure(self,'iem')
