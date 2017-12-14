@@ -12,6 +12,11 @@ class Ui_gRINN(object):
     def setupUi(self, gRINN):
         gRINN.setObjectName("gRINN")
         gRINN.resize(659, 447)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(gRINN.sizePolicy().hasHeightForWidth())
+        gRINN.setSizePolicy(sizePolicy)
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap("clover.ico"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         gRINN.setWindowIcon(icon)

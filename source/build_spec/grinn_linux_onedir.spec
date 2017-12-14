@@ -3,23 +3,25 @@
 block_cipher = None
 
 # Icons and other stuff that I discover to be necessary by trial-and-error
-datas = [('clover.ico','.'),
+datas = [('../resources/clover.ico','resources'),
+('../VERSION','.'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
-('/home/onur/anaconda2/etc/fonts','etc/fonts'),
+('../data/etc/fonts','data/etc/fonts'),
 ('/usr/share/X11/xkb','usr/share/X11/xkb'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/panedr','panedr')]
 
 binaries = [('/home/onur/anaconda2/plugins/xcbglintegrations/libqxcb-glx-integration.so',
+  'qt5_plugins/xcbglintegrations/'),('/home/onur/anaconda2/plugins/xcbglintegrations/libqxcb-egl-integration.so',
   'qt5_plugins/xcbglintegrations/')]
 
-paths = ['/home/onur/repos/gRINN/getresinten',
+paths = ['/home/onur/repos/gRINN/source',
              '/home/onur/anaconda2/lib/python2.7/site-packages/',
              '/home/onur/anaconda2/lib']
 
-a = Analysis(['grinn.py'],
+a = Analysis(['../grinn.py'],
              pathex=paths,
              binaries=binaries,
              datas=datas,
