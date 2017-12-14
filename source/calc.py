@@ -209,6 +209,12 @@ def calcEnergiesSingleCoreNAMD(args):
 		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	logger = logging.getLogger(__name__)
 
+	# Also print messages to the terminal
+	console = logging.StreamHandler()
+	console.setLevel(logging.INFO)
+	console.setFormatter(logging.Formatter(loggingFormat))
+	params.logger.addHandler(console)
+
 	logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
