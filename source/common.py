@@ -1,6 +1,6 @@
 
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys, os, psutil, vmd
+import re, os, pexpect, panedr, pandas, time, sys, os, psutil
 import numpy as np
 from prody import *
 import logging
