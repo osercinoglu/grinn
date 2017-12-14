@@ -227,7 +227,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		return args
 
 	def startCalculation(self):
-
+		self.calcParams = common.parameters()
 		# Get necessary input arguments.
 		self.calcParams.top = str(self.lineEdit_psf.text())
 		if self.lineEdit_pdb.text().endswith('.pdb'):
