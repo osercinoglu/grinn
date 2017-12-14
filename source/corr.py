@@ -108,7 +108,7 @@ def getResIntCorr(args,logFile=None,logger=None):
 			row2_mrow = row2 - row2.mean(1)[:,None]
 			ssrow2 = (row2_mrow**2).sum(1);
 			corrs = np.dot(row_mrow,row2_mrow.T)/np.sqrt(np.dot(ssrow[:,None],ssrow2[None]))
-			sigindices = np.where(corrs > 0.4)
+			sigindices = np.where(np.abs(corrs) > 0.4)
 			for m in range(0,len(sigindices[0])):
 				row = sigindices[0][m]
 				col = sigindices[1][m]

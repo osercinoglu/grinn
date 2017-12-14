@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Form implementation generated from reading ui file 'getResIntEnGUI.ui'
+# Form implementation generated from reading ui file 'calcGUI.ui'
 #
 # Created by: PyQt5 UI code generator 5.6
 #
@@ -152,11 +152,10 @@ class Ui_MainWindow(object):
         self.progressBar_correlation.setGeometry(QtCore.QRect(540, 380, 251, 23))
         self.progressBar_correlation.setProperty("value", 0)
         self.progressBar_correlation.setObjectName("progressBar_correlation")
-        self.doubleSpinBox_dcdStride = QtWidgets.QDoubleSpinBox(self.centralwidget)
-        self.doubleSpinBox_dcdStride.setGeometry(QtCore.QRect(150, 380, 62, 24))
-        self.doubleSpinBox_dcdStride.setMaximum(100000.0)
-        self.doubleSpinBox_dcdStride.setProperty("value", 10.0)
-        self.doubleSpinBox_dcdStride.setObjectName("doubleSpinBox_dcdStride")
+        self.spinBox_dcdStride = QtWidgets.QSpinBox(self.centralwidget)
+        self.spinBox_dcdStride.setGeometry(QtCore.QRect(150, 380, 62, 24))
+        self.spinBox_dcdStride.setProperty("value", 1)
+        self.spinBox_dcdStride.setObjectName("spinBox_dcdStride")
         self.label = QtWidgets.QLabel(self.centralwidget)
         self.label.setGeometry(QtCore.QRect(130, 270, 109, 21))
         self.label.setAlignment(QtCore.Qt.AlignRight|QtCore.Qt.AlignTrailing|QtCore.Qt.AlignVCenter)
@@ -264,7 +263,7 @@ class Ui_MainWindow(object):
         self.doubleSpinBox_AverageIntEnCutoff.setToolTip(_translate("MainWindow", "<html><head/><body><p>Only interactions with the average of absolute interaction energy values above this value will be included in interaction energy correlation calculations.</p></body></html>"))
         self.label_PearsonCorrCutoff.setText(_translate("MainWindow", "Average interaction energy cutoff (kcal/mol)"))
         self.labelCorrelation.setText(_translate("MainWindow", "Correlation progress"))
-        self.doubleSpinBox_dcdStride.setToolTip(_translate("MainWindow", "<html><head/><body><p>If specified, this value will be applied as a stride to the trajectory frames included in the calculation. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be selected for calculation, yielding a total of 100 frames.</p></body></html>"))
+        self.spinBox_dcdStride.setToolTip(_translate("MainWindow", "<html><head/><body><p>If specified, this value will be applied as a stride to the trajectory frames included in the calculation. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be selected for calculation, yielding a total of 100 frames.</p></body></html>"))
         self.label.setText(_translate("MainWindow", "Selection 1"))
         self.label_2.setText(_translate("MainWindow", "Selection 2"))
         self.pushButton_viewResults.setText(_translate("MainWindow", "VIEW RESULTS"))

@@ -911,7 +911,7 @@ def getResIntEn(args):
 
 	# Get correlations, if the user requested.
 	if params.calcCorr:
-		args.corrprefix = os.path.join(params.outFolder,'energies_')
+		args.corrprefix = [os.path.join(params.outFolder,'energies')]
 		args.corrinfile = [os.path.join(params.outFolder,'energies_intEnTotal.csv')]
 		corr.getResIntCorr(args,logFile=None,logger=params.logger)
 

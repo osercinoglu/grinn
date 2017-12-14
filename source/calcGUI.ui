@@ -588,7 +588,7 @@
      <number>0</number>
     </property>
    </widget>
-   <widget class="QDoubleSpinBox" name="doubleSpinBox_dcdStride">
+   <widget class="QSpinBox" name="spinBox_dcdStride">
     <property name="geometry">
      <rect>
       <x>150</x>
@@ -600,11 +600,8 @@
     <property name="toolTip">
      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;If specified, this value will be applied as a stride to the trajectory frames included in the calculation. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be selected for calculation, yielding a total of 100 frames.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
-    <property name="maximum">
-     <double>100000.000000000000000</double>
-    </property>
     <property name="value">
-     <double>10.000000000000000</double>
+     <number>1</number>
     </property>
    </widget>
    <widget class="QLabel" name="label">

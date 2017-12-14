@@ -240,7 +240,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
 		self.calcParams.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
 		self.calcParams.numCores = int(self.spinBox_numProcessors.value())
-		self.calcParams.stride = int(self.doubleSpinBox_dcdStride.value())
+		self.calcParams.stride = int(self.spinBox_dcdStride.value())
 		self.calcParams.outFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
 		self.calcParams.exe = str(self.lineEdit_namd2.text())
 		self.calcParams.parameterFile = str(self.lineEdit_parameterFile.text())
