@@ -8,8 +8,7 @@ datas = [('../resources/clover.ico','resources'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
-('../data/etc/fonts','data/etc/fonts'),
-('/usr/share/X11/xkb','usr/share/X11/xkb'),
+('../data','data'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/panedr','panedr')]
 

@@ -3,11 +3,12 @@ import glob
 
 block_cipher = None
 # Icons and other stuff that I discover to be necessary by trial-and-error
-datas = [('clover.icns','.'),
-('clover.ico','.'),
+datas = [('../resources/clover.ico','resources'),
+('../VERSION','.'),
 ('/Users/onur/anaconda2/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
+('../data','data'),
 ('/Users/onur/anaconda2/lib/python2.7/'
   'site-packages/panedr','panedr')]
 
@@ -16,8 +17,8 @@ datas = [('clover.icns','.'),
 
 binaries = [('/Users/onur/anaconda2/lib/libpython2.7.dylib','.')]
 
-a = Analysis(['grinn.py'],
-             pathex=['/Users/onur/repos/gRINN/getresinten',
+a = Analysis(['../grinn.py'],
+             pathex=['/Users/onur/repos/gRINN/source',
                       '/Users/onur/anaconda2/lib',
                       '/Users/onur/anaconda2/lib/python2.7',
                       '/Users/onur/anaconda2/lib/python2.7/site-packages'],
@@ -43,7 +44,7 @@ exe = EXE(pyz,
           strip=False,
           upx=True,
           console=False,
-          icon='clover.ico')
+          icon='resources/clover.ico')
 
 #coll = COLLECT(exe,
 #               a.binaries,
@@ -55,7 +56,7 @@ exe = EXE(pyz,
 
 app = BUNDLE(exe,
              name='grinn.app',
-             icon='clover.icns',
+             icon='../resources/clover.icns',
              bundle_identifier=None,
              info_plist={
               'NSHighResolutionCapable': 'True'
