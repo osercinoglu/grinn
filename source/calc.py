@@ -713,9 +713,11 @@ def getParams(args):
 	currentFolder = os.getcwd()
 	if outFolder != currentFolder:
 		if os.path.exists(outFolder):
-			print(outFolder)
 			print("The output folder exists. Please delete this folder or "
 				" specify a folder path that does not exist. Aborting now.")
+			sys.exit(0)
+		elif not os.access(os.path.abspath(outFolder), os.W_OK):
+			self.error("Can't write to the output folder path. Do you have write access?")
 			sys.exit(0)
 		else:
 			params.outFolder = outFolder
@@ -882,9 +884,13 @@ def getResIntEn(args):
 	# Create the output folder now so that we can start logging.
 	# Creating this file right now is important because the calcGUI 
 	# will monitor this file as well.
-	os.makedirs(params.outFolder)
-	f = open(params.logFile,'w')
-	f.close()
+	try:
+		os.makedirs(params.outFolder)
+		f = open(params.logFile,'w')
+		f.close()
+	except:
+		print('Failed to create the output directory. Do you have write access?')
+		sys.exit(0)
 
 	# Start logging.
 	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'

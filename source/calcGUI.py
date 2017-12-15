@@ -260,8 +260,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.logFile = os.path.join(str(self.calcParams.outFolder),'grinn.log')
 
 		if os.path.exists(os.path.abspath(str(self.calcParams.outFolder))):
-			self.error("The output folder exists. Please delete or rename this folder."
+			self.error("The output folder exists. Please specify a path that does not exist."
 				 " Aborting now.")
+			return
+		elif not os.access(os.path.abspath(self.calcParams.outFolder), os.W_OK):
+			self.error("Can't write to the output folder path. Do you have write access?")
 			return
 		
 		args = self.params2parser(self.calcParams)
@@ -389,6 +392,9 @@ class monitorProgress(QtCore.QThread):
 					self.error.emit(line)
 					continueFlag = True
 					self._isRunning = False
+
+				if percent == float(100):
+					start_time = time.time()
 
 				self.updateStatusBar.emit(line)
 
