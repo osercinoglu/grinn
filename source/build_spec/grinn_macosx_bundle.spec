@@ -56,7 +56,7 @@ exe = EXE(pyz,
 
 app = BUNDLE(exe,
              name='grinn.app',
-             icon='../resources/clover.icns',
+             icon='resources/clover.icns',
              bundle_identifier=None,
              info_plist={
               'NSHighResolutionCapable': 'True'
