@@ -404,6 +404,8 @@ def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)	
+	app.setWindowIcon(QtGui.QIcon(os.path.dirname(
+	os.path.dirname(os.path.abspath(__file__))),'resources','clover.ico'));
 	form = DesignInteractCalculate()
 	icon = QtGui.QIcon()
 	pixmap = QtGui.QPixmap(os.path.join(
