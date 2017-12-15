@@ -100,8 +100,7 @@ def prepareFilesNAMD(params):
 
 		if sys.stdin.isatty():
 			if not click.confirm('Do you want to continue?', default=True):
-				params.logger.exception('User requested abort. Aborting now.')
-				sys.exit(0)
+				errorSuicide(params,'User requested abort. Aborting now.',removeOutput=True)
 
 	# Proceeding.
 	# Just copy psf and pdb files and the trajectory with stride to output folder.
@@ -117,7 +116,7 @@ def prepareFilesNAMD(params):
 	# Check whether system has enough memory to handle the computation...
 	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
 	if not proceed:
-		errorSuicide(params,message)
+		errorSuicide(params,message,removeOutput=True)
 
 def prepareFilesGMX(params):
 	params.logger.info('Converting TPR to PDB...')
@@ -293,7 +292,14 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			# Run namd2 to compute the energies
 			pid_namd2 = subprocess.Popen([namd2exe,namdConf],
-				stdout=open(os.path.join(outputFolder,'%i_%i_energies.log' % (pair[0],pair[1])),'w'))
+				stdout=open(
+					os.path.join(outputFolder,'%i_%i_energies.log' % 
+						(pair[0],pair[1])),'w'),
+				stderr=subprocess.PIPE)
+			_,error = pid_namd2.communicate()
+			if error:
+				#logger.exception('Error while calling NAMD executable:\n'+error)
+				sys.exit(0)
 			pid_namd2.wait()
 
 			#subprocess.call('rm %s' % namdConf,shell=True)
@@ -316,9 +322,9 @@ def calcEnergiesSingleCoreNAMD(args):
 		try:
 			calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 				pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
-		except (KeyboardInterrupt,SystemExit):
-			logger.exception('Keyboard interrupt detected. Aborting now.')
-			sys.exit(0)
+		except (SystemExit):
+			#logger.exception('Fatal error while calling NAMD executable')
+			return 'SystemExit'
 
 		progBar.update()
 		percent = percent + 10
@@ -357,7 +363,8 @@ def calcEnergiesNAMD(params):
 		global pool
 		pool.terminate()
 		#time.sleep(5)
-		sys.exit(0)
+		errorSuicide(params,'Keyboard interrupt detected. Aborting now',
+			removeOutput=True)
 
 	signal.signal(signal.SIGINT, sigint_handler)
 
@@ -370,8 +377,16 @@ def calcEnergiesNAMD(params):
 	logger = params.logger
 	params.logger = None
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
-			zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
 	params.logger = logger
+	
+	# If the pool return at least one 'SystemExit' string
+	# Abort
+	# see the calcEnergiesSingleCoreNAMD method)
+	
+	if 'SystemExit' in results:
+		errorSuicide(params,'Fatal error while calling NAMD executable.',
+			removeOutput=True)
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
@@ -596,9 +611,12 @@ def cleanUp(params):
 	if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
 		os.remove(os.path.join(params.outFolder,'traj.dcd'))
 
-def errorSuicide(params,message):
+def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
-	sys.exit(1)
+	if removeOutput:
+		rmtree(params.outFolder)
+	psutil.Process(os.getpid()).kill()
+	os._exit(0)
 
 def calcNAMD(params):
 	# Prepare input files for NAMD energy calculation.
@@ -716,9 +734,10 @@ def getParams(args):
 			print("The output folder exists. Please delete this folder or "
 				" specify a folder path that does not exist. Aborting now.")
 			sys.exit(0)
-		elif not os.access(os.path.abspath(outFolder), os.W_OK):
-			self.error("Can't write to the output folder path. Do you have write access?")
-			sys.exit(0)
+		elif not os.access(os.path.abspath(
+			os.path.dirname(outFolder)), os.W_OK):
+			print("Can't write to the output folder path. Do you have write access?")
+			return
 		else:
 			params.outFolder = outFolder
 			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')

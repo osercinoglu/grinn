@@ -263,7 +263,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			self.error("The output folder exists. Please specify a path that does not exist."
 				 " Aborting now.")
 			return
-		elif not os.access(os.path.abspath(self.calcParams.outFolder), os.W_OK):
+		elif not os.access(os.path.abspath(
+			os.path.dirname(self.calcParams.outFolder)), os.W_OK):
 			self.error("Can't write to the output folder path. Do you have write access?")
 			return
 		
@@ -349,6 +350,7 @@ class monitorProgress(QtCore.QThread):
 		start_time = time.time()
 		lastLogLine = 0
 		continueFlag = False
+		percent = 0
 
 		while not continueFlag and self._isRunning:
 			logFile = open(self.params.logFile)
