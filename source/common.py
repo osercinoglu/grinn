@@ -34,6 +34,17 @@ class parameters(object):
 		self.pairsFiltered = None
 		self.pool = None
 
+# A method to get the path to the resource for pyinstaller onefile executables.
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 # A method to check whether a file has a handle on it.
 def has_handle(fpath):
 	for proc in psutil.process_iter():

@@ -3,7 +3,7 @@
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
-import resultsGUI, calcGUI, grinnGUI_design, calc, corr
+import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
 import sys, time, os, argparse, multiprocessing, subprocess
 
 class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
@@ -19,9 +19,8 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 	def calculateGUI(self):
 		self.formGetResIntEnGUI = calcGUI.DesignInteractCalculate(self)
 		icon = QtGui.QIcon()
-		pixmap = QtGui.QPixmap(os.path.join(
-		os.path.dirname(os.path.abspath(__file__)),
-		'resources','clover.ico'))
+		pixmap = QtGui.QPixmap(common.resource_path(
+			os.path.join('resources','clover.ico')))
 		icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
 		self.formGetResIntEnGUI.setWindowIcon(icon)
 		self.formGetResIntEnGUI.label_3.setPixmap(pixmap)
@@ -50,12 +49,12 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 def prepareEnvironment():
 	# Set some environment variable for pyinstaller executable function.
 	filePath = os.path.abspath(__file__)
-	os.environ['FONTCONFIG_FILE'] = os.path.join(
-		os.path.dirname(filePath),'data','etc','fonts','fonts.conf')
-	os.environ['FONTCONFIG_PATH'] = os.path.join(
-		os.path.dirname(filePath),'data','etc','fonts')
-	os.environ['QT_XKB_CONFIG_ROOT'] = os.path.join(
-		os.path.dirname(filePath),'data','xkb')
+	os.environ['FONTCONFIG_FILE'] = common.resource_path(
+		os.path.join('data','etc','fonts','fonts.conf'))
+	os.environ['FONTCONFIG_PATH'] = common.resource_path(
+		os.path.join('data','etc','fonts'))
+	os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
+		os.path.join('data','xkb'))
 
 def main():
 	sys_argv = sys.argv
@@ -63,9 +62,8 @@ def main():
 	app = QApplication(sys_argv)
 	form = DesignInteract()
 	icon = QtGui.QIcon()
-	pixmap = QtGui.QPixmap(os.path.join(
-		os.path.dirname(os.path.abspath(__file__)),
-		'resources','clover.ico'))
+	pixmap = QtGui.QPixmap(common.resource_path(
+		os.path.join('resources','clover.ico')))
 	icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
 	app.setWindowIcon(icon)
 	form.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
