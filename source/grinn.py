@@ -30,7 +30,11 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 	def resultsGUI(self):
 		self.formResults = resultsGUI.DesignInteractResults(self)
 		self.formResults.show()
-
+		icon = QtGui.QIcon()
+		pixmap = QtGui.QPixmap(common.resource_path(
+			os.path.join('resources','clover.ico')))
+		icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
+		self.formResults.setWindowIcon(icon)
 		# Skip through tab widgets to show each GUI component 
 		# (apparently necessary for plots to draw correctly...
 		self.formResults.tabWidget.setCurrentIndex(0)
@@ -88,7 +92,7 @@ def main():
 	pixmap = QtGui.QPixmap(common.resource_path(
 		os.path.join('resources','clover.ico')))
 	icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
-	app.setWindowIcon(icon)
+	form.setWindowIcon(icon)
 	form.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
 	form.label.setText("")
 	form.label.setScaledContents(True)

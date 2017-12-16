@@ -470,13 +470,12 @@ def main():
 	sys_argv = sys.argv
 	sys_argv += ['--style', 'Fusion']
 	app = QtWidgets.QApplication(sys.argv)	
-	app.setWindowIcon(QtGui.QIcon(os.path.dirname(
-	os.path.dirname(os.path.abspath(__file__))),'resources','clover.ico'));
+	app.setWindowIcon(QtGui.QIcon(
+	common.resource_path(os.path.join('resources','clover.ico'))));
 	form = DesignInteractCalculate()
 	icon = QtGui.QIcon()
-	pixmap = QtGui.QPixmap(os.path.join(
-		os.path.dirname(os.path.abspath(__file__)),
-		'resources','clover.ico'))
+	pixmap = QtGui.QPixmap(
+		common.resource_path(os.path.join('resources','clover.ico')))
 	icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
 	form.setWindowIcon(icon)
 	form.label_3.setPixmap(pixmap)
