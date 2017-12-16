@@ -1,11 +1,20 @@
+Obtaining gRINN
+===============
+
 Download gRINN
-==============
+--------------
 
 gRINN is available for Linux (x64) or Mac OSX operating systems.
+
 
 `Download gRINN v.1.0.1 for Linux x64 <https://www.onursercinoglu.com>`_
 
 `Download gRINN v.1.0.1 for Mac OSX <https://www.onursercinoglu.com>`_
+
+Windows support is currently a work-in-progress. Stay tuned and visit back for a Windows compatible executable.
+
+Usage
+-----
 
 No installation required.
 
