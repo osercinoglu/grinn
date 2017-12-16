@@ -200,7 +200,7 @@ class MyStaticMplCanvas(MyMplCanvas):
     	elif type.startswith('network'):
     		if type == 'network-bc':
     			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Betweennes centrality'
+    			title = 'Betweenness centrality'
     		elif type == 'network-cc':
     			metric = nx.closeness_centrality(viewResultsParams.networkRO)
     			title = 'Closeness centrality'
@@ -523,8 +523,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.comboBox_SourceResidue.addItems(chainResnameResnums)
 		self.comboBox_TargetResidue.addItems(chainResnameResnums)
 
-		self.tableWidget_ShortestPaths.setColumnCount(1)
-		self.tableWidget_ShortestPaths.setHorizontalHeaderLabels(["Path"])
+		self.tableWidget_ShortestPaths.setColumnCount(2)
+		self.tableWidget_ShortestPaths.setHorizontalHeaderLabels(["Path","Length"])
+		self.tableWidget_ShortestPaths.setSortingEnabled(True)
 		header = self.tableWidget_ShortestPaths.horizontalHeader()
 		header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
 
@@ -672,6 +673,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
 		self.ProteinView._pymol.cmd.color('white','all')
 		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.set('sphere_transparency','0')
 		self.ProteinView._pymol.cmd.label('all','')
 		self.ProteinView._pymol.cmd.show_as('spheres','resi '+res_string[4:]+' and chain '+res_string[0])
 		self.ProteinView._pymol.cmd.color('red','resi '+res_string[4:]+' and chain '+res_string[0])
@@ -685,11 +687,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
 		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		#self.ProteinView._pymol.cmd.set('sphere_transparency','0.6')
 		path_split = path.split('-')
 		self.ProteinView._pymol.cmd.set('label_size','-2')
 		for res in path_split:
 			res_pymol_select = 'resi '+res[4:]+' and chain '+res[0]
 			self.ProteinView._pymol.cmd.show_as('sticks',res_pymol_select)
+			#self.ProteinView._pymol.cmd.show_as('spheres',res_pymol_select)
 			self.ProteinView._pymol.cmd.color('red',res_pymol_select)
 			self.ProteinView._pymol.cmd.label(
 				res_pymol_select+' and name ca','"%s%s%s" % (chain,resn,resi)')
@@ -796,19 +800,30 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			try:
 				allpaths = list(nx.all_shortest_paths(self.viewResultsParams.networkRO,
 				sourceRes_index+1,targetRes_index+1))
+				allpathslen = list()
+				for path in allpaths:
+					pathlen = 0
+					for i in range(0,len(path)-1):
+						pathlen += self.viewResultsParams.networkRO[path[i]][path[i+1]]['distance']
+					allpathslen.append(pathlen)
 			except:
 				QtWidgets.QMessageBox.information(self,"No Paths!","No paths found!")
 				return
 
 			if allpaths:
+				#dijkstra_pathlen = nx.dijkstra_path_length(
+				#	self.viewResultsParams.networkRO,path[0],path[-1],'distance')
+				#print('shortest dijkstra path length: ',dijkstra_pathlen)
 				allpaths_string = [[getChainResnameResnum(self.viewResultsParams.system,
 					int(index)-1) for index in path] for path in allpaths]
 				self.tableWidget_ShortestPaths.setRowCount(len(allpaths_string))
-
 				for i in range(0,len(allpaths_string)):
 					path_string = allpaths_string[i]
 					self.tableWidget_ShortestPaths.setItem(
 						i,0,QtWidgets.QTableWidgetItem('-'.join(path_string)))
+					pathlen = allpathslen[i]
+					self.tableWidget_ShortestPaths.setItem(
+						i,1,QtWidgets.QTableWidgetItem(str(pathlen)))
 
 	def updateShortestPathsTable(self,row,column):
 		selectedPath = str(self.tableWidget_ShortestPaths.item(row,0).text())
