@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 from PyQt5 import QtGui
 from PyQt5 import QtCore
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
 import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
 import sys, time, os, argparse, multiprocessing, subprocess
+multiprocessing.freeze_support() # Required for Windows compatibility, harmless for Unix.
 
 class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 
@@ -45,6 +46,28 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 		folderLoaded = self.formResults.updateOutputFolder()
 		#if not folderLoaded:
 		#	self.formResults.close()
+
+	def closeEvent(self, event):
+		message = False
+		# Check whether any calcGUI or resultsGUI views have been created.
+		if hasattr(self,"formGetResIntEnGUI"):
+			if self.formGetResIntEnGUI.isVisible():
+				message = 'At least one "New Calculation" interface is active. Are you sure ?'
+		if hasattr(self,"formResults"):
+			if self.formResults.isVisible():
+				message = 'At least one "View Results" interface is active. Are you sure ?'
+
+		if message:
+			# Is the user sure about this?
+			buttonReply = QMessageBox.question(
+				self, 'Are you sure?', message,
+				QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+			if buttonReply == QMessageBox.No:
+				event.ignore()
+			elif buttonReply == QMessageBox.Yes:
+				event.accept()
+		elif not message:
+			event.accept()
 
 def prepareEnvironment():
 	# Set some environment variable for pyinstaller executable function.

@@ -310,10 +310,17 @@ def calcEnergiesSingleCoreNAMD(args):
 
 		# Done.
 
-	# Split it into ten chunks to print the progress on the screen.
-	pairsFilteredChunks = np.array_split(list(pairsFiltered),10)
+	# Split the pairsFiltered into chunks to print the progress on the screen.
+	if len(pairsFiltered) >= 100:
+		numChunks = 100
+	elif len(pairsFiltered) < 10:
+		numChunks = 1
+	else:
+		numChunks = 10
 
-	progBar = pyprind.ProgBar(10)
+	pairsFilteredChunks = np.array_split(list(pairsFiltered),numChunks)
+
+	progBar = pyprind.ProgBar(numChunks)
 
 	# Perform the calculations in chunks
 	percent = 0
@@ -327,7 +334,7 @@ def calcEnergiesSingleCoreNAMD(args):
 			return 'SystemExit'
 
 		progBar.update()
-		percent = percent + 10
+		percent = percent + 100/float(numChunks)
 		logger.info('Completed calculation percentage: %s' % percent)
 
 	logger.info('Completed a pairwise energy calculation thread.')
@@ -363,8 +370,13 @@ def calcEnergiesNAMD(params):
 		global pool
 		pool.terminate()
 		#time.sleep(5)
-		errorSuicide(params,'Keyboard interrupt detected. Aborting now',
-			removeOutput=True)
+		if sys.stdin.isatty():
+			if not click.confirm('Would you like to delete the output folder?', default=True):
+				errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=False)
+			else:
+				errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=True)
+		else:
+			errorSuicide(params,'GUI interrupt detected. Aborting now.',removeOutput=False)
 
 	signal.signal(signal.SIGINT, sigint_handler)
 

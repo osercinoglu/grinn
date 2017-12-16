@@ -21,6 +21,7 @@ import corr
 import resultsGUI
 import common
 import argparse
+from shutil import rmtree
 	
 class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow):
 	stopMonitorProgressThread = pyqtSignal()
@@ -74,8 +75,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.lineEdit_parameterFile.setText('../samples/par_all27_prot_lipid_na.inp')
 
 	def closeEvent(self, event):
-			self.stopCalculation()
-			event.accept() # let the window close
+			# Check whether user agrees to stop calculation (if any)
+			stopReply = self.stopCalculation()
+
+			if stopReply:
+				event.accept() # let the window close
+			else:
+				event.ignore()
 
 	def exitHandler(self):
 		self.stopCalculation()
@@ -118,9 +124,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			self.progressBar_filtering.setValue(percent)
 
 	def incrementCalculationProgressBar(self,percent):
+		if percent > self.progressBar_calculation.value():
+			self.progressBar_calculation.setValue(percent)
 		self.progressBar_calculation.setValue(percent)
 
 	def incrementCorrelationCalculationProgressBar(self,percent):
+		if percent > self.progressBar_correlation.value():
+			self.progressBar_correlation.setValue(percent)
 		self.progressBar_correlation.setValue(percent)
 
 	def updateETAfilteringLabel(self,etaString):
@@ -134,6 +144,10 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 	def updateStatusBar(self,string):
 		self.statusbar.showMessage(string)
+
+	def updateCalcState(self,string):
+		if hasattr(self,"calcParams"):
+			self.calcParams.calcState = string
 
 	def viewResultsStart(self):
 		self.formResults = resultsGUI.DesignInteractResults(self)
@@ -159,14 +173,30 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		QtWidgets.QMessageBox.information(self,"Done!",message)
 
 	def error(self,message):
-		if hasattr(self,"monitorProgressThread"):
-			self.monitorProgressThread.exit()
-			self.resetProgressElements()
+		#if hasattr(self,"monitorProgressThread"):
+		#	if self.monitorProgressThread: # it could exist, but with None value
+		#		self.stopMonitorProgressThread.emit()
+			
+		#	self.resetProgressElements()
+
+		# Remove the output folder:
+		rmtree(self.calcParams.outFolder)
 		QtWidgets.QMessageBox.information(self,"Error!",message)
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
 		if hasattr(self,"processGetResIntEn"):
+			if not self.processGetResIntEn:
+				return True
+
+			# Is the user sure about this?
+			buttonReply = QtWidgets.QMessageBox.question(
+				self, 'Are you sure?', "Are you sure you want to stop the calculation?",
+				QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+			if buttonReply == QtWidgets.QMessageBox.No:
+				return False
+			elif buttonReply == QtWidgets.QMessageBox.Yes:
+				pass
 
 			if self.processGetResIntEn:
 				# Stop the calculation
@@ -176,11 +206,28 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			# Stop monitoring
 			self.stopMonitorProgressThread.emit()
 
-			# Reset all progress elements.
-			self.resetProgressElements()
+			self.monitorProgressThread = None
 
 			# Reset calculation thread
 			self.processGetResIntEn = None
+
+			# Check calculation state: if it is 'Corr', ask the user about removing output folder.
+			# If not, just remove the output folder.
+			if self.calcParams.calcState == 'Corr':
+				buttonReply = QtWidgets.QMessageBox.question(
+					self, 'Remove output folder?', "Would you like to delete the output folder ?",
+				QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+				if buttonReply == QtWidgets.QMessageBox.No:
+					pass
+				elif buttonReply == QtWidgets.QMessageBox.Yes:
+					rmtree(self.calcParams.outFolder)
+			elif self.calcParams.calcState in ['Filtering','Calc']:
+				rmtree(self.calcParams.outFolder)
+
+			# Return True in case this was called by exit window.
+			return True
+		else:
+			return True
 
 	def resetProgressElements(self):
 
@@ -298,8 +345,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			self.updateETAcorrelationLabel)
 		self.monitorProgressThread.updateStatusBar.connect(
 			self.updateStatusBar)
+		self.monitorProgressThread.updateCalcState.connect(
+			self.updateCalcState)
 		self.monitorProgressThread.success.connect(self.done)
 		self.monitorProgressThread.error.connect(self.error)
+		self.monitorProgressThread.resetProgressElements.connect(self.resetProgressElements)
 		self.stopMonitorProgressThread.connect(self.monitorProgressThread.stop)
 
 		self.monitorProgressThread.start()
@@ -312,8 +362,10 @@ class monitorProgress(QtCore.QThread):
 	updateETAcalculationLabel = pyqtSignal(str)
 	updateETAcorrelationLabel = pyqtSignal(str)
 	updateStatusBar = pyqtSignal(str)
+	updateCalcState = pyqtSignal(str)
 	success = pyqtSignal(str)
 	error = pyqtSignal(str)
+	resetProgressElements = pyqtSignal()
 
 	def __init__(self,mainWindow,params):
 		QtCore.QThread.__init__(self)
@@ -369,19 +421,22 @@ class monitorProgress(QtCore.QThread):
 					percent = float(matchesFiltering.groups()[0])
 					etaString = 'Filtering progress: ' + getETAstring(start_time,current_time,percent)
 					self.updateETAfilteringLabel.emit(etaString)
-					self.incrementFilteringProgressBar.emit(percent)					
+					self.incrementFilteringProgressBar.emit(percent)
+					self.updateCalcState.emit('Filtering')					
 
 				elif matchesCalculation:
 					percent = float(matchesCalculation.groups()[0])
 					etaString = 'Calculation progress: ' + getETAstring(start_time,current_time,percent)
 					self.updateETAcalculationLabel.emit(etaString)
 					self.incrementCalculationProgressBar.emit(percent)
+					self.updateCalcState.emit('Calc')
 
 				elif matchesCorrelation:
 					percent = float(matchesCorrelation.groups()[0])
 					etaString = 'Correlation progress: ' + getETAstring(start_time,current_time,percent)
 					self.updateETAcorrelationLabel.emit(etaString)
 					self.incrementCorrelationCalculationProgressBar.emit(percent)
+					self.updateCalcState.emit('Corr')
 
 				elif 'FINAL:' in line:
 					self.success.emit(line)
@@ -389,6 +444,7 @@ class monitorProgress(QtCore.QThread):
 					self._isRunning = False
 					self.incrementCalculationProgressBar.emit(0)
 					self.incrementCorrelationCalculationProgressBar.emit(0)
+					self.updateCalcState.emit('Idle')
 
 				elif 'ERROR' in line:
 					self.error.emit(line)
@@ -401,12 +457,14 @@ class monitorProgress(QtCore.QThread):
 				self.updateStatusBar.emit(line)
 
 			lastLogLine = i
+		# Reset all progress elements here by calling the signal of this QThread object.
+		self.resetProgressElements.emit()
 
 		self.exit()
 
 	def stop(self):
 		self._isRunning = False
-		#self.terminate()
+		#self.exit()
 
 def main():
 	sys_argv = sys.argv

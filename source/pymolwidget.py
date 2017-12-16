@@ -14,7 +14,6 @@ class PyMolWidget(QGLWidget):
     def __init__(self, parent=None):
         self._enableUi = False
         f = QGLFormat()
-        print('sucesses')
         f.setStencil(True)
         f.setRgba(True)
         f.setDepth(True)

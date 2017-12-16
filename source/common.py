@@ -33,6 +33,7 @@ class parameters(object):
 		self.logger = None
 		self.pairsFiltered = None
 		self.pool = None
+		self.calcState = 'Idle'
 
 # A method to get the path to the resource for pyinstaller onefile executables.
 def resource_path(relative_path):
