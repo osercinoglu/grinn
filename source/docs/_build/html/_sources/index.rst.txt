@@ -10,18 +10,9 @@ Welcome to gRINN's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   introduction
    download
    tutorial
-      dependencies
-      introduction
-      calculateNAMD
-      calculateGMX
-      results
-         pairwise_energies
-         interaction_energy_matrix
-         interaction_energy_correlations
-         residue_correlation_matrix
-         network_analysis
    faq
    credits
    contact
