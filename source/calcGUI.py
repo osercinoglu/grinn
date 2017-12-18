@@ -181,6 +181,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		# Remove the output folder:
 		rmtree(self.calcParams.outFolder)
+		print(message)
 		QtWidgets.QMessageBox.information(self,"Error!",message)
 
 	def stopCalculation(self):
@@ -447,7 +448,12 @@ class monitorProgress(QtCore.QThread):
 					self.updateCalcState.emit('Idle')
 
 				elif 'ERROR' in line:
-					self.error.emit(line)
+					# Detect whether this is a GMX error by scanning the rest of the lines.
+					lines_trail = ''.join(lines[i:])
+					if 'gmx' in lines_trail:
+						self.error.emit(lines_trail)
+					else:
+						self.error.emit(line)
 					continueFlag = True
 					self._isRunning = False
 

@@ -397,8 +397,9 @@ def calcEnergiesNAMD(params):
 	# see the calcEnergiesSingleCoreNAMD method)
 	
 	if 'SystemExit' in results:
+		removeOutput = True if sys.stdin.isatty() else False
 		errorSuicide(params,'Fatal error while calling NAMD executable.',
-			removeOutput=True)
+			removeOutput=removeOutput)
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
@@ -680,7 +681,6 @@ def tpr2pdb(params,tpr,pdb,gmxGroup):
 		proc.expect(u'Select a group:.*')
 		#proc.logfile = sys.stdout
 	except pexpect.EOF:
-		print('error')
 		return False, proc.before
 
 	proc.send(gmxGroup)
@@ -877,7 +877,7 @@ def getParams(args):
 		isPDB,messageOut = tpr2pdb(params,params.tpr,'dummy.pdb','System')
 		if not isPDB:
 			message = 'Could not extract a structure from input TPR.'
-			message = message + ' Executable produced the following :\n' 
+			message = message + ' Executable produced the following : ' 
 			message = message + messageOut
 			return params, False, message
 		else:
