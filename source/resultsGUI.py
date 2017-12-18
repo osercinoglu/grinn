@@ -42,6 +42,8 @@ class viewResultsParams(object):
 		self.iecPair1 = None
 		self.iecPair2 = None
 		self.vmaxIEM = 8
+		self.nwInclCovBonds = True
+		self.nwIntEnCutoff = 1
 
 class MyMplCanvas(FigureCanvas):
 	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
@@ -305,7 +307,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		files = ['energies_intEnTotal.csv','energies_intEnElec.csv','energies_intEnVdW.csv',
 		'energies_intEnMeanTotal.dat','energies_intEnMeanElec.dat','energies_intEnMeanVdW.dat',
 		'system_dry.pdb']
-		filePaths = [folderPath+'/'+x for x in files]
+		filePaths = [os.path.join(folderPath,x) for x in files]
 		for path in filePaths:
 			if not os.path.exists(path):
 				loadingMessage = QMessageBox.critical(self,"Error","I looked for file %s and could not find it.\n"
@@ -469,6 +471,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
+			self.checkBox_nwInclCovBonds.clicked.connect(self.updateNetwork)
+			self.doubleSpinBox_nwIntEnCutoff.valueChanged.connect(self.updateNetwork)
 			return True
 		else:
 			return False
@@ -829,6 +833,26 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 	def updateShortestPathsTable(self,row,column):
 		selectedPath = str(self.tableWidget_ShortestPaths.item(row,0).text())
 		self.updateProteinShortestPaths(selectedPath)
+
+	def updateNetwork(self):
+		state_inclCov = self.checkBox_nwInclCovBonds.checkState()
+		if state_inclCov == 2:
+			self.nwInclCovBonds = True
+		elif state_inclCov == 0:
+			self.nwInclCovBonds = False
+
+		self.nwIntEnCutoff = float(self.doubleSpinBox_nwIntEnCutoff.value())
+
+		self.viewResultsParams.networkRO,_ = pen.getProEnNet(
+				inFolder=self.viewResultsParams.outputFolder,
+				includeCovalents=self.nwInclCovBonds,
+				intEnCutoff=self.nwIntEnCutoff,
+				outPrefix=self.viewResultsParams.outputFolder)
+
+		self.degreePlot.update_figure(self,'network-degree')
+		self.bcPlot.update_figure(self,'network-bc')
+		self.ccPlot.update_figure(self,'network-cc')
+
 
 def main():
 	sys_argv = sys.argv
