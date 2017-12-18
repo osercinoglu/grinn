@@ -142,7 +142,7 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 
 	if outName:
 		# Write the network to several file formats readable by network analysis packages?
-		nx.write_gml(network,outName+'RibeiroOrtiz'+'.gml')
+		nx.write_gml(network,os.path.join(outName,'network'+'.gml'))
 
 	return network
 

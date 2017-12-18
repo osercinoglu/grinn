@@ -400,8 +400,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 				self.viewResultsParams.outputFolder,'energies_intEnMeanTotal.dat'))
 			self.viewResultsParams.intEnTotal = pandas.read_csv(os.path.join(
 				self.viewResultsParams.outputFolder,'energies_intEnTotal.csv'))
-			self.viewResultsParams.networkRO,_ = pen.getProEnNet(inFolder=
-				self.viewResultsParams.outputFolder)
+			self.viewResultsParams.networkRO,_ = pen.getProEnNet(
+				inFolder=self.viewResultsParams.outputFolder,
+				outPrefix=self.viewResultsParams.outputFolder)
 
 			intEnCorrTotalPath = os.path.join(
 				self.viewResultsParams.outputFolder,'energies_resIntCorr.csv')
