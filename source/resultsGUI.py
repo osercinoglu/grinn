@@ -595,7 +595,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 			self.updateIECtable(0,0)
 
-
 	def updateFrame(self):
 		# Set the current frame. Don't forget that first frame is the PDB file, so we assign plus one here.
 		self.viewResultsParams.currentFrame = self.horizontalSlider.value()+1
@@ -855,7 +854,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.degreePlot.update_figure(self,'network-degree')
 		self.bcPlot.update_figure(self,'network-bc')
 		self.ccPlot.update_figure(self,'network-cc')
-
 
 def main():
 	sys_argv = sys.argv

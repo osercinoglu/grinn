@@ -284,8 +284,7 @@ def calcEnergiesSingleCoreNAMD(args):
 			f.write('\tfirstTimeStep $ts\n')
 			f.write('\trun 0\n')
 			f.write('\tincr ts 1\n')
-			for i in range(0,skip-1,1):
-			 	f.write('\tcoorfile skip\n')
+		 	#f.write('\tcoorfile skip\n') # Don't need it once you apply stride to tray_dry.dcd in outputfolder
 			f.write('}\n')
 			f.write('coorfile close')
 			f.close()
@@ -627,7 +626,7 @@ def cleanUp(params):
 def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
 	if removeOutput:
-		rmtree(params.outFolder)
+		rmtree(params.outFolder,ignore_error=True)
 	psutil.Process(os.getpid()).kill()
 	os._exit(0)
 
@@ -847,6 +846,12 @@ def getParams(args):
 			trajectory = Trajectory(params.traj)
 		except:
 			message = 'Could not load the DCD file provided. Aborting now.'
+			return params, False, message
+
+		# Check whether stride is higher than the number of frames in trajectory:
+		if params.stride > trajectory.numFrames():
+			message = 'Stride value is higher than the number of frames in the trajectory. '
+			'Please use a lower stride value.'
 			return params, False, message
 
 		# Check whether a parameter file is supplied.
