@@ -81,150 +81,151 @@ class MyStaticMplCanvas(MyMplCanvas):
 
     def update_figure(self,mainWindow,type='time-series'):
 
-    	# Update the figure with new parameters
-    	viewResultsParams = mainWindow.viewResultsParams
-    	intEnTotal = viewResultsParams.intEnTotal
-    	intEnMeanTotal = viewResultsParams.intEnMeanTotal
-    	selectedSourceRes = viewResultsParams.selectedSourceRes
-    	selectedTargetRes = viewResultsParams.selectedTargetRes
-    	selSource_string = getChainResnameResnum(viewResultsParams.system,selectedSourceRes)
-    	selTarget_string = getChainResnameResnum(viewResultsParams.system,selectedTargetRes)
+		# Update the figure with new parameters
+		viewResultsParams = mainWindow.viewResultsParams
+		intEnTotal = viewResultsParams.intEnTotal
+		intEnMeanTotal = viewResultsParams.intEnMeanTotal
+		selectedSourceRes = viewResultsParams.selectedSourceRes
+		selectedTargetRes = viewResultsParams.selectedTargetRes
 
-    	# Rather complicated to select the correct dict key, but it should work.
-    	key1 = selSource_string+'-'+selTarget_string
-    	key2 = selTarget_string+'-'+selSource_string
-    	if key1 not in intEnTotal.columns:
-    		if key2 not in intEnTotal.columns:
-    			s = np.zeros((len(intEnTotal)))
-    			key = key2
-    		else:
-    			s = intEnTotal[key2]
-    			key = key2
-    	else:
-    		s = intEnTotal[key1]
-    		key = key1
-    	
-    	t = np.arange(0,len(intEnTotal),1)
+		if selectedSourceRes and selectedTargetRes:
+			selSource_string = getChainResnameResnum(viewResultsParams.system,selectedSourceRes)
+			selTarget_string = getChainResnameResnum(viewResultsParams.system,selectedTargetRes)
+			# Rather complicated to select the correct dict key, but it should work.
+			key1 = selSource_string+'-'+selTarget_string
+			key2 = selTarget_string+'-'+selSource_string
+			if key1 not in intEnTotal.columns:
+				if key2 not in intEnTotal.columns:
+					s = np.zeros((len(intEnTotal)))
+					key = key2
+				else:
+					s = intEnTotal[key2]
+					key = key2
+			else:
+				s = intEnTotal[key1]
+				key = key1
+	    	
+		t = np.arange(0,len(intEnTotal),1)
 
-    	self.axes.clear()
+		self.axes.clear()
 
-    	currentFrame = mainWindow.viewResultsParams.currentFrame
+		currentFrame = mainWindow.viewResultsParams.currentFrame
 
-    	if type=='time-series':
-    		self.axes.plot(t,s,'b',label=key if key else '')
-    		self.axes.set_xlabel('Frame')
-    		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
-    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+		if type=='time-series':
+			self.axes.plot(t,s,'b',label=key if key else '')
+			self.axes.set_xlabel('Frame')
+			self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
+			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
-    		if currentFrame:
-    			# Plot a tracer dot. Remember that in the following data currentFrame is two minus.
-    			# This is because first frame is from the PDB loaded.
-    			# Also python is zero-indexed.
-    			self.axes.plot(currentFrame-2,s[currentFrame-2],linestyle=None,marker='o',color='red')
+			if currentFrame:
+				# Plot a tracer dot. Remember that in the following data currentFrame is two minus.
+				# This is because first frame is from the PDB loaded.
+				# Also python is zero-indexed.
+				self.axes.plot(currentFrame-2,s[currentFrame-2],linestyle=None,marker='o',color='red')
 
-    	elif type=='distribution':
-    		seaborn.kdeplot(s,ax=self.axes)
-    		self.axes.set_xlabel('Total Non-bonded IE [kcal/mol]')
-    		self.axes.set_ylabel('Kernel Density')
-    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+		elif type=='distribution':
+			seaborn.kdeplot(s,ax=self.axes)
+			self.axes.set_xlabel('Total Non-bonded IE [kcal/mol]')
+			self.axes.set_ylabel('Kernel Density')
+			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
-    	elif type=='bar-plot':
-    		data = pandas.DataFrame(columns=['res','en'])
-    		data['res'] = np.arange(0,len(intEnMeanTotal),1)
-    		data['en'] = intEnMeanTotal[selectedSourceRes,:]
-    		data_nonzero = data[data['en'] != np.float64(0)]
-    		res = data_nonzero['res'].values
-    		en = data_nonzero['en'].values
-    		# Mind that the following does not work in mpl2.1.x
-    		self.axes.barh(bottom=np.arange(0,len(res),1),width=en,color="b")
-    		self.axes.set_yticks(np.arange(0,len(res),1))
-    		self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
-    		self.axes.set_xlabel('Mean IE [kcal/mol]')
-    		self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.1,top=0.99)
+		elif type=='bar-plot':
+			data = pandas.DataFrame(columns=['res','en'])
+			data['res'] = np.arange(0,len(intEnMeanTotal),1)
+			data['en'] = intEnMeanTotal[selectedSourceRes,:]
+			data_nonzero = data[data['en'] != np.float64(0)]
+			res = data_nonzero['res'].values
+			en = data_nonzero['en'].values
+			# Mind that the following does not work in mpl2.1.x
+			self.axes.barh(bottom=np.arange(0,len(res),1),width=en,color="b")
+			self.axes.set_yticks(np.arange(0,len(res),1))
+			self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
+			self.axes.set_xlabel('Mean IE [kcal/mol]')
+			self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.1,top=0.99)
 
-    	elif type in ['iem','rc']:
-    		if type=='iem':
-    			matrix = intEnMeanTotal
-    			vmax = viewResultsParams.vmaxIEM
-    			vmin = -viewResultsParams.vmaxIEM
-    			cmap = seaborn.color_palette("BrBG", 10)
+		elif type in ['iem','rc']:
+			if type=='iem':
+				matrix = intEnMeanTotal
+				vmax = viewResultsParams.vmaxIEM
+				vmin = -viewResultsParams.vmaxIEM
+				cmap = seaborn.color_palette("BrBG", 10)
 
-    		elif type=='rc':
-    			matrix = viewResultsParams.resCorrTotal
-    			vmax = np.max(matrix)
-    			vmin = 0
-    			cmap = 'Blues'
+			elif type=='rc':
+				matrix = viewResultsParams.resCorrTotal
+				vmax = np.max(matrix)
+				vmin = 0
+				cmap = 'Blues'
 
-    		if len(matrix) > 100:
-    			annot = False
-    		else:
-    			annot = True
+			if len(matrix) > 100:
+				annot = False
+			else:
+				annot = True
 
-    		hm = seaborn.heatmap(matrix,vmax=vmin,vmin=vmax,square=True,cmap=cmap,annot=annot,ax=self.axes)
+			hm = seaborn.heatmap(matrix,vmax=vmin,vmin=vmax,square=True,cmap=cmap,annot=annot,ax=self.axes)
 
-    		hm.set_xticklabels(hm.get_xticklabels(), rotation = 60)
-    		hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
+			hm.set_xticklabels(hm.get_xticklabels(), rotation = 60)
+			hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
 
-    		xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
-    		xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
-    		self.axes.set_xticks(xticks)
-    		self.axes.set_xticklabels(xticklabels,fontsize=7)
-    		self.axes.set_yticks(xticks)
-    		self.axes.set_yticklabels(xticklabels,fontsize=7)
-    		self.axes.set_xlabel('Residue')
-    		self.axes.set_ylabel('Residue')
+			xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
+			xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
+			self.axes.set_xticks(xticks)
+			self.axes.set_xticklabels(xticklabels,fontsize=7)
+			self.axes.set_yticks(xticks)
+			self.axes.set_yticklabels(xticklabels,fontsize=7)
+			self.axes.set_xlabel('Residue')
+			self.axes.set_ylabel('Residue')
 
-    	elif type == 'iec-energies':
-    		pair1_string = viewResultsParams.iecPair1
-    		pair2_string = viewResultsParams.iecPair2
-    		pair1_data = viewResultsParams.intEnTotal[pair1_string].values
-    		pair2_data = viewResultsParams.intEnTotal[pair2_string].values
-    		self.axes.plot(t,pair1_data,'b',label=pair1_string)
-    		self.axes.plot(t,pair2_data,'r',label=pair2_string)
-    		self.axes.set_xlabel('Frame')
-    		self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
-    		self.axes.legend()
-    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+		elif type == 'iec-energies':
+			pair1_string = viewResultsParams.iecPair1
+			pair2_string = viewResultsParams.iecPair2
+			pair1_data = viewResultsParams.intEnTotal[pair1_string].values
+			pair2_data = viewResultsParams.intEnTotal[pair2_string].values
+			self.axes.plot(t,pair1_data,'b',label=pair1_string)
+			self.axes.plot(t,pair2_data,'r',label=pair2_string)
+			self.axes.set_xlabel('Frame')
+			self.axes.set_ylabel('Total Non-bonded IE [kcal/mol]')
+			self.axes.legend()
+			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
-    	elif type == 'iec':
-    		pair1_string = viewResultsParams.iecPair1
-    		pair2_string = viewResultsParams.iecPair2
-    		pair1_data = viewResultsParams.intEnTotal[pair1_string].values
-    		pair2_data = viewResultsParams.intEnTotal[pair2_string].values
-    		self.axes.plot(pair1_data,pair2_data,'b',linestyle='None',marker='o')
-    		self.axes.set_xlabel(pair1_string + ' [kcal/mol]')
-    		self.axes.set_ylabel(pair2_string + ' [kcal/mol]')
-    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
+		elif type == 'iec':
+			pair1_string = viewResultsParams.iecPair1
+			pair2_string = viewResultsParams.iecPair2
+			pair1_data = viewResultsParams.intEnTotal[pair1_string].values
+			pair2_data = viewResultsParams.intEnTotal[pair2_string].values
+			self.axes.plot(pair1_data,pair2_data,'b',linestyle='None',marker='o')
+			self.axes.set_xlabel(pair1_string + ' [kcal/mol]')
+			self.axes.set_ylabel(pair2_string + ' [kcal/mol]')
+			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.1,top=0.99)
 
-    	# elif type == 'network':
-    	# 	nx.draw_circular(viewResultsParams.networkRO)
+		# elif type == 'network':
+		# 	nx.draw_circular(viewResultsParams.networkRO)
 
-    	elif type.startswith('network'):
-    		if type == 'network-bc':
-    			metric = nx.betweenness_centrality(viewResultsParams.networkRO)
-    			title = 'Betweenness centrality'
-    		elif type == 'network-cc':
-    			metric = nx.closeness_centrality(viewResultsParams.networkRO)
-    			title = 'Closeness centrality'
-    		elif type == 'network-degree':
-    			metric = dict(nx.degree(viewResultsParams.networkRO))
-    			title = 'Degree'
+		elif type.startswith('network'):
+			if type == 'network-bc':
+				metric = nx.betweenness_centrality(viewResultsParams.networkRO)
+				title = 'Betweenness centrality'
+			elif type == 'network-cc':
+				metric = nx.closeness_centrality(viewResultsParams.networkRO)
+				title = 'Closeness centrality'
+			elif type == 'network-degree':
+				metric = dict(nx.degree(viewResultsParams.networkRO))
+				title = 'Degree'
 
-    		chainResnameResnums = [getChainResnameResnum(
-    			viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
-    		# Note that the following does not work in mpl=2.1.0
-    		self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
-    		self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
-    		self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
-    		self.axes.set_ylim([0,len(metric.keys())])
-    		self.axes.set_title(title,fontsize=10)
-    		self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.01,top=0.99)
+			chainResnameResnums = [getChainResnameResnum(
+				viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
+			# Note that the following does not work in mpl=2.1.0
+			self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
+			self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
+			self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
+			self.axes.set_ylim([0,len(metric.keys())])
+			self.axes.set_title(title,fontsize=10)
+			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.01,top=0.99)
 
-    	# Note that the following does not work in mpl=2.0.2
-    	# Works fine in mpl=2.1.0 but leaving the newest stable version out until a toolbar issue is fixed in mpl=2.2.0.
-    	#self.fig.set_tight_layout({'pad':0.1})
+		# Note that the following does not work in mpl=2.0.2
+		# Works fine in mpl=2.1.0 but leaving the newest stable version out until a toolbar issue is fixed in mpl=2.2.0.
+		#self.fig.set_tight_layout({'pad':0.1})
 
-    	self.draw()
+		self.draw()
 
 class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindow):
 	
@@ -471,8 +472,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
-			self.checkBox_nwInclCovBonds.clicked.connect(self.updateNetwork)
-			self.doubleSpinBox_nwIntEnCutoff.valueChanged.connect(self.updateNetwork)
+			#self.checkBox_nwInclCovBonds.clicked.connect(self.updateNetwork)
+			#self.doubleSpinBox_nwIntEnCutoff.valueChanged.connect(self.updateNetwork)
+			self.pushButton_updateNetwork.clicked.connect(self.updateNetwork)
 			return True
 		else:
 			return False
