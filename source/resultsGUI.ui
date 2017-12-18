@@ -445,7 +445,7 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>600</width>
+                  <width>700</width>
                   <height>50</height>
                  </size>
                 </property>
@@ -510,11 +510,18 @@
                    </property>
                   </widget>
                  </item>
+                 <item>
+                  <widget class="QPushButton" name="pushButton_updateNetwork">
+                   <property name="text">
+                    <string>Update Network</string>
+                   </property>
+                  </widget>
+                 </item>
                 </layout>
                 <zorder>label_3</zorder>
                 <zorder>doubleSpinBox_nwIntEnCutoff</zorder>
-                <zorder>frame_ProteinView</zorder>
                 <zorder>checkBox_nwInclCovBonds</zorder>
+                <zorder>pushButton_updateNetwork</zorder>
                </widget>
               </item>
               <item>
@@ -561,8 +568,8 @@
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>756</width>
-                       <height>406</height>
+                       <width>100</width>
+                       <height>30</height>
                       </rect>
                      </property>
                      <layout class="QHBoxLayout" name="horizontalLayout_4">

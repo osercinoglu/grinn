@@ -88,22 +88,23 @@ class MyStaticMplCanvas(MyMplCanvas):
 		selectedSourceRes = viewResultsParams.selectedSourceRes
 		selectedTargetRes = viewResultsParams.selectedTargetRes
 
-		if selectedSourceRes and selectedTargetRes:
-			selSource_string = getChainResnameResnum(viewResultsParams.system,selectedSourceRes)
-			selTarget_string = getChainResnameResnum(viewResultsParams.system,selectedTargetRes)
-			# Rather complicated to select the correct dict key, but it should work.
-			key1 = selSource_string+'-'+selTarget_string
-			key2 = selTarget_string+'-'+selSource_string
-			if key1 not in intEnTotal.columns:
-				if key2 not in intEnTotal.columns:
-					s = np.zeros((len(intEnTotal)))
-					key = key2
-				else:
-					s = intEnTotal[key2]
-					key = key2
+		selSource_string = getChainResnameResnum(viewResultsParams.system,selectedSourceRes 
+			if selectedSourceRes else 0)
+		selTarget_string = getChainResnameResnum(viewResultsParams.system,selectedTargetRes 
+			if selectedTargetRes else 0)
+		# Rather complicated to select the correct dict key, but it should work.
+		key1 = selSource_string+'-'+selTarget_string
+		key2 = selTarget_string+'-'+selSource_string
+		if key1 not in intEnTotal.columns:
+			if key2 not in intEnTotal.columns:
+				s = np.zeros((len(intEnTotal)))
+				key = key2
 			else:
-				s = intEnTotal[key1]
-				key = key1
+				s = intEnTotal[key2]
+				key = key2
+		else:
+			s = intEnTotal[key1]
+			key = key1
 	    	
 		t = np.arange(0,len(intEnTotal),1)
 
