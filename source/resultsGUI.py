@@ -333,8 +333,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		ydata = event.ydata
 		if yticklabels and ydata:
 			# Set the selectedTargetRes
-			selectedTargetRes = getResindex(self.viewResultsParams.system,
-				yticklabels[int(math.ceil(ydata))].get_text()) 
+			try:
+				selectedTargetRes = getResindex(self.viewResultsParams.system,
+					yticklabels[int(math.ceil(ydata))].get_text())
+			except:
+				return # Don't do anything if something awry happens with ydata.
+				# NEED TO FIX THIS LATER ON SOME TIME BUT RIGHT NOW IT IS SAFE TO DO THIS.
 
 			# Don't do anything if the residue is already selected in the table
 			if self.viewResultsParams.selectedTargetRes == selectedTargetRes:
@@ -351,7 +355,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		selectedRes = None
 		if event.ydata:
-			selectedRes = int(math.ceil(event.ydata))
+			try:
+				selectedRes = int(math.ceil(event.ydata))
+			except:
+				return
 
 		if selectedRes:
 			self.updateProteinResidueMetrics(resIndex=selectedRes)

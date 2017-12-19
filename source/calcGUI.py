@@ -221,10 +221,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 				if buttonReply == QtWidgets.QMessageBox.No:
 					pass
 				elif buttonReply == QtWidgets.QMessageBox.Yes:
-					rmtree(self.calcParams.outFolder,ignore_errors=True)
+					if os.path.exists(self.calcParams.outFolder):
+						rmtree(self.calcParams.outFolder,ignore_errors=True)
 			elif self.calcParams.calcState in ['Filtering','Calc']:
-				#pass
-				rmtree(self.calcParams.outFolder,ignore_errors=True)
+				if os.path.exists(self.calcParams.outFolder):
+					rmtree(self.calcParams.outFolder,ignore_errors=True)
 
 			# Return True in case this was called by exit window.
 			return True
