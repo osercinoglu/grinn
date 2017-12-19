@@ -25,7 +25,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="FAQ" href="faq.html" />
-    <link rel="prev" title="Download gRINN" href="download.html" />
+    <link rel="prev" title="Obtaining gRINN" href="download.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
   
@@ -43,6 +43,52 @@
             
   <div class="section" id="tutorial">
 <h1>Tutorial<a class="headerlink" href="#tutorial" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="dependencies">
+<h2>Dependencies<a class="headerlink" href="#dependencies" title="Permalink to this headline">¶</a></h2>
+<p>gRINN was designed to work with NAMD or GMX-generated MD simulation trajectories, hence topology, structure and trajectory files are expected. Moreover, the tool <em>interoperates</em> with NAMD or GMX -depending on which type of input data you give as input-, so you will need to provide the location of the NAMD or GROMACS(gmx) executable you’ve used for simulation prior to the start of calculation.</p>
+<p>Since you’re interested in using this tool, you’re probably already a user of either NAMD or GROMACS; however, if the executable is for some reason not installed/located on your system or if you’re just interested in trying out the tool, you should obtain and install them from the respective developers as we can’t distribute them ourselves. Download NAMD <a class="reference external" href="https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=NAMD">here</a>. Download GROMACS <a class="reference external" href="http://www.gromacs.org/Downloads">here</a>. <strong>Please note that downloading NAMD requires registration</strong>. Recommended versions are NAMD 2.12b and GROMACS 5.1.4 (although we expect any NAMD version above 2.9 and any GROMACS 5.x version to work fine with gRINN)</p>
+</div>
+<div class="section" id="preparing-input-data-for-namd-generated-trajectories">
+<h2>Preparing input data (for NAMD-generated trajectories)<a class="headerlink" href="#preparing-input-data-for-namd-generated-trajectories" title="Permalink to this headline">¶</a></h2>
+<p>In this tutorial, we will use sample NAMD data from a short MD simulation of the trypsin enzyme. Therefore, this step is not required for completing the tutorial. You are, however, advised to delete solvent molecules from your input Protein Data Bank (PDB), Protein Structure File (PSF) and DCD files before using gRINN with your own data.</p>
+<p>Due to the way gRINN interoperates with NAMD, deleting solvent molecules from the input PSF/PDB and DCD files is usually necessary before using the tool. gRINN does not offer such functionality, however this can be done using standart software such as <a class="reference external" href="https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=VMD">VMD</a>.</p>
+<p>If you have used psfgen or VMD’s Autopsf plug-in, usually the first PSF/PDB pair generated during system preparation for MD simulation <strong>prior to solvation step</strong> is what you need. The only step that you need to do is to remove the solvent from the DCD trajectory file. This can done by loading the trajectory into VMD and saving the coordinates of only the “protein” into a new DCD file.</p>
+</div>
+<div class="section" id="start-the-application">
+<h2>Start the Application<a class="headerlink" href="#start-the-application" title="Permalink to this headline">¶</a></h2>
+<p>If you have not done already, start gRINN by following the steps below:</p>
+<ul class="simple">
+<li><a class="reference external" href="download.html">Download</a> the archive suitable for your OS (currently only Linux and Mac OSX is supported) and extact the contents to a folder of your choice.</li>
+<li>For Linux: open a terminal in that directory and start gRINN by typing <code class="code docutils literal"><span class="pre">./grinn</span></code>. Alternatively, you can navigate to another directory, open a new terminal and start grinn by typing the full path of grinn.</li>
+<li>For Mac OSX: simply double-click the extracted application bundle. If that fails, follow the steps for Linux.</li>
+</ul>
+</div>
+<div class="section" id="grinn-main-window">
+<h2>gRINN Main Window<a class="headerlink" href="#grinn-main-window" title="Permalink to this headline">¶</a></h2>
+<p>Upon execution of <code class="code docutils literal"><span class="pre">grinn</span></code>, the following window appears:</p>
+<img alt="_images/gRINN_mainWindow.png" src="_images/gRINN_mainWindow.png" />
+<p>This is the main window of gRINN. Several links at the bottom direct the user to respective sections of this website.</p>
+<p>gRINN offers two interfaces: <em>New Calculation</em> and <em>View Results</em>. <em>New Calculation</em> is used for pairwise residue interaction energy and interaction energy correlation calculations and offers several options for customizing calculation parameters. <em>View Results</em> is used to visualize results from <em>New Calculation</em> and construct Protein Energy Networks using these data.</p>
+<p>Go ahead and click on <em>New Calculation</em> now.</p>
+</div>
+<div class="section" id="grinn-new-calculation-get-residue-interaction-energies">
+<h2>gRINN New Calculation (Get Residue Interaction Energies)<a class="headerlink" href="#grinn-new-calculation-get-residue-interaction-energies" title="Permalink to this headline">¶</a></h2>
+<p>You should now see a window like the following.</p>
+<img alt="gRINN_NewCalculation.png" src="gRINN_NewCalculation.png" />
+<p>This is the “New Calculation” interface. gRINN New Calculation is used to</p>
+<ul class="simple">
+<li>specify input files, NAMD/GMX executables and other custom calculation settings</li>
+<li>start a interaction energy and/or correlation calculations</li>
+<li>monitor the progress of computation</li>
+<li>view the results once the calculation is complete.</li>
+</ul>
+</div>
+<div class="section" id="grinn-view-results">
+<h2>gRINN View Results<a class="headerlink" href="#grinn-view-results" title="Permalink to this headline">¶</a></h2>
+</div>
+<div class="section" id="grinn-command-line-interface">
+<h2>gRINN Command-Line Interface<a class="headerlink" href="#grinn-command-line-interface" title="Permalink to this headline">¶</a></h2>
+</div>
 </div>
 
 
@@ -64,8 +110,17 @@
 <p class="caption"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction</a></li>
-<li class="toctree-l1"><a class="reference internal" href="download.html">Download gRINN</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Obtaining gRINN</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#dependencies">Dependencies</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#preparing-input-data-for-namd-generated-trajectories">Preparing input data (for NAMD-generated trajectories)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#start-the-application">Start the Application</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-main-window">gRINN Main Window</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-new-calculation-get-residue-interaction-energies">gRINN New Calculation (Get Residue Interaction Energies)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-view-results">gRINN View Results</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-command-line-interface">gRINN Command-Line Interface</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="faq.html">FAQ</a></li>
 <li class="toctree-l1"><a class="reference internal" href="contact.html">Contact</a></li>
 </ul>
@@ -74,7 +129,7 @@
 <h3>Related Topics</h3>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
-      <li>Previous: <a href="download.html" title="previous chapter">Download gRINN</a></li>
+      <li>Previous: <a href="download.html" title="previous chapter">Obtaining gRINN</a></li>
       <li>Next: <a href="faq.html" title="next chapter">FAQ</a></li>
   </ul></li>
 </ul>
