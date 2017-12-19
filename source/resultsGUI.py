@@ -375,9 +375,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		xdata = event.xdata
 		ydata = event.ydata
 
-		# Get the axis included in intEnMeanMat MplStaticCanvas object
-		axes = self.intEnMeanMat.fig.gca()
-
 		# Get the indices clicked on.
 		selectedSourceRes = int(math.ceil(xdata))
 		selectedTargetRes = int(math.ceil(ydata))
@@ -392,6 +389,16 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.viewResultsParams.selectedTargetRes = selectedTargetRes
 
 		self.updateProteinResiduePairs()
+
+	def onClick_resCorrTotalMat(self,event):
+
+		# Only process if resCorr data is loaded.
+		if not self.viewResultsParams.resCorrTotal:
+			return
+		else:
+			# Redirect the call back to intEnMeanMat callback
+			# (functionality is the same.)
+			self.onClick_intEnMeanMat(self,event)
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(
@@ -477,6 +484,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnBarPlot)
 			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
 			self.verticalSlider_IEM.valueChanged.connect(self.updateIEMrange)
+			self.resCorrTotalMat.fig.canvas.mpl_connect('button_press_event',self.onClick_resCorrTotalMat)
 			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
 			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
