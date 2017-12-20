@@ -161,21 +161,39 @@
 <p>The black frame includes a text box and a button for selecting an output folder. Upon selecting an output folder by using the button, the contents of that folder (if it is a valid gRINN output folder) will be loaded, discarding the currently displayed output (if there’s any).</p>
 <p>The red frame includes an embedded molecular viewer (which is a PyMol instance) that is updated upon interaction with the blue frame UI elements. How this occurs is explained in the relevant section of for each tab in the following. The PyMol viewer allows zoom-in and out (rmb), rotation(lmb while on protein) and translation (middle mouse button) via interactions with the mouse.</p>
 <p>The blue frame includes UI elements, organized into several tab panels. The results displayed in this section are extracted from the files included in the output folder. The content of each tab is explained below.</p>
-<div class="section" id="pairwise-interaction-energies">
-<h3>Pairwise Interaction Energies<a class="headerlink" href="#pairwise-interaction-energies" title="Permalink to this headline">¶</a></h3>
+<div class="section" id="pairwise-energies">
+<h3>Pairwise Energies<a class="headerlink" href="#pairwise-energies" title="Permalink to this headline">¶</a></h3>
+<p><em>Pairwise Energies</em> tab includes several UI elements that display individual pairwise residue interaction energies. The UI looks like the following:</p>
+<img alt="_images/gRINN_viewResultsPairwiseEnergies.png" src="_images/gRINN_viewResultsPairwiseEnergies.png" />
+<p>On the left, a table shows you average interaction energies between selected pairs of residues. Due to the excessively high number of all possible pairwise interactions even in a small protein, not all pairs are displayed at once in this table. Instead, only one interaction pair is selected at one time via clicking relevant cells of the table. <strong>The selected item</strong> of the first column determines the first residue in an interaction pair. <strong>The selected item</strong> of the second column determines the second residue in an interaction pair.</p>
+<p>So, for example, if you click on residue EGLN64 in the leftmost column, the average interaction energies with all other residues with this residue are displayed in the third column of the table. In addition to this, the vertical bar plot right next to the table is updated to reflect non-zero interaction energies of all other residues with the residue selected in the leftmost column of the table. If you then click on EASN34 in the second column, the interaction pair is updated as EGLN64 and EASN34. This will cause the plots in the right hand side of this tab to reflect interaction energy time series and distribution of these two residues over the trajectory frames.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">gRINN identifies residues with chain ID, amino acid type and the residue number. For example, EASN34 here just means the residue 34 (ASN) of chain E in the protein structure.</p>
+</div>
+<p>Once you select an interaction pair this way, the protein structure that is displayed in the molecular viewer embedded on the right will reflect this pair of residues as well.</p>
+<div class="admonition note">
+<p class="first admonition-title">Note</p>
+<p class="last">gRINN uses kcal/mol as the energy unit.</p>
+</div>
 </div>
 <div class="section" id="interaction-energy-matrix">
 <h3>Interaction Energy Matrix<a class="headerlink" href="#interaction-energy-matrix" title="Permalink to this headline">¶</a></h3>
+<p><em>Interaction Energy Matrix</em> tab includes a heat map that displays average interaction energies between all pairs of residues. This heatmap is included to get an overall view of the residue interactions in the structure:</p>
+<img alt="_images/gRINN_viewResultsInteractionEnergyMatrix.png" src="_images/gRINN_viewResultsInteractionEnergyMatrix.png" />
 </div>
 <div class="section" id="interaction-energy-correlations">
 <h3>Interaction Energy Correlations<a class="headerlink" href="#interaction-energy-correlations" title="Permalink to this headline">¶</a></h3>
+<img alt="_images/gRINN_viewResultsInteractionEnergyCorrelations.png" src="_images/gRINN_viewResultsInteractionEnergyCorrelations.png" />
 </div>
 <div class="section" id="residue-correlation-matrix">
 <h3>Residue Correlation Matrix<a class="headerlink" href="#residue-correlation-matrix" title="Permalink to this headline">¶</a></h3>
+<img alt="_images/gRINN_viewResultsResidueCorrelationMatrix.png" src="_images/gRINN_viewResultsResidueCorrelationMatrix.png" />
 </div>
 <div class="section" id="network-analysis">
 <h3>Network Analysis<a class="headerlink" href="#network-analysis" title="Permalink to this headline">¶</a></h3>
-<p>Network analysis content (extensive discussion…)</p>
+<img alt="_images/gRINN_viewResultsNetworkResidueMetrics.png" src="_images/gRINN_viewResultsNetworkResidueMetrics.png" />
+<img alt="_images/gRINN_viewResultsNetworkShortestPaths.png" src="_images/gRINN_viewResultsNetworkShortestPaths.png" />
 <p>HERE MAYBE SOME NOTE TO GIVE THE USER A TASK TO COMPARE THE BPTI+TRYPSIN STRUCTURES?</p>
 </div>
 <div class="section" id="output-folder-content">
@@ -242,7 +260,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#grinn-view-results">gRINN View Results</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#pairwise-interaction-energies">Pairwise Interaction Energies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pairwise-energies">Pairwise Energies</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#interaction-energy-matrix">Interaction Energy Matrix</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#interaction-energy-correlations">Interaction Energy Correlations</a></li>
 <li class="toctree-l3"><a class="reference internal" href="#residue-correlation-matrix">Residue Correlation Matrix</a></li>

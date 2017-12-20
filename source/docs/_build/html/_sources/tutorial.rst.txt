@@ -159,26 +159,49 @@ The red frame includes an embedded molecular viewer (which is a PyMol instance) 
 
 The blue frame includes UI elements, organized into several tab panels. The results displayed in this section are extracted from the files included in the output folder. The content of each tab is explained below.
 
-Pairwise Interaction Energies
+Pairwise Energies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+*Pairwise Energies* tab includes several UI elements that display individual pairwise residue interaction energies. The UI looks like the following:
+
+.. image:: gRINN_viewResultsPairwiseEnergies.png
+
+On the left, a table shows you average interaction energies between selected pairs of residues. Due to the excessively high number of all possible pairwise interactions even in a small protein, not all pairs are displayed at once in this table. Instead, only one interaction pair is selected at one time via clicking relevant cells of the table. **The selected item** of the first column determines the first residue in an interaction pair. **The selected item** of the second column determines the second residue in an interaction pair.
+
+So, for example, if you click on residue EGLN64 in the leftmost column, the average interaction energies with all other residues with this residue are displayed in the third column of the table. In addition to this, the vertical bar plot right next to the table is updated to reflect non-zero interaction energies of all other residues with the residue selected in the leftmost column of the table. If you then click on EASN34 in the second column, the interaction pair is updated as EGLN64 and EASN34. This will cause the plots in the right hand side of this tab to reflect interaction energy time series and distribution of these two residues over the trajectory frames. 
+
+.. note:: gRINN identifies residues with chain ID, amino acid type and the residue number. For example, EASN34 here just means the residue 34 (ASN) of chain E in the protein structure.
+
+Once you select an interaction pair this way, the protein structure that is displayed in the molecular viewer embedded on the right will reflect this pair of residues as well.
+
+.. note:: gRINN uses kcal/mol as the energy unit.
 
 
 Interaction Energy Matrix
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+*Interaction Energy Matrix* tab includes a heat map that displays average interaction energies between all pairs of residues. This heatmap is included to get an overall view of the residue interactions in the structure:
+
+.. image:: gRINN_viewResultsInteractionEnergyMatrix.png
 
 Interaction Energy Correlations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. image:: gRINN_viewResultsInteractionEnergyCorrelations.png
 
 Residue Correlation Matrix
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. image:: gRINN_viewResultsResidueCorrelationMatrix.png
 
 Network Analysis
 ^^^^^^^^^^^^^^^^
 
-Network analysis content (extensive discussion...)
+.. image:: gRINN_viewResultsNetworkResidueMetrics.png
+
+.. image:: gRINN_viewResultsNetworkShortestPaths.png
+
+
 
 HERE MAYBE SOME NOTE TO GIVE THE USER A TASK TO COMPARE THE BPTI+TRYPSIN STRUCTURES?
 
