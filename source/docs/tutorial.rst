@@ -45,18 +45,25 @@ gRINN New Calculation (Get Residue Interaction Energies)
 
 You should now see a window like the following one:
 
-.. image:: gRINN_NewCalculation.png
+.. image:: gRINN_calcGUI_idle.png
 
-This is the *New Calculation* interface. gRINN New Calculation is used to 
+This is the *New Calculation* interface. gRINN New Calculation is used to: 
 
 * specify input files, NAMD/GMX executables and other custom calculation settings
 * start interaction energy and/or correlation calculations
 * monitor the progress of computation
-* view the results once the calculation is complete.
+* start "View Results" interface once the calculation is complete.
 
 The *New Calculation* UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames. 
 
-The black frame includes UI elements for supplying input files and the output directory. 
+Specifying the input files, output folder and NAMD/GMX executable paths
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The black frame includes UI elements for specifying the input files and the output folder. Full paths to PDB/PSF/DCD files (in case of NAMD data) or TPR/TOP and XTC or TRR files (in case of GROMACS data) can be specified either by typing/pasting the full file path to corresponding text edit boxes or via browsing by clicking the "Browse for..." buttons. 
+
+Output folder specifies the folder in which gRINN results are stored. *Note that the output folder you specify should not exist prior to calculation. "Output Folder" button should be used as a convenience for selecting a parent folder of the output folder path you specify.*
+
+
 
 gRINN View Results
 ------------------

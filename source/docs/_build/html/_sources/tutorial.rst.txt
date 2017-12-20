@@ -45,14 +45,14 @@ gRINN New Calculation (Get Residue Interaction Energies)
 
 You should now see a window like the following one:
 
-.. image:: gRINN_NewCalculation.png
+.. image:: gRINN_calcGUI_idle.png
 
-This is the *New Calculation* interface. gRINN New Calculation is used to 
+This is the *New Calculation* interface. gRINN New Calculation is used to: 
 
 * specify input files, NAMD/GMX executables and other custom calculation settings
 * start interaction energy and/or correlation calculations
 * monitor the progress of computation
-* view the results once the calculation is complete.
+* start "View Results" interface once the calculation is complete.
 
 The *New Calculation* UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames. 
 
