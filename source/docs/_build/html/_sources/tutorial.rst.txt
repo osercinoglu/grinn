@@ -4,9 +4,15 @@ Tutorial
 Dependencies
 ------------
 
-gRINN was designed to work with NAMD or GMX-generated MD simulation trajectories, hence topology, structure and trajectory files are expected. Moreover, the tool *interoperates* with NAMD or GMX -depending on which type of input data you give as input-, so you will need to provide the location of the NAMD or GROMACS(gmx) executable you've used for simulation prior to the start of calculation. 
+gRINN was designed to work with NAMD or GROMACS-generated MD simulation trajectories, hence topology, structure and trajectory files are expected. Moreover, the tool *interoperates* with NAMD or GROMACS -depending on which type of input data you give as input-, so you will need to provide the location of the NAMD or GROMACS(gmx) executable you've used for simulation prior to the start of calculation. 
 
-Since you're interested in using this tool, you're probably already a user of either NAMD or GROMACS; however, if the executable is for some reason not installed/located on your system or if you're just interested in trying out the tool, you should obtain and install them from the respective developers as we can't distribute them ourselves. Download NAMD `here <https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=NAMD>`_. Download GROMACS `here <http://www.gromacs.org/Downloads>`_. **Please note that downloading NAMD requires registration**. Recommended versions are NAMD 2.12b and GROMACS 5.1.4 (although we expect any NAMD version above 2.9 and any GROMACS 5.x version to work fine with gRINN)
+Since you're interested in using this tool, you're probably already a user of either NAMD or GROMACS; however, if the executable is for some reason not installed/located on your system or if you're just interested in trying out the tool, you should obtain and install them from the respective developers as we can't distribute them ourselves. 
+
+Download NAMD `here <https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=NAMD>`_. **(Please use a non-CUDA multicore version)**
+
+Download GROMACS `here <http://www.gromacs.org/Downloads>`_. 
+
+**Please note that downloading NAMD requires registration**. Recommended versions are NAMD 2.12b and GROMACS 5.1.4 (although we expect any NAMD version above 2.9 and any GROMACS 5.x version to work fine with gRINN)
 
 Preparing input data (for NAMD-generated trajectories)
 ------------------------------------------------------
@@ -54,12 +60,106 @@ This is the *New Calculation* interface. gRINN New Calculation is used to:
 * monitor the progress of computation
 * start "View Results" interface once the calculation is complete.
 
-The *New Calculation* UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames. 
+The *New Calculation* UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames. We shall first describe the interface, then load sample NAMD data and start a calculation.
 
-The black frame includes UI elements for supplying input files and the output directory. 
+Input files, output folder and NAMD/GMX executable paths
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The black frame includes UI elements for specifying the input files and the output folder. Full paths to PDB/PSF/DCD files (in case of NAMD data) or TPR/TOP and XTC or TRR files (in case of GROMACS data) can be specified either by typing/pasting the full file path to corresponding text edit boxes or via browsing by clicking the *"Browse for..."* buttons. 
+
+*Output folder* specifies the folder in which gRINN results are stored. *Note that the output folder you specify should not exist prior to calculation. "Output Folder" button should be used as a convenience for selecting a parent folder of the output folder path you specify.*
+
+For NAMD, at least one additional parameter file, containing the parameters included in the force-field you've used for simulation, is required. If you've used more than one parameter file, you can specify the full paths to these files in the text box by leaving one blank space between them. Alternatively, you can put all parameter files in the same directory and then select them via "Browse for Parameter File (NAMD)" button.
+
+Calculation settings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The blue frame includes UI elements for specifying the settings used for non-bonded pairwise residue interaction energy calculations. 
+
+*Solute dielectric (NAMD)* specifies the dielectric constant that is used while computing the electrostatic component of the interaction energy (*dielectric* keyword in the NAMD configuration file). The default value is 1.0, which means that  the electrostatic interactions will not be modified. Any value larger than this value lessens the electrostatic forces. More information can be found in `NAMD User Guide <http.//www.ks.uiuc.edu/Research/namd/2.12/ug.pdf>`_.
+
+*Selection 1* and *Selection 2* define custom atom selections that include residue groups between which non-bonded interaction energies will be computed. `ProDy atom selection syntax <http://prody.csb.pitt.edu/tutorials/prody_tutorial/selection.html>`_ is used here. 
+
+.. note:: This setting is useful if you're only interested in pairwise residue interactions in a specific subset of your protein. If you want a full characterization, leave these selection at the default setting (all). Note that using a custom residue selection here will also lead to incorrect Protein Energy Network (PEN) construction later on while using the "View Results" interface.
+
+*Percent cutoff* and *Filtering distance cutoff* settings specify criteria for selecting pairs of residues between which non-bonded interaction energies will be computed. Default values are 60% and 12 Angstroms, meaning that only pairs of residues whose centers-of-mass come closer than 12 Angstroms in at least 60 percent of trajectory frames will be included. For NAMD calculations, this specifies the cutoff distance for non-bonded interactions as well.
+
+*Trajectory stride* specifies a stride value for the input trajectory. For example, if you have 1000 frames in your trajectory and set a value of 10 here, every 10th frame will be included in the calculation, yielding a total of 100 frames. Default stride value is 1 (all frames are included).
+
+*Number of processors* specify the number of CPU cores to be used. The default value is the number of cores available in your system. This option is useful in cases where you have another CPU-intensive process running in the background and don't want to employ all available resources for gRINN.
+
+Correlation settings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The red frame includes UI elements for activating residue interaction energy correlation (Pearson's product moment).
+
+*Calculate residue interaction correlation as well* check box enables/disables correlation calculation between interaction energy time series.
+
+*Average interaction energy cutoff* specifies a cutoff for correlation calculations. Interactions with mean energy values below this cutoff value will be excluded from correlation calculations.
+
+.. note:: Correlations are reported only if the value is significant (i.e. Pearson's r above 0.4) to reduce the noise in the reported data and maintain the output file size.
+
+
+Starting and monitoring the calculation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The yellow frame on the right side of the UI includes two buttons for starting and stopping the calculation and three progress bars to monitor the completed percent of the three steps involved in calculation. Finally at the bottom a button to start *View Results* interface is included, which becomes activated only upon successfull completion of an interaction energy calculation task.
+
+*CALCULATE* button, when pressed, will first check the input (files, settings, whether the output folder exists, etc.). If valid input is detected, computation starts with filtering of interacting pairs. Pairwise residue interaction energies are computation in the second step. Final step, correlation, is done only if the corresponding checkbox is selected.
+
+*STOP* button is for stopping the operation of gRINN. This is useful if you notice that you need to change a setting after starting the operation or simply want to cancel it. 
+
+.. note:: Note that the *STOP* button **does not** pause the operation. You need to start all over again if you click on this button (A warning is spawned for confirmation to prevent accidental clicking here).
+
+Start calculation with sample NAMD data
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Let's load some sample data and start a calculation to see how gRINN works. Click on *load sample NAMD data and settings*.
+
+You will see that the input file UI elements are now populated with some values. The top three text boxes include paths to PDB, PSF and DCD files from a 50 nanoseconds-long MD simulation of bovine cationic trypsin (structure extracted from PDB id `3OTJ <http://www.rcsb.org/pdb/explore.do?structureId=3otj>`_). 
+
+.. note:: Note that the PSF and PDB files correspond to a step prior to solvation step during preparation of the system for MD simulation using VMD and psfgen. Solvent molecules in the DCD trajectory were removed by using VMD.
+
+.. note:: The DCD file corresponds to an equilibrium stage of simulation (between 25 and 50 nanoseconds). A stride value of 25 was applied in order to reduce the file size bundled with gRINN.
+
+The path of the output folder is set to **grinn_output** in the current working directory. It is safe to change this path as long as it does not exist before starting the calculation.
+
+*The path of the NAMD executable is set to namd2 by default. This requires that a valid NAMD executable is present in the executable search path of your system (in linux, this is the PATH environment variable). If namd2 is not accessible via the executable search path, provide the full path here.*
+
+*Parameter file text box is filled now with the path to the parameter file used for the sample MD simulation.*
+
+Click on *CALCULATE* now. After an initial input checking step, gRINN should start by filtering the residue pairs to be included in interaction energy calculation. Once this is complete, interaction energies will be calculated, followed by equal-time correlation calculations. Depending on the capacity of your computer, the operation should last between a few minutes and an hour or two. You can follow the progress by keeping an eye on the progress bars which will show the estimated amount of remaining time as well.
+
+Once gRINN finishes operation, you will be notified and *VIEW RESULTS* button will be enabled. You can now proceed to viewing the result either by clicking this button or *View Results* button on the gRINN Main Window. 
+
 
 gRINN View Results
 ------------------
+
+Upon starting *View Results* interface, you will be immediately prompted to browse and select an folder containing results from the previous step in gRINN. This is typically the output folder you specified previously. 
+
+Go ahead and select this output folder now.
+
+If the folder is valid, you will see the message *Please click OK to start loading your data...*. Just click OK to proceed.
+
+After some time, another message will appear, saying *A trajectory exists in your output folder. Would you like to load it as well? Warning: This might slow down the display significantly if the trajectory file size is large.*. Click *Yes* to proceed.
+
+.. note:: If you choose *No* here, the trajectory will not be loaded and the sliding bar to control the frame displayed in the molecular viewer embedded in the interface (see below) will be disabled.
+
+Once all of the output is loaded into the UI, you will see the *View Results* interface looking like the following figure:
+
+.. image:: gRINN_viewResults.png
+    :width: 1000px
+
+*View Results* interface can be separated into three main parts based on the functionality of UI elements.
+
+The black frame includes a text box and a button for selecting an output folder. Upon selecting an output folder by using the button, the contents of that folder (if it is a valid gRINN output folder) will be loaded, discarding the currently displayed output (if there's any).
+
+The red frame includes an embedded molecular viewer (which is a PyMol instance) that is updated upon interaction with the blue frame UI elements. How this occurs is explained in the relevant section of for each tab in the following. The PyMol viewer allows zoom-in and out (rmb), rotation(lmb while on protein) and translation (middle mouse button) via interactions with the mouse.
+
+.. note:: Note that the manipulations of protein structure described above via the trackpad is disabled, you must use a mouse for this.
+
+The blue frame includes UI elements, organized into several tab panels. The results displayed in this section are extracted from the files included in the output folder. The content of each tab is explained below.
 
 Pairwise Interaction Energies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -83,6 +183,28 @@ Network Analysis
 Network analysis content (extensive discussion...)
 
 HERE MAYBE SOME NOTE TO GIVE THE USER A TASK TO COMPARE THE BPTI+TRYPSIN STRUCTURES?
+
+
+Output folder content
+^^^^^^^^^^^^^^^^^^^^^
+
+If the gRINN completed the operation successfully, you should see the following files in the output folder:
+
+* traj_dry.dcd
+* system_dry.psf
+* system_dry.pdb
+* network.gml
+* grinn.log
+* energies_resIntCorr.csv
+* energies_resCorr.dat
+* energies_intEnVdW.csv
+* energies_intEnTotal.csv
+* energies_intEnMeanVdW.dat
+* energies_intEnMeanTotalList.dat
+* energies_intEnMeanTotal.dat
+* energies_intEnMeanElec.dat
+* energies_intEnElec.csv
+* energies.pickle
 
 gRINN with GROMACS data
 -----------------------
