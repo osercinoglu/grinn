@@ -157,8 +157,6 @@ The black frame includes a text box and a button for selecting an output folder.
 
 The red frame includes an embedded molecular viewer (which is a PyMol instance) that is updated upon interaction with the blue frame UI elements. How this occurs is explained in the relevant section of for each tab in the following. The PyMol viewer allows zoom-in and out (rmb), rotation(lmb while on protein) and translation (middle mouse button) via interactions with the mouse.
 
-.. note:: Note that the manipulations of protein structure described above via the trackpad is disabled, you must use a mouse for this.
-
 The blue frame includes UI elements, organized into several tab panels. The results displayed in this section are extracted from the files included in the output folder. The content of each tab is explained below.
 
 Pairwise Interaction Energies
