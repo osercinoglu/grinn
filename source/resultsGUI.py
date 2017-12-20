@@ -393,12 +393,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 	def onClick_resCorrTotalMat(self,event):
 
 		# Only process if resCorr data is loaded.
-		if not self.viewResultsParams.resCorrTotal:
+		if not type(self.viewResultsParams.resCorrTotal) == np.ndarray:
+			print('not running this callback')
 			return
 		else:
 			# Redirect the call back to intEnMeanMat callback
 			# (functionality is the same.)
-			self.onClick_intEnMeanMat(self,event)
+			self.onClick_intEnMeanMat(event)
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(
