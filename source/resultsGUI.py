@@ -394,7 +394,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		# Only process if resCorr data is loaded.
 		if not type(self.viewResultsParams.resCorrTotal) == np.ndarray:
-			print('not running this callback')
 			return
 		else:
 			# Redirect the call back to intEnMeanMat callback
