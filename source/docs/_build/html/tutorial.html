@@ -52,7 +52,7 @@
 <h2>Preparing input data (for NAMD-generated trajectories)<a class="headerlink" href="#preparing-input-data-for-namd-generated-trajectories" title="Permalink to this headline">¶</a></h2>
 <p>In this tutorial, we will use sample NAMD data from a short MD simulation of the trypsin enzyme. Therefore, this step is not required for completing the tutorial. You are, however, advised to delete solvent molecules from your input Protein Data Bank (PDB), Protein Structure File (PSF) and DCD files before using gRINN with your own data.</p>
 <p>Due to the way gRINN interoperates with NAMD, deleting solvent molecules from the input PSF/PDB and DCD files is usually necessary before using the tool. gRINN does not offer such functionality, however this can be done using standart software such as <a class="reference external" href="https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=VMD">VMD</a>.</p>
-<p>If you have used psfgen or VMD’s Autopsf plug-in, usually the first PSF/PDB pair generated during system preparation for MD simulation <strong>prior to solvation step</strong> is what you need. The only step that you need to do is to remove the solvent from the DCD trajectory file. This can done by loading the trajectory into VMD and saving the coordinates of only the “protein” into a new DCD file.</p>
+<p>If you have used psfgen or VMD’s Autopsf plug-in, usually the first PSF/PDB pair generated during system preparation for MD simulation <strong>prior to solvation step</strong> is what you need. The only step that you need to do then is to remove the solvent from the DCD . This can done by loading the trajectory into VMD and saving the coordinates of only the “protein” into a new DCD file.</p>
 </div>
 <div class="section" id="start-the-application">
 <h2>Start the Application<a class="headerlink" href="#start-the-application" title="Permalink to this headline">¶</a></h2>
@@ -68,23 +68,46 @@
 <p>Upon execution of <code class="code docutils literal"><span class="pre">grinn</span></code>, the following window appears:</p>
 <img alt="_images/gRINN_mainWindow.png" src="_images/gRINN_mainWindow.png" />
 <p>This is the main window of gRINN. Several links at the bottom direct the user to respective sections of this website.</p>
-<p>gRINN offers two interfaces: <em>New Calculation</em> and <em>View Results</em>. <em>New Calculation</em> is used for pairwise residue interaction energy and interaction energy correlation calculations and offers several options for customizing calculation parameters. <em>View Results</em> is used to visualize results from <em>New Calculation</em> and construct Protein Energy Networks using these data.</p>
+<p>gRINN offers two interfaces: <em>New Calculation</em> and <em>View Results</em>. <em>New Calculation</em> is used for pairwise residue interaction energy and interaction energy correlation calculations (optional).
+<em>View Results</em> is used to visualize results from <em>New Calculation</em> and construct Protein Energy Networks using these data.</p>
 <p>Go ahead and click on <em>New Calculation</em> now.</p>
 </div>
 <div class="section" id="grinn-new-calculation-get-residue-interaction-energies">
 <h2>gRINN New Calculation (Get Residue Interaction Energies)<a class="headerlink" href="#grinn-new-calculation-get-residue-interaction-energies" title="Permalink to this headline">¶</a></h2>
-<p>You should now see a window like the following.</p>
+<p>You should now see a window like the following one:</p>
 <img alt="gRINN_NewCalculation.png" src="gRINN_NewCalculation.png" />
-<p>This is the “New Calculation” interface. gRINN New Calculation is used to</p>
+<p>This is the <em>New Calculation</em> interface. gRINN New Calculation is used to</p>
 <ul class="simple">
 <li>specify input files, NAMD/GMX executables and other custom calculation settings</li>
-<li>start a interaction energy and/or correlation calculations</li>
+<li>start interaction energy and/or correlation calculations</li>
 <li>monitor the progress of computation</li>
 <li>view the results once the calculation is complete.</li>
 </ul>
+<p>The <em>New Calculation</em> UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames.</p>
+<p>The black frame includes UI elements for supplying input files and the output directory.</p>
 </div>
 <div class="section" id="grinn-view-results">
 <h2>gRINN View Results<a class="headerlink" href="#grinn-view-results" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="pairwise-interaction-energies">
+<h3>Pairwise Interaction Energies<a class="headerlink" href="#pairwise-interaction-energies" title="Permalink to this headline">¶</a></h3>
+</div>
+<div class="section" id="interaction-energy-matrix">
+<h3>Interaction Energy Matrix<a class="headerlink" href="#interaction-energy-matrix" title="Permalink to this headline">¶</a></h3>
+</div>
+<div class="section" id="interaction-energy-correlations">
+<h3>Interaction Energy Correlations<a class="headerlink" href="#interaction-energy-correlations" title="Permalink to this headline">¶</a></h3>
+</div>
+<div class="section" id="residue-correlation-matrix">
+<h3>Residue Correlation Matrix<a class="headerlink" href="#residue-correlation-matrix" title="Permalink to this headline">¶</a></h3>
+</div>
+<div class="section" id="network-analysis">
+<h3>Network Analysis<a class="headerlink" href="#network-analysis" title="Permalink to this headline">¶</a></h3>
+<p>Network analysis content (extensive discussion…)</p>
+<p>HERE MAYBE SOME NOTE TO GIVE THE USER A TASK TO COMPARE THE BPTI+TRYPSIN STRUCTURES?</p>
+</div>
+</div>
+<div class="section" id="grinn-with-gromacs-data">
+<h2>gRINN with GROMACS data<a class="headerlink" href="#grinn-with-gromacs-data" title="Permalink to this headline">¶</a></h2>
 </div>
 <div class="section" id="grinn-command-line-interface">
 <h2>gRINN Command-Line Interface<a class="headerlink" href="#grinn-command-line-interface" title="Permalink to this headline">¶</a></h2>
@@ -117,7 +140,15 @@
 <li class="toctree-l2"><a class="reference internal" href="#start-the-application">Start the Application</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#grinn-main-window">gRINN Main Window</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#grinn-new-calculation-get-residue-interaction-energies">gRINN New Calculation (Get Residue Interaction Energies)</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#grinn-view-results">gRINN View Results</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-view-results">gRINN View Results</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pairwise-interaction-energies">Pairwise Interaction Energies</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#interaction-energy-matrix">Interaction Energy Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#interaction-energy-correlations">Interaction Energy Correlations</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#residue-correlation-matrix">Residue Correlation Matrix</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#network-analysis">Network Analysis</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#grinn-with-gromacs-data">gRINN with GROMACS data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#grinn-command-line-interface">gRINN Command-Line Interface</a></li>
 </ul>
 </li>

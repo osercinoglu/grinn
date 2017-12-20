@@ -15,7 +15,7 @@ In this tutorial, we will use sample NAMD data from a short MD simulation of the
 
 Due to the way gRINN interoperates with NAMD, deleting solvent molecules from the input PSF/PDB and DCD files is usually necessary before using the tool. gRINN does not offer such functionality, however this can be done using standart software such as `VMD <https://www.ks.uiuc.edu/Development/Download/download.cgi?PackageName=VMD>`_. 
 
-If you have used psfgen or VMD's Autopsf plug-in, usually the first PSF/PDB pair generated during system preparation for MD simulation **prior to solvation step** is what you need. The only step that you need to do is to remove the solvent from the DCD trajectory file. This can done by loading the trajectory into VMD and saving the coordinates of only the "protein" into a new DCD file.
+If you have used psfgen or VMD's Autopsf plug-in, usually the first PSF/PDB pair generated during system preparation for MD simulation **prior to solvation step** is what you need. The only step that you need to do then is to remove the solvent from the DCD . This can done by loading the trajectory into VMD and saving the coordinates of only the "protein" into a new DCD file.
 
 Start the Application
 ---------------------
@@ -35,7 +35,8 @@ Upon execution of :code:`grinn`, the following window appears:
 
 This is the main window of gRINN. Several links at the bottom direct the user to respective sections of this website. 
 
-gRINN offers two interfaces: *New Calculation* and *View Results*. *New Calculation* is used for pairwise residue interaction energy and interaction energy correlation calculations and offers several options for customizing calculation parameters. *View Results* is used to visualize results from *New Calculation* and construct Protein Energy Networks using these data. 
+gRINN offers two interfaces: *New Calculation* and *View Results*. *New Calculation* is used for pairwise residue interaction energy and interaction energy correlation calculations (optional).  
+*View Results* is used to visualize results from *New Calculation* and construct Protein Energy Networks using these data. 
 
 Go ahead and click on *New Calculation* now.
 
@@ -53,10 +54,40 @@ This is the *New Calculation* interface. gRINN New Calculation is used to
 * monitor the progress of computation
 * view the results once the calculation is complete.
 
-The *New Calculation* UI
+The *New Calculation* UI elements can be grouped into four main parts based on their functionality. These are shown in the snapshot above in various color frames. 
+
+The black frame includes UI elements for supplying input files and the output directory. 
 
 gRINN View Results
 ------------------
+
+Pairwise Interaction Energies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Interaction Energy Matrix
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Interaction Energy Correlations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Residue Correlation Matrix
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+Network Analysis
+^^^^^^^^^^^^^^^^
+
+Network analysis content (extensive discussion...)
+
+HERE MAYBE SOME NOTE TO GIVE THE USER A TASK TO COMPARE THE BPTI+TRYPSIN STRUCTURES?
+
+gRINN with GROMACS data
+-----------------------
+
+
 
 
 

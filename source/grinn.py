@@ -19,13 +19,13 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 
 	def calculateGUI(self):
 		self.formGetResIntEnGUI = calcGUI.DesignInteractCalculate(self)
+		self.formGetResIntEnGUI.show()
 		icon = QtGui.QIcon()
 		pixmap = QtGui.QPixmap(common.resource_path(
 			os.path.join('resources','clover.ico')))
 		icon.addPixmap(pixmap,QtGui.QIcon.Normal, QtGui.QIcon.Off)
 		self.formGetResIntEnGUI.setWindowIcon(icon)
 		self.formGetResIntEnGUI.label_3.setPixmap(pixmap)
-		self.formGetResIntEnGUI.show()
 
 	def resultsGUI(self):
 		self.formResults = resultsGUI.DesignInteractResults(self)
