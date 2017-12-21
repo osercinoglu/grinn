@@ -168,7 +168,7 @@ Pairwise Energies
 
 On the left, a table shows you average interaction energies between selected pairs of residues. Due to the excessively high number of all possible pairwise interactions even in a small protein, not all pairs are displayed at once in this table. Instead, only one interaction pair is selected at one time via clicking relevant cells of the table. **The selected item** of the first column determines the first residue in an interaction pair. **The selected item** of the second column determines the second residue in an interaction pair.
 
-So, for example, if you click on residue EGLN64 in the leftmost column, the average interaction energies with all other residues with this residue are displayed in the third column of the table. In addition to this, the vertical bar plot right next to the table is updated to reflect non-zero interaction energies of all other residues with the residue selected in the leftmost column of the table. If you then click on EASN34 in the second column, the interaction pair is updated as EGLN64 and EASN34. This will cause the plots in the right hand side of this tab to reflect interaction energy time series and distribution of these two residues over the trajectory frames. 
+So, for example, if you click on residue EGLN64 in the leftmost column, the average interaction energies with all other residues with this residue are displayed in the third column of the table. In addition to this, the vertical bar plot right next to the table is updated to reflect non-zero interaction energies of all other residues with the residue selected in the leftmost column of the table. If you then click on EASN34 in the second column or on the bar plot, the interaction pair is updated as EGLN64 and EASN34. This will cause the plots in the right hand side of this tab to reflect interaction energy time series and distribution of these two residues over the trajectory frames. 
 
 .. note:: gRINN identifies residues with chain ID, amino acid type and the residue number. For example, EASN34 here just means the residue 34 (ASN) of chain E in the protein structure.
 
@@ -191,15 +191,57 @@ Double-clicking on a cell on this heatmap will update the right pane molecule vi
 Interaction Energy Correlations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+*Interaction Energies Correlations* tab includes several UI elements that display data related to equal-time linear correlations between interaction energy time series:
+
 .. image:: gRINN_viewResultsInteractionEnergyCorrelations.png
+
+The table here displays a list of the pairs of residues involved in a specific correlation (with the first two columns indicating the two residues in the first interaction pair and the third and fourth columns indicating the two residues in the second interaction pair). The last column shows the correlation value.
+
+Clicking a row in this table will update the two plots next to the table to reflect the two interactions involved in the correlation against the trajectory frames (top) as well as each other (bottom). The right pane molecular viewer will be updated to highlight the four residues.
 
 Residue Correlation Matrix
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+*Residue Correlation Matrix* tab includes a heatmap showing the "Residue Correlation Matrix" (RC Matrix) that is constructed using the interaction energy correlations. RC matrix is one way of extracting dynamical correlation information from pairs of residues in the structure.
+
 .. image:: gRINN_viewResultsResidueCorrelationMatrix.png
+
+The matrix is constructed to be able to map the correlation values on the three dimensional structure [KK2009]_. In other words, the correlation values are translated into a residue-residue type of information. The matrix has the size of NxN (N being the number of residues in the structure) and is constructed by considering the mutual occurence of a given pair of residues in both sides of a correlation. For example, if the correlation between the interaction EGLY142-ELYS145 and the interaction EILE16-ELYS145 is 0.6 and the correlation between the interaction EGLY16-ELYS223 and the interaction EGLY142-EASP191 is -0.5, the residue correlation between EILE16 and EGLY142 would be the sum of the absolute values of these two correlation coefficients (which is 1.1)) [*]_ This summation is performed for all calculated correlations for each residue pair in the structure.
+
+Like the interaction energy matrix, the heatmap can be zoomed-in and out. Double-clicking a cell in the heatmap will highlight the corresponding residue pair in the right pane molecular viewer.
+
+.. [KK2009] Kong, Y., & Karplus, M. (2009). Signaling pathways of PDZ2 domain: A molecular dynamics Interaction Correlation Analysis. Proteins, 74(1), 145–154. http://doi.org/10.1002/prot.22139
+
+.. [*] Note that the values given here are exemplary and do not reflect the values you've just inspected in the previous tab.
 
 Network Analysis
 ^^^^^^^^^^^^^^^^
+
+*Network Analysis* tab includes UI elements for inspecting the node-level (residue-level) metrics and shortest paths in a Protein Energy Network (PEN) constructed using the interaction energy matrix.
+
+The term "Protein Energy Network" has been used first by Vijayabaskar and Vishveshwara [VV2010]_ in a study where they constructed such networks of protein structures using pairwise residue interaction energies computed over ensembles of structure obtained from MD simulations.
+
+.. [VV2010] Vijayabaskar, M. S., & Vishveshwara, S. (2010). Interaction Energy Based Protein Structure Networks. Biophysical Journal, 99(11), 3704–3715. http://doi.org/10.1016/j.bpj.2010.08.079
+
+In this method, a network is constructed by taking individual residues as nodes and average interaction energies between each residue pair as the "weight" for edges added between these residue nodes. Once the network is constructed, local (node-based) network metrics, such as degree, closeness and betweenness centralities can be obtained to assess the importance of each residue in terms of protein stability and dynamics.
+
+gRINN constructs such a network once you load an output folder into the *View Results* interface. Each residue in the structure is taken as a node in the PEN. Unlike the original approach of [VV2010]_ where edge weights are assigned simply the average interaction energy, gRINN specifies the edge weights by following the approach used by [RO2014]_. Accordingly, an edge is added using the following **general** criteria:
+
+.. math:: 
+
+   {\omega_{ij} = \begin{cases} 0.99 \text{ , if i and j are covalently bound} \\
+   \chi_{ij} \text{ , otherwise} \end{cases}}
+
+In the following equation, :math:`{\omega_{ij}}` denotes the edge weight between residues i and j. :math:`{\chi_{ij}}` denotes the average interaction energy between residues i and j. Note that the addition of edges between covalently bound residues is optional (see below). 
+
+:math:`{\chi_{ij}}` is computed using the formula by [RO2014]_ as well:
+
+.. math::
+
+   {\chi_{ij} = 0.5 \{ 1 - (\epsilon_{ij} - \epsilon_{av})/5 \epsilon_{rmsd} \} }   
+ 
+
+.. [RO2014] Andre A. S. T. Ribeiro and Vanessa Ortiz (2014). Determination of Signaling Pathways in Proteins through Network Theory: Importance of the Topology. Journal of Chemical Theory and Computation 2014 10 (4), 1762-1769. DOI: 10.1021/ct400977r
 
 .. image:: gRINN_viewResultsNetworkResidueMetrics.png
 
