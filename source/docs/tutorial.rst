@@ -180,9 +180,13 @@ Once you select an interaction pair this way, the protein structure that is disp
 Interaction Energy Matrix
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-*Interaction Energy Matrix* tab includes a heat map that displays average interaction energies between all pairs of residues. This heatmap is included to get an overall view of the residue interactions in the structure:
+*Interaction Energy Matrix* tab includes a heat map that displays average interaction energies between all pairs of residues:
 
 .. image:: gRINN_viewResultsInteractionEnergyMatrix.png
+
+The heatmap shows so-called energetic "hot-spots" in the protein structure. Many of these spots correspond to secondary structure, disulfide bonds as well as residues that are not sequence neighbors but in close contact with each other in the folder protein structure. The heatmap can be zoomed in & out and saved into a file using the toolbar included. The upper and lower boundaries of the heatmap can be adjusted by using the sliding bar located on the right side of the heatmap.
+
+Double-clicking on a cell on this heatmap will update the right pane molecule viewer to reflect the selected residue pair on the protein structure.
 
 Interaction Energy Correlations
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
