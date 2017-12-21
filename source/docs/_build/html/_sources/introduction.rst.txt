@@ -17,4 +17,4 @@ Main functionality includes:
 
 	* Viewing pairwise interaction energies and their correlations alongside an embedded PyMol molecular viewer.
 	* Protein Energy Network construction and visualization of simple residue-based local network metrics (Degrees, Betweenness Centrality and Closeness Centrality) 
-	* Shortest Path analysis.
+	* Shortest path analysis.
