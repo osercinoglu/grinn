@@ -16,7 +16,9 @@ datas = [('../resources/clover.ico','resources'),
 #python_bins = glob.glob('/Users/onur/anaconda2/lib/*.dylib')
 #binaries = [(binary,binary.split('/')[-1]) for binary in python_bins]
 
-binaries = [('/Users/onur/anaconda2/lib/libpython2.7.dylib','.')]
+binaries = [('/Users/onur/anaconda2/lib/libpython2.7.dylib','.'),
+('/Users/onur/anaconda2/lib/libGLEW.1.13.dylib','.'),
+('/Users/onur/anaconda2/lib/libGLEW.1.13.0.dylib','.')]
 
 a = Analysis(['../grinn.py'],
              pathex=['/Users/onur/repos/gRINN/source',
