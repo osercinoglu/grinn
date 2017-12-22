@@ -68,11 +68,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		self.lineEdit_namd2.setText('gmx')
 		self.lineEdit_pdb.setText(common.resource_path(
-			os.path.join('samples','test.tpr')))
+			os.path.join('samples','1eey_md_0_50.tpr')))
 		self.lineEdit_psf.setText(common.resource_path(
-			os.path.join('samples','test.top')))
+			os.path.join('samples','1eey_md_0_50_topol.top')))
 		self.lineEdit_dcd.setText(common.resource_path(
-			os.path.join('samples','test_stride.xtc')))
+			os.path.join('samples','1eey_md_25_50ns_str25.xtc')))
 
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]

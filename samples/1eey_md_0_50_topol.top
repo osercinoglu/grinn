@@ -1,0 +1,49 @@
+;
+;	File 'topol.top' was generated
+;	By user: onur (1000)
+;	On host: BIOE-GAEA
+;	At date: Fri Jul  1 19:01:25 2016
+;
+;	This is a standalone topology file
+;
+;	Created by:
+;	GROMACS:      gmx pdb2gmx, VERSION 5.0.7
+;	Executable:   /usr/local/gromacs/bin/gmx
+;	Library dir:  /usr/local/gromacs/share/gromacs/top
+;	Command line:
+;	  gmx pdb2gmx -f 1eey_abc_protein.pdb -o 1eey_abc_protein_processed.gro -water tip3p -ignh
+;	Force field was read from the standard Gromacs share directory.
+;
+
+; Include forcefield parameters
+#include "charmm27.ff/forcefield.itp"
+
+; Include chain topologies
+#include "topol_Protein_chain_A.itp"
+#include "topol_Protein_chain_B.itp"
+#include "topol_Protein_chain_C.itp"
+
+; Include water topology
+#include "charmm27.ff/tip3p.itp"
+
+#ifdef POSRES_WATER
+; Position restraint for each water oxygen
+[ position_restraints ]
+;  i funct       fcx        fcy        fcz
+   1    1       1000       1000       1000
+#endif
+
+; Include topology for ions
+#include "charmm27.ff/ions.itp"
+
+[ system ]
+; Name
+HLA-A2.1 MHC CLASS I (HEAVY CHAIN); BETA-2-MICROGLOBULIN (LIGHT CHAIN); GP2 PEPTIDE in water
+
+[ molecules ]
+; Compound        #mols
+Protein_chain_A     1
+Protein_chain_B     1
+Protein_chain_C     1
+SOL         24933
+NA               8
