@@ -362,13 +362,21 @@ def calcEnergiesNAMD(params):
 
 	global pool
 	pool = multiprocessing.Pool(params.numCores,worker_init)
- 
+ 	logger = params.logger
+
 	# Catching CTRL+C SIGINT signals.
 	def sigint_handler(signum, frame):
-		params.logger.exception('Keyboard interrupt detected. Aborting now.')
+		params.logger = logger
+
+		print('signal: %s' % signum)
+		parent = psutil.Process(parent_id)
+		for child in parent.children():
+			if child.pid != os.getpid():
+				print("killing child: %s" % child.pid)
+				child.kill()
+		#time.sleep(5)
 		global pool
 		pool.terminate()
-		#time.sleep(5)
 		if sys.stdin.isatty():
 			if not click.confirm('Would you like to delete the output folder?', default=True):
 				errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=False)
@@ -377,6 +385,11 @@ def calcEnergiesNAMD(params):
 		else:
 			errorSuicide(params,'GUI interrupt detected. Aborting now.',removeOutput=False)
 
+		print("killing parent: %s" % parent_id)
+		parent.kill()
+		print("suicide: %s" % os.getpid())
+		psutil.Process(os.getpid()).kill()
+		os._exit(0)
 	signal.signal(signal.SIGINT, sigint_handler)
 
 	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
@@ -385,7 +398,6 @@ def calcEnergiesNAMD(params):
 	# This is a python bug in 2.7
 	params.logger.info('Starting threads for interaction energy calculation...')
 	# Strip logger away from params temporarily to be able to map.
-	logger = params.logger
 	params.logger = None
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
 		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)

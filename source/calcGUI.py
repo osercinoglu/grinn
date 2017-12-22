@@ -21,6 +21,7 @@ import corr
 import resultsGUI
 import common
 import argparse
+import platform
 from shutil import rmtree
 	
 class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow):
@@ -59,6 +60,12 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
+		# On MAC OSX, getcwd() does not work when an app bundle is used.
+		if platform.system() == 'Darwin':
+			homepath = os.path.expanduser("~")
+			self.lineEdit_outputFolder.setText(
+				os.path.join(homepath,'grinn_output'))
+
 		self.lineEdit_namd2.setText('gmx')
 		self.lineEdit_pdb.setText(common.resource_path(
 			os.path.join('samples','test.tpr')))
@@ -70,6 +77,12 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
+
+		# On MAC OSX, getcwd() does not work when an app bundle is used.
+		if platform.system() == 'Darwin':
+			homepath = os.path.expanduser("~")
+			self.lineEdit_outputFolder.setText(
+				os.path.join(homepath,'grinn_output'))
 
 		self.lineEdit_namd2.setText('namd2')
 		self.lineEdit_pdb.setText(common.resource_path(
