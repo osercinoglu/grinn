@@ -296,15 +296,15 @@ References
 Output folder content
 ^^^^^^^^^^^^^^^^^^^^^
 
-If the gRINN completed the operation successfully, you should see the following files in the output folder:
+If gRINN completes the operation successfully, you should see the following files in the output folder:
 
 * traj_dry.dcd
 * system_dry.psf
 * system_dry.pdb
 * network.gml
 * grinn.log
-* energies_resIntCorr.csv
-* energies_resCorr.dat
+* energies_resIntCorr.csv (if you enabled interaction energy correlation)
+* energies_resCorr.dat (if you enabled interaction energy correlation)
 * energies_intEnVdW.csv
 * energies_intEnTotal.csv
 * energies_intEnMeanVdW.dat
