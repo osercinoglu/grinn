@@ -6,9 +6,21 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1200</width>
+    <width>1300</width>
     <height>691</height>
    </rect>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+    <horstretch>1</horstretch>
+    <verstretch>1</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1300</width>
+    <height>0</height>
+   </size>
   </property>
   <property name="windowTitle">
    <string>gRINN: View Results</string>
@@ -24,7 +36,16 @@
      <verstretch>0</verstretch>
     </sizepolicy>
    </property>
+   <property name="minimumSize">
+    <size>
+     <width>1300</width>
+     <height>0</height>
+    </size>
+   </property>
    <layout class="QVBoxLayout" name="verticalLayout_2">
+    <property name="sizeConstraint">
+     <enum>QLayout::SetMaximumSize</enum>
+    </property>
     <item>
      <widget class="QFrame" name="frame_Top">
       <property name="minimumSize">
@@ -73,10 +94,16 @@
     <item>
      <widget class="QFrame" name="frame_Main">
       <property name="sizePolicy">
-       <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
-        <horstretch>0</horstretch>
-        <verstretch>0</verstretch>
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>1</horstretch>
+        <verstretch>1</verstretch>
        </sizepolicy>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>1300</width>
+        <height>0</height>
+       </size>
       </property>
       <property name="frameShape">
        <enum>QFrame::NoFrame</enum>
@@ -85,6 +112,9 @@
        <enum>QFrame::Raised</enum>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout_4">
+       <property name="sizeConstraint">
+        <enum>QLayout::SetMaximumSize</enum>
+       </property>
        <item>
         <widget class="QFrame" name="frame">
          <property name="sizePolicy">
@@ -92,6 +122,12 @@
            <horstretch>1</horstretch>
            <verstretch>1</verstretch>
           </sizepolicy>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>1300</width>
+           <height>0</height>
+          </size>
          </property>
          <property name="frameShape">
           <enum>QFrame::NoFrame</enum>
@@ -113,7 +149,7 @@
             </property>
             <property name="minimumSize">
              <size>
-              <width>800</width>
+              <width>1000</width>
               <height>0</height>
              </size>
             </property>
@@ -124,7 +160,7 @@
              <enum>QTabWidget::Rounded</enum>
             </property>
             <property name="currentIndex">
-             <number>4</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -193,7 +229,7 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>100</width>
+                  <width>200</width>
                   <height>0</height>
                  </size>
                 </property>
