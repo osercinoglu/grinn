@@ -705,17 +705,9 @@ def tpr2pdb(params,tpr,pdb,gmxGroup):
 	# Convert tpr to pdb, selecting just Protein.
 	# Apparently directly spawning gmx in the following does not work as expect in OSX
 	# Prepending bash -c to the command line prior to gmx.
-	proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % 
-		(params.exe,params.traj,tpr,pdb))
-	try:
-		proc.expect(u'Select a group:.*')
-		#proc.logfile = sys.stdout
-	except pexpect.EOF:
-		return False, proc.before
+	proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
+		(params.exe,tpr,pdb),shell=True)
 
-	proc.send(gmxGroup)
-	proc.sendline()
-	#proc.wait() # proc.wait() does not work on MacOSX for some reason...
 	while not os.path.exists(pdb):
 		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
 		
@@ -723,7 +715,7 @@ def tpr2pdb(params,tpr,pdb,gmxGroup):
 	while has_handle(pdb):
 		time.sleep(1)
 
-	proc.kill(1)
+	proc.kill()
 	return True, "Success'"
 
 # Method to check args and get params if they are valid
