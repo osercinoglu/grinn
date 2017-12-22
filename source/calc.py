@@ -646,6 +646,8 @@ def calcNAMD(params):
 	# Clean up
 	cleanUp(params)
 
+	return params
+
 def calcGMX(params):
 	# Prepare input files for GMX energy calculation.
 	params = prepareFilesGMX(params)
@@ -668,6 +670,8 @@ def calcGMX(params):
 
 	# Clean up
 	cleanUp(params)
+
+	return params
 
 # Method to convert TPR to PDB files.
 def tpr2pdb(params,tpr,pdb,gmxGroup):
@@ -954,14 +958,15 @@ def getResIntEn(args):
 
 	# Proceed with the appropriate method depending on the input data type.
 	if params.dataType == 'namd':
-		calcNAMD(params)
+		params = calcNAMD(params)
 	elif params.dataType == 'gmx':
-		calcGMX(params)
+		params = calcGMX(params)
 
 	# Get correlations, if the user requested.
 	if params.calcCorr:
 		args.corrprefix = [os.path.join(params.outFolder,'energies')]
 		args.corrinfile = [os.path.join(params.outFolder,'energies_intEnTotal.csv')]
+		args.pdb = [params.pdb]
 		corr.getResIntCorr(args,logFile=None,logger=params.logger)
 
 	params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')

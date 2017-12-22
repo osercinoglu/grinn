@@ -60,23 +60,26 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
 		self.lineEdit_namd2.setText('gmx')
-		self.lineEdit_pdb.setText('../samples/test.tpr')
-		self.lineEdit_psf.setText('../samples/test.top')
-		self.lineEdit_dcd.setText('../samples/test_stride.xtc')
+		self.lineEdit_pdb.setText(common.resource_path(
+			os.path.join('samples','test.tpr')))
+		self.lineEdit_psf.setText(common.resource_path(
+			os.path.join('samples','test.top')))
+		self.lineEdit_dcd.setText(common.resource_path(
+			os.path.join('samples','test_stride.xtc')))
 
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
 		self.lineEdit_namd2.setText('namd2')
-		self.lineEdit_pdb.setText(os.path.join(os.path.dirname(
-			os.path.dirname(__file__)),'samples','3otj_trypsin_psfgen.pdb'))
-		self.lineEdit_psf.setText(os.path.join(os.path.dirname(
-			os.path.dirname(__file__)),'samples','3otj_trypsin_psfgen.psf'))
-		self.lineEdit_dcd.setText(os.path.join(os.path.dirname(
-			os.path.dirname(__file__)),'samples','3otj_trypsin_25_50ns_dry_str25_aligned.dcd'))
-		self.lineEdit_parameterFile.setText(os.path.join(os.path.dirname(
-			os.path.dirname(__file__)),'samples','par_all27_prot_lipid_na.inp'))
+		self.lineEdit_pdb.setText(common.resource_path(
+			os.path.join('samples','3otj_trypsin_psfgen.pdb')))
+		self.lineEdit_psf.setText(common.resource_path(
+			os.path.join('samples','3otj_trypsin_psfgen.psf')))
+		self.lineEdit_dcd.setText(common.resource_path(
+			os.path.join('samples','3otj_trypsin_25_50ns_dry_str25_aligned.dcd')))
+		self.lineEdit_parameterFile.setText(common.resource_path(
+			os.path.join('samples','par_all27_prot_lipid_na.inp')))
 
 		self.checkBox_interactionCorrelation.setCheckState(2)
 		self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
