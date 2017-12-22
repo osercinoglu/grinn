@@ -290,12 +290,14 @@ def calcEnergiesSingleCoreNAMD(args):
 			f.close()
 
 			# Run namd2 to compute the energies
-			pid_namd2 = subprocess.Popen([namd2exe,namdConf],
-				stdout=open(
-					os.path.join(outputFolder,'%i_%i_energies.log' % 
-						(pair[0],pair[1])),'w'),
-				stderr=subprocess.PIPE)
-			_,error = pid_namd2.communicate()
+			try:
+				pid_namd2 = subprocess.Popen([namd2exe,namdConf],
+					stdout=open(
+						os.path.join(outputFolder,'%i_%i_energies.log' % 
+							(pair[0],pair[1])),'w'),stderr=subprocess.PIPE)
+				_,error = pid_namd2.communicate()
+			except KeyboardInterrupt:
+				print('Keyboard interrupt detected.')
 			if error:
 				#logger.exception('Error while calling NAMD executable:\n'+error)
 				sys.exit(0)
@@ -370,10 +372,23 @@ def calcEnergiesNAMD(params):
 
 		print('signal: %s' % signum)
 		parent = psutil.Process(parent_id)
-		for child in parent.children():
+		children = parent.children()
+		for child in children:
+			if child.children():
+				grandchildren = child.children()
+
 			if child.pid != os.getpid():
 				print("killing child: %s" % child.pid)
 				child.kill()
+
+			if grandchildren:
+				for grandchild in grandchildren:
+					print("killing grandchild: %s" % grandchild.pid)
+					try:
+						grandchild.kill()
+					except:
+						pass
+
 		#time.sleep(5)
 		global pool
 		pool.terminate()
@@ -384,7 +399,7 @@ def calcEnergiesNAMD(params):
 				errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=True)
 		else:
 			errorSuicide(params,'GUI interrupt detected. Aborting now.',removeOutput=False)
-
+		
 		print("killing parent: %s" % parent_id)
 		parent.kill()
 		print("suicide: %s" % os.getpid())
