@@ -43,24 +43,24 @@ exe = EXE(pyz,
           a.zipfiles,
           a.datas,
           name='grinn',
-          debug=False,
+          debug=True,
           strip=False,
           upx=True,
           console=True,
           icon='resources/clover.ico')
 
 #coll = COLLECT(exe,
-#               a.binaries,
-#               a.zipfiles,
-#               a.datas,
-#               strip=False,
-#               upx=True,
-#               name='grinn')
+#              a.binaries,
+#              a.zipfiles,
+#              a.datas,
+#              strip=False,
+#              upx=True,
+#              name='grinn')
 
-app = BUNDLE(exe,
-             name='grinn.app',
-             icon='resources/clover.icns',
-             bundle_identifier=None,
-             info_plist={
-              'NSHighResolutionCapable': 'True'
-             },)
+# app = BUNDLE(exe,
+#              name='grinn.app',
+#              icon='resources/clover.icns',
+#              bundle_identifier=None,
+#              info_plist={
+#               'NSHighResolutionCapable': 'True'
+#              },)

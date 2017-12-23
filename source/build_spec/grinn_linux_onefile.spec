@@ -5,7 +5,7 @@ block_cipher = None
 # Icons and other stuff that I discover to be necessary by trial-and-error
 datas = [('../resources/clover.ico','resources'),
 ('../VERSION','.'),
-('../../samples','samples'),
+('../samples','samples'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),

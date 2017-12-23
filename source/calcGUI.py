@@ -72,7 +72,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.lineEdit_psf.setText(common.resource_path(
 			os.path.join('samples','1eey_md_0_50_topol.top')))
 		self.lineEdit_dcd.setText(common.resource_path(
-			os.path.join('samples','1eey_md_25_50ns_str25.xtc')))
+			os.path.join('samples','1eey_md_25_50ns_str25_nojump.xtc')))
 
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
@@ -204,7 +204,9 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		#	self.resetProgressElements()
 
 		# Remove the output folder:
-		rmtree(self.calcParams.outFolder)
+		if os.path.exists(self.calcParams.outFolder):
+			rmtree(self.calcParams.outFolder)
+		
 		print(message)
 		QtWidgets.QMessageBox.information(self,"Error!",message)
 

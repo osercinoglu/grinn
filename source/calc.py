@@ -122,13 +122,8 @@ def prepareFilesGMX(params):
 	params.logger.info('Converting TPR to PDB...')
 
 	# Convert tpr to pdb, full system.
-	proc = pexpect.spawnu('bash -c "%s trjconv -f %s -s %s -b 0 -e 0 -o %s"' % 
-		(params.exe,params.traj,params.tpr,os.path.join(
-			params.outFolder,'system.pdb')))
-	proc.expect(u'Select a group:.*')
-	proc.logfile = sys.stdout
-	proc.send('0 0')
-	proc.sendline()
+	isPDB,messageOut = tpr2pdb(params,params.tpr,
+		os.path.join(params.outFolder,'system.pdb'))
 
 	# Check whether file has been created. If not, wait.
 	while not os.path.exists(os.path.join(
@@ -140,8 +135,6 @@ def prepareFilesGMX(params):
 		params.outFolder,'system.pdb')):
 		time.sleep(1)
 
-	proc.kill(1)
-
 	params.pdb = os.path.join(params.outFolder,'system.pdb')
 
 	params.logger.info('Converting TPR to PDB... Done.')
@@ -150,7 +143,7 @@ def prepareFilesGMX(params):
 	tpr = os.path.join(params.outFolder,'system.tpr')
 
 	# Make dry PDB out of the resulting PDB.
-	pdb = parsePDB(pdb)
+	pdb = parsePDB(params.pdb)
 	pdbProtein = pdb.select('protein')
 	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
 
@@ -701,21 +694,33 @@ def calcGMX(params):
 	return params
 
 # Method to convert TPR to PDB files.
-def tpr2pdb(params,tpr,pdb,gmxGroup):
+def tpr2pdb(params,tpr,pdb):
 	# Convert tpr to pdb, selecting just Protein.
 	# Apparently directly spawning gmx in the following does not work as expect in OSX
 	# Prepending bash -c to the command line prior to gmx.
 	proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
-		(params.exe,tpr,pdb),shell=True)
+		(params.exe,tpr,pdb),stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,shell=True)
+	_,error = proc.communicate()
+	#if error:
+	#	message = repr(error)
+	#	return False, message
 
-	while not os.path.exists(pdb):
+	proc.wait()
+	start_time = time.time()
+	time_elapsed = 0 # Seconds
+	while not os.path.exists(pdb) and time_elapsed < 30:
 		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
-		
+		time_elapsed = time.time() - start_time
+
+	if not os.path.exists(pdb):
+		message = 'Could not extract PDB out of TPR for at least 30 seconds. Aborting now.'
+		return False, message
+
 	# Check whether the file is still being written to...
 	while has_handle(pdb):
 		time.sleep(1)
 
-	proc.kill()
 	return True, "Success'"
 
 # Method to check args and get params if they are valid
@@ -902,7 +907,7 @@ def getParams(args):
 			return params, False, message
 
 		# Check whether a PDB can be extracted from the TPR.
-		isPDB,messageOut = tpr2pdb(params,params.tpr,'dummy.pdb','System')
+		isPDB,messageOut = tpr2pdb(params,params.tpr,'dummy.pdb')
 		if not isPDB:
 			message = 'Could not extract a structure from input TPR.'
 			message = message + ' Executable produced the following : ' 
@@ -928,7 +933,6 @@ def getParams(args):
 				return params, False, message
 
 	params.calcCorr = args.calccorr
-	print('calcCorr is ' + repr(params.calcCorr))
 
 	return params, True, "Success"
 
