@@ -111,6 +111,7 @@ def prepareFilesNAMD(params):
 	pdb = parsePDB(params.pdb)
 	traj.link(pdb)
 	traj.setAtoms(pdb)
+	traj.superpose()
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj,step=params.stride)
 
 	# Check whether system has enough memory to handle the computation...
@@ -172,6 +173,7 @@ def prepareFilesGMX(params):
 	traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
 	traj.link(pdb)
 	traj.setAtoms(pdbProtein)
+	traj.superpose()
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
 	os.remove(os.path.join(params.outFolder,'traj.dcd'))
 	params.logger.info('Converting to XTC/TRR to DCD... Done.')
