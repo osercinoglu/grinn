@@ -166,9 +166,10 @@ def getProEnNet(inFolder=False,resMeanIntEnFile=False,resCorrFile=False,includeC
 	if not resCorrFile:
 		pass
 	else:
-		getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
-			resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
-			intEnCutoff=intEnCutoff,outName=outPrefix)
+		# UNVALIDATED NETWORK ACTIVATION EXPERIMENTAL.
+		# getKongKarplusNetwork(resCorrFile=resCorrFile,pdb=pdb,
+		# 	resMeanIntEnFile=resMeanIntEnFile,includeCovalents=includeCovalents,corrCutoff=resCorrCutoff,
+		# 	intEnCutoff=intEnCutoff,outName=outPrefix)
 
 	return networkRO, networkKK
 
