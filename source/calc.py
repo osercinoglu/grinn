@@ -389,13 +389,13 @@ def calcEnergiesNAMD(params):
 				print("killing child: %s" % child.pid)
 				child.kill()
 
-			if grandchildren:
-				for grandchild in grandchildren:
-					print("killing grandchild: %s" % grandchild.pid)
-					try:
-						grandchild.kill()
-					except:
-						pass
+				if grandchildren:
+					for grandchild in grandchildren:
+						print("killing grandchild: %s" % grandchild.pid)
+						try:
+							grandchild.kill()
+						except:
+							pass
 
 		#time.sleep(5)
 		global pool
