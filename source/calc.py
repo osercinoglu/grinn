@@ -114,7 +114,7 @@ def prepareFilesNAMD(params):
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),
 		traj,step=params.stride)
 	# Load it back, superpose, save again.
-	traj = parseDCD(os.path.join(params.outFolder),'traj_dry.dcd')
+	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
 	traj.setAtoms(pdb)
 	traj.superpose()
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
