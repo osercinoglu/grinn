@@ -17,6 +17,7 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 from common import getResindex
 from common import getChainResnameResnum
+import common
 import pen
 import networkx as nx
 from prody import *

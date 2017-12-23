@@ -231,6 +231,9 @@ if __name__ == '__main__':
 		'grinn_output will be created in the current working folder. Applies only to grinn '
 		'-calc <arguments> calls.')
 
+	parser.add_argument('--version',action='store_true',default=False,
+		help='Prints the version number.')
+
 	# Parse arguments.
 	args = parser.parse_args()
 
@@ -256,6 +259,13 @@ if __name__ == '__main__':
 			prepareEnvironment()
 			resultsGUI.main()
 	else:
-		prepareEnvironment()
-		# Start the GUI.
-		main()
+		if args.version:
+			# User requested printing of version.
+			versionfile = open(common.resource_path('VERSION'),'r')
+			versionline = versionfile.readlines()
+			version = versionline[0].rstrip('\n')
+			print(version)
+		else:
+			prepareEnvironment()
+			# Start the GUI.
+			main()
