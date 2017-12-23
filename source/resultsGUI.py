@@ -166,6 +166,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 
 			hm.set_xticklabels(hm.get_xticklabels(), rotation = 60)
 			hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
+			hm.invert_yaxis()
 
 			xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
 			xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
