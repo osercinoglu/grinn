@@ -285,17 +285,23 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.horizontalLayout_4.addWidget(self.ccPlot)
 
 		# Creating the PyMolWidget
-		self.ProteinView = PyMolWidget()
-		self.verticalLayoutProteinView = QtWidgets.QVBoxLayout(self.frame_ProteinView)
-		self.verticalLayoutProteinView.addWidget(self.ProteinView)
-		self.ProteinView.show()
-		sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-		sizePolicy.setHorizontalStretch(1)
-		sizePolicy.setVerticalStretch(1)
-		sizePolicy.setHeightForWidth(self.ProteinView.sizePolicy().hasHeightForWidth())
-		self.ProteinView.setSizePolicy(sizePolicy)
-		self.ProteinView.setMaximumSize(QtCore.QSize(500,1000000))
-		self.ProteinView.setMaximumSize(QtCore.QSize(1000,1000000))
+		try:
+			self.ProteinView = PyMolWidget()
+			self.verticalLayoutProteinView = QtWidgets.QVBoxLayout(self.frame_ProteinView)
+			self.verticalLayoutProteinView.addWidget(self.ProteinView)
+			self.ProteinView.show()
+			sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+			sizePolicy.setHorizontalStretch(1)
+			sizePolicy.setVerticalStretch(1)
+			sizePolicy.setHeightForWidth(self.ProteinView.sizePolicy().hasHeightForWidth())
+			self.ProteinView.setSizePolicy(sizePolicy)
+			self.ProteinView.setMaximumSize(QtCore.QSize(500,1000000))
+			self.ProteinView.setMaximumSize(QtCore.QSize(1000,1000000))
+		except Exception as instance:
+			QMessageBox.critical(self,'PyMol can''be initialized',
+				repr(instance)+"\n\nPyMol widget could not be initialized. Molecule viewer will not start, however the rest of the UI" 
+				" will be functional. Upgrading your graphics card drivers may solve this issue.")
+			self.frame_ProteinViewControl.setParent(None)
 
 		# Connect callbacks to UI elements
 		self.pushButton_selectOutputFolder.clicked.connect(self.updateOutputFolder)
@@ -556,18 +562,20 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		self.intEnMeanMat.update_figure(self,'iem')
 
-		self.ProteinView.loadMolFile(os.path.join(
-			self.viewResultsParams.outputFolder,'system_dry.pdb'))
 		trajPath = os.path.join(
 			self.viewResultsParams.outputFolder,'traj_dry.dcd')
-		self.ProteinView._pymol.idle()
-		self.ProteinView._pymol.draw()
-		self.ProteinView._pymolProcess()
-		self.ProteinView.show()
+
+		if hasattr(self,"ProteinView"):
+			self.ProteinView.loadMolFile(os.path.join(
+			self.viewResultsParams.outputFolder,'system_dry.pdb'))
+			self.ProteinView._pymol.idle()
+			self.ProteinView._pymol.draw()
+			self.ProteinView._pymolProcess()
+			self.ProteinView.show()	
 
 		# Load trajectory if it exists in the output folder!
 		# Usually it should exist!
-		if os.path.exists(trajPath):
+		if os.path.exists(trajPath) and hasattr(self,"ProteinView"):
 			buttonReply = QMessageBox.question(
 				self, 'Trajectory found', "A trajectory exists in your output folder. Would you like to load it as well?\n"
 			"Warning: This might slow down the display significantly if the trajectory file size is large.", 
@@ -615,13 +623,15 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 	def updateFrame(self):
 		# Set the current frame. Don't forget that first frame is the PDB file, so we assign plus one here.
 		self.viewResultsParams.currentFrame = self.horizontalSlider.value()+1
-
-		self.ProteinView._pymol.cmd.set_frame(self.viewResultsParams.currentFrame)
-		self.ProteinView._pymol.cmd.refresh()
-		self.ProteinView.glDraw()
-		self.ProteinView._pymolProcess()
 		if self.viewResultsParams.selectedTargetRes:
 			self.intEnTimeSeries.update_figure(self,'time-series')
+
+		if hasattr(self,"ProteinView"):
+			self.ProteinView._pymol.cmd.set_frame(self.viewResultsParams.currentFrame)
+			self.ProteinView._pymol.cmd.refresh()
+			self.ProteinView.glDraw()
+			self.ProteinView._pymolProcess()
+
 
 	def updateProteinResiduePairs(self):
 		# Get selected two residues.
@@ -630,6 +640,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		source_string = getChainResnameResnum(self.viewResultsParams.system,selectedSourceRes)
 		target_string = getChainResnameResnum(self.viewResultsParams.system,selectedTargetRes)
 
+		if not hasattr(self,"ProteinView"):
+			return
 		# Select all and reset the view
 		#self.ProteinView._pymol.cmd.select('all','all')
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
@@ -658,6 +670,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		selectedPair1 = selectedPair1.split('-')
 		selectedPair2 = selectedPair2.split('-')
 
+		if not hasattr(self,"ProteinView"):
+			return
 		# Select all and reset the view
 		#self.ProteinView._pymol.cmd.select('all','all')
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
@@ -693,6 +707,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 	def updateProteinResidueMetrics(self,resIndex,bfacColorScheme=None):
 
+		if not hasattr(self,"ProteinView"):
+			return
 		res_string = getChainResnameResnum(self.viewResultsParams.system,resIndex)
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
 		self.ProteinView._pymol.cmd.color('white','all')
@@ -707,6 +723,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.ProteinView._pymolProcess()
 
 	def updateProteinShortestPaths(self,path):
+		if not hasattr(self,"ProteinView"):
+			return
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
 		self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
