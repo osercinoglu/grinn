@@ -431,19 +431,21 @@ class monitorProgress(QtCore.QThread):
 		start_time = time.time()
 		lastLogLine = 0
 		continueFlag = False
+		percentFiltering = 0
+		percentCalculation = 0
 		percent = 0
 
 		while not continueFlag and self._isRunning:
 			logFile = open(self.params.logFile)
 			lines = logFile.readlines()
 			logFile.close()
-			for i in range(lastLogLine,len(lines)):
+			for i in range(lastLogLine+1,len(lines)):
 				line = lines[i]
 				if 'DEBUG' in line: continue
 
-				matchesFiltering = re.search('.*Filtered pairs percentage:\s(\d+)',line)
-				matchesCalculation = re.search('.*Completed calculation percentage: (\d+)',line)
-				matchesCorrelation = re.search('.*Interaction energy correlation calculated percentage:\s(\d+)',line)
+				matchesFiltering = re.search('.*Filtered pairs percentage:\s(\d+\.*\d*)',line)
+				matchesCalculation = re.search('.*Completed calculation percentage: (\d+\.*\d*)',line)
+				matchesCorrelation = re.search('.*Interaction energy correlation calculated percentage:\s(\d+\.*\d*)',line)
 				current_time = time.time()
 
 				if matchesFiltering:
