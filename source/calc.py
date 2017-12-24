@@ -370,36 +370,32 @@ def calcEnergiesNAMD(params):
 			os._exit(0)
 		signal.signal(signal.SIGINT, sig_int)
 
-	global pool
-	pool = multiprocessing.Pool(params.numCores,worker_init)
- 	logger = params.logger
-
 	# Catching CTRL+C SIGINT signals.
 	def sigint_handler(signum, frame):
 		params.logger = logger
-
+		global pool
+		pool.terminate()
+		pool.join()
+		pool.close()
 		print('signal: %s' % signum)
-		parent = psutil.Process(parent_id)
+		parent = psutil.Process(os.getpid())
 		children = parent.children()
+		# Loop over children.
 		for child in children:
-			if child.children():
-				grandchildren = child.children()
+			while child.children():
+				# If child has children, note them
+				for grandchild in child.children():
+					print("killing grandchild: %s" % grandchild.pid)
+					try:
+						grandchild.kill()
+					except:
+						pass
 
 			if child.pid != os.getpid():
 				print("killing child: %s" % child.pid)
 				child.kill()
 
-				if grandchildren:
-					for grandchild in grandchildren:
-						print("killing grandchild: %s" % grandchild.pid)
-						try:
-							grandchild.kill()
-						except:
-							pass
-
 		#time.sleep(5)
-		global pool
-		pool.terminate()
 		if sys.stdin.isatty():
 			if not click.confirm('Would you like to delete the output folder?', default=True):
 				errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=False)
@@ -408,12 +404,16 @@ def calcEnergiesNAMD(params):
 		else:
 			errorSuicide(params,'GUI interrupt detected. Aborting now.',removeOutput=False)
 		
-		print("killing parent: %s" % parent_id)
-		parent.kill()
-		print("suicide: %s" % os.getpid())
-		psutil.Process(os.getpid()).kill()
+		#print("killing parent: %s" % parent_id)
+		#parent.kill()
+		#print("suicide: %s" % os.getpid())
+		#psutil.Process(os.getpid()).kill()
 		os._exit(0)
 	signal.signal(signal.SIGINT, sigint_handler)
+
+	global pool
+	pool = multiprocessing.Pool(params.numCores)
+ 	logger = params.logger
 
 	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
 	# energy calculation threads.
@@ -662,12 +662,12 @@ def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
 	if removeOutput:
 		rmtree(params.outFolder,ignore_error=True)
-	psutil.Process(os.getpid()).kill()
+	#psutil.Process(os.getpid()).kill()
 	os._exit(0)
 
 def calcNAMD(params):
 	# Prepare input files for NAMD energy calculation.
-	prepareFilesNAMD(params)
+	prepareFilesNAMD(params) 
 
 	# Filter pairs.
 	params = filterPairs(params)
@@ -984,11 +984,13 @@ def getResIntEn(args):
 
 	# Check whether the arguments are valid. If not, remove the output folder and abort.
 	if not isArgsValid:
-		params.logger.exception(message)
 		# Check whether the script was called from a terminal.
 		if sys.stdin.isatty():
-			rmtree(params.outFolder)
-		return
+			errorSuicide(params,message,removeOutput=True)
+			return
+		else:
+			errorSuicide(params,message,removeOutput=False)
+			return
 
 	params.logger.info('Argument check completed. Proceeding...')
 

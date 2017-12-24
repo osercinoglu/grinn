@@ -207,8 +207,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		if os.path.exists(self.calcParams.outFolder):
 			rmtree(self.calcParams.outFolder)
 		
-		print(message)
-		QtWidgets.QMessageBox.information(self,"Error!",message)
+		self.resetProgressElements()
+		QtWidgets.QMessageBox.critical(self,"Error!",message)
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
@@ -225,7 +225,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			elif buttonReply == QtWidgets.QMessageBox.Yes:
 				pass
 
-			if self.processGetResIntEn:
+			if self.processGetResIntEn.is_alive():
 				# Stop the calculation
 				print('killing process id '+str(self.processGetResIntEn.pid))
 				os.kill(self.processGetResIntEn.pid,signal.SIGINT)
@@ -250,9 +250,9 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 					if os.path.exists(self.calcParams.outFolder):
 						rmtree(self.calcParams.outFolder,ignore_errors=True)
 			elif self.calcParams.calcState in ['Filtering','Calc']:
-				if os.path.exists(self.calcParams.outFolder):
+				while os.path.exists(self.calcParams.outFolder):
+					# Why while? Because processGetResIntEn might still be writing to the log.
 					rmtree(self.calcParams.outFolder,ignore_errors=True)
-
 			# Return True in case this was called by exit window.
 			return True
 		else:
@@ -430,16 +430,17 @@ class monitorProgress(QtCore.QThread):
 		# Monitor the log file and take action depending the line read.
 		start_time = time.time()
 		lastLogLine = 0
+		nextStartingLine = 0
 		continueFlag = False
 		percentFiltering = 0
 		percentCalculation = 0
 		percent = 0
 
 		while not continueFlag and self._isRunning:
-			logFile = open(self.params.logFile)
+			logFile = open(self.params.logFile,'r')
 			lines = logFile.readlines()
 			logFile.close()
-			for i in range(lastLogLine+1,len(lines)):
+			for i in range(nextStartingLine,len(lines)):
 				line = lines[i]
 				if 'DEBUG' in line: continue
 
@@ -492,7 +493,18 @@ class monitorProgress(QtCore.QThread):
 
 				self.updateStatusBar.emit(line)
 
-			lastLogLine = i
+			nextStartingLine = i+1
+
+			# If in the mean time processGetResIntEn exits without an error detected above.
+			# Emit an error. Exit this thread. Maybe show a warning message.
+			if self.mainWindow.processGetResIntEn and self.mainWindow.processGetResIntEn.exitcode == 1:
+				self._isRunning = False # Prevent going back to reading log, cause error could delete output folder.
+				#self.mainWindow.processGetResIntEn = None
+				self.error.emit("Encountered an unexpected error that is not handled by gRINN. "
+					"Please check for anomalies in your input data and settings. \n\n"
+					"If this error persist, let us know about it via email by describing your input data "
+					"(and sending it, if you're OK with that). We'll try our best to identify the cause and debug the issue.")
+				self.exit()
 		# Reset all progress elements here by calling the signal of this QThread object.
 		self.resetProgressElements.emit()
 
