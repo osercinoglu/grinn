@@ -14,10 +14,10 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 		self.setupUi(self)
 
 		_translate = QtCore.QCoreApplication.translate
-		self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/stable/tutorial.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
-		self.label_4.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/stable/credits.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
-		self.label_5.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/stable/contact.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
-		self.label_6.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/stable/faq.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
+		self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/tutorial.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
+		self.label_4.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/credits.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
+		self.label_5.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/contact.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
+		self.label_6.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/faq.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
 
 		self.label_3.setOpenExternalLinks(True)
 		self.label_4.setOpenExternalLinks(True)
