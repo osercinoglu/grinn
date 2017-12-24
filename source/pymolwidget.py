@@ -46,7 +46,7 @@ class PyMolWidget(QGLWidget):
 
     def paintGL(self):
         #glViewport(0,0,10,10)
-        glViewport(1, 1, self.width(), self.height())
+        #glViewport(0, 0, self.width(), self.height())
         self._pymol.idle()
         self._pymol.draw()
 
