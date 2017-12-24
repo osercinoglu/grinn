@@ -47,7 +47,6 @@ Initial release of gRINN.
 
 ## Credits
 
-gRINN was developed in Python 2.7.
+gRINN was coded in Python 2.7.
 
-Several open-source packages, including ProDy, MDTraj, PyQt5, matplotlib, seaborn, pandas, networkx and PyMol are
-distributed with gRINN. 
+Several open-source packages, including ProDy, MDTraj, PyQt5, matplotlib, seaborn, pandas, networkx and PyMol are distributed with gRINN. More details can be found in license.rst.
