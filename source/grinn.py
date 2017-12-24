@@ -63,10 +63,12 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 
 	def closeEvent(self, event):
 		message = False
+		closeCalc = False
 		# Check whether any calcGUI or resultsGUI views have been created.
 		if hasattr(self,"formGetResIntEnGUI"):
 			if self.formGetResIntEnGUI.isVisible():
 				message = 'At least one "New Calculation" interface is active. Are you sure ?'
+				closeCalc = True
 		if hasattr(self,"formResults"):
 			if self.formResults.isVisible():
 				message = 'At least one "View Results" interface is active. Are you sure ?'
@@ -79,7 +81,11 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 			if buttonReply == QMessageBox.No:
 				event.ignore()
 			elif buttonReply == QMessageBox.Yes:
-				event.accept()
+				if closeCalc:
+					self.formGetResIntEnGUI.close()
+					event.accept()
+				else:
+					event.accept()
 		elif not message:
 			event.accept()
 
