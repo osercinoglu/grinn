@@ -1,94 +1,53 @@
-# gRINN: Get Residue Interaction eNergies and Networks
+# gRINN: get Residue Interaction eNergies and Networks
 
-version: 0.0.2dev, date: 2017/11/11
+gRINN is a software for residue interaction enery-based analysis of protein MD simulation trajectories.
 
-Marmara University, Department of Bioengineering, Computational Biology and Bioinformatics Group
+## Version
 
-developer: Onur Serçinoğlu
+1.0.1
 
-contact: onursercin@gmail.com
+## Authors
 
+Onur Serçinoğlu (onursercin@gmail.com)
 
-## INTRODUCTION
+Pemra Ozbek (pemra.ozbek@marmara.edu.tr)
 
-This package contains three main programs:
+## License
 
-* **getResIntEn.py** is a Python command-line application for calculating pairwise amino-acid interaction
-energies from NAMD-generated Molecular Dynamics simulation trajectories.
+Please read the license.rst file for usage terms and conditions. 
 
-* **getResIntCorr.py** is a Python command-line application for calculating equal-time linear correlation
-between amino-acid interaction energy time profiles from the output of getResIntEn.py
+## Usage
 
-* **getResIntEnGUI.py** is a PyQt5-based Graphical User Interface (GUI) for getResIntEn.py and getResIntCorr.py
+No need to install. Just open a terminal in the folder containing the grinn executable and start grinn by typing ./grinn.
 
-Additional programs:
+You can also place grinn to a folder included in your executable search path and call grinn from any other directory.
 
-* **viewResults.py** is a PyQt5-based GUI for viewing the results of getResIntEn.py
+## Dependencies
 
-* **getProEnNet.py** is a small script for constructing Protein Energy Networks using results from getResIntEn.py and/or 
-getResIntCorr.py
+gRINN depends on either NAMD or GROMACS. Please see http://grinn.readthedocs.io/en/latest/download.html for more details.
 
-All of the functionality contained in this package can be accessed via command-line interface of 
-getResIntEn.py. For more help regarding the use of this command, open a terminal and type:
-python3 getResIntEn.py --help
+## Availability
 
-## DEPENDENCIES
+gRINN is available for Linux x64 and MacOSX operating systems as a standalone executable. 
 
-All of the packages require Visual Molecular Dynamics (VMD) program to be accessed readily from terminal.
-To see whether this requirement is already met or not, open a terminal and type:
-vmd
+## Documentation
 
-If you see the VMD Main Window starting, then you're good to go.
-To download and install VMD, please visit http://www.ks.uiuc.edu/Research/vmd/
+Documentation for gRINN is located at http://grinn.readthedocs.io
 
-Residue interaction energy calculations require a NAMD binary, whose path can be specified via argument 
---namd2exe /path/to/namd2 to getResIntEn.py or selected via getResIntEnGUI.py window.
+## Tutorial
 
-All of the packages require python 3 or above. 
+Best way to learn about the features of gRINN and how to use it is to follow the tutorial at 
+http://grinn.readthedocs.io/en/latest/tutorial.html
 
-Other dependencies:
+## History
 
-getResIntEn.py requires ProDy 1.8.2, pyprind, numpy, psutil, signal, datetime, argparse, itertools.
+### v1.0.1 (2017/12/27)
 
-getResIntCorr.py additionally requires SciPy.
+Initial release of gRINN.
 
-getResIntCorrGUI.py additionally requires PyQt5.
+## Credits
 
-After installing all dependencies, simply clone this repository to start using it.
+gRINN was developed in Python 2.7.
 
-## USAGE
-
-This package is intended for VMD/NAMD users who would like to calculate pairwise interaction energies 
-between individual amino acids in the protein structure after completing a Molecular Dynamics simulation.
-
-For such calculation PDB (coordinates), PSF (topology) and DCD (trajectory) files are required.
-If explicit solvent is used in the simulation (which is usually the case), it is highly recommended to
-delete all waters in these files prior to the use of any tool in this package. Inclusion of water will
-almost certainly cause rapid memory depletion especially for large file sizes, causing the system to 
-freeze. 
-
-After preparing the PDB/PSF/DCD files, getResIntEn.py can be accessed either via the terminal or the GUI.
-All of the options that can be specified via the terminal can also be specified via the GUI.
-
-Via terminal: `$ python3 getresinten/getResIntEn.py <options>`
-
-type `$ python3 getresinten/getResIntEn.py --help` to see the full list of options.
-
-Via GUI: `$ python3 getresinten/getResIntEnGUI.py`
-
-The package includes a program to calculate residue interaction energy correlations as well: `getResIntCorr.py`. 
-This can be used separately following the call to `getResIntEn.py`.
-
-Interaction energies and Interaction Energy Matrices (IEM) can be viewed with: 
-
-`$ python3 getresinten/viewResults.py`
-
-IEM and Residue Correlation (RC) matrices can be used to construct "Protein Energy Networks" by calling:
-
-`$ python3 getresinten/getProEnNet.py`
-
-type `$ python3 getresinten/getProEnNet.py --help` to see the full list of options.
-
-## TUTORIAL
-
-A tutorial is available at https://bitbucket.org/onursercinoglu/getresinten/wiki/Home
+Several open-source packages, including ProDy, MDTraj, PyQt5, matplotlib, seaborn, pandas, networkx and PyMol are
+distributed with gRINN. 
