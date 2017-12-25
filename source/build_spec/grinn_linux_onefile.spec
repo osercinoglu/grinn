@@ -13,8 +13,8 @@ datas = [('../resources/clover.ico','resources'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/panedr','panedr')]
 
-binaries = [('/home/onur/anaconda2/plugins/xcbglintegrations/libqxcb-glx-integration.so',
-  'qt5_plugins/xcbglintegrations/'),('/home/onur/anaconda2/plugins/xcbglintegrations/libqxcb-egl-integration.so',
+binaries = [('../data/xcbglintegrations/libqxcb-glx-integration.so',
+  'qt5_plugins/xcbglintegrations/'),('../data/xcbglintegrations/libqxcb-egl-integration.so',
   'qt5_plugins/xcbglintegrations/')]
 
 paths = ['/home/onur/repos/gRINN/source',
