@@ -100,7 +100,7 @@ def prepareFilesNAMD(params):
 
 		if sys.stdin.isatty():
 			if not click.confirm('Do you want to continue?', default=True):
-				errorSuicide(params,'User requested abort. Aborting now.',removeOutput=True)
+				errorSuicide(params,'User requested abort. Aborting now.',removeOutput=False)
 
 	# Proceeding.
 	# Just copy psf and pdb files and the trajectory with stride to output folder.
@@ -122,7 +122,7 @@ def prepareFilesNAMD(params):
 	# Check whether system has enough memory to handle the computation...
 	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
 	if not proceed:
-		errorSuicide(params,message,removeOutput=True)
+		errorSuicide(params,message,removeOutput=False)
 
 def prepareFilesGMX(params):
 	params.logger.info('Converting TPR to PDB...')
@@ -431,7 +431,7 @@ def calcEnergiesNAMD(params):
 	# see the calcEnergiesSingleCoreNAMD method)
 	
 	if 'SystemExit' in results:
-		removeOutput = True if sys.stdin.isatty() else False
+		removeOutput = False if sys.stdin.isatty() else False
 		errorSuicide(params,'Fatal error while calling NAMD executable.',
 			removeOutput=removeOutput)
 
@@ -986,7 +986,7 @@ def getResIntEn(args):
 	if not isArgsValid:
 		# Check whether the script was called from a terminal.
 		if sys.stdin.isatty():
-			errorSuicide(params,message,removeOutput=True)
+			errorSuicide(params,message,removeOutput=False)
 			return
 		else:
 			errorSuicide(params,message,removeOutput=False)

@@ -203,17 +203,20 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			
 		#	self.resetProgressElements()
 
-		# Remove the output folder:
-		if os.path.exists(self.calcParams.outFolder):
-			rmtree(self.calcParams.outFolder)
-		
 		self.resetProgressElements()
-		QtWidgets.QMessageBox.critical(self,"Error!",message)
+		QtWidgets.QMessageBox.critical(self,"Error!",message+
+			"\n\nIf you want to continue, delete the output folder or specify another output folder path.")
+		# Remove the output folder:
+		# if os.path.exists(self.calcParams.outFolder):
+		# 	rmtree(self.calcParams.outFolder)
 
 	def stopCalculation(self):
 		# Parse the log file for any child PID spawned by getResIntEn.py
 		if hasattr(self,"processGetResIntEn"):
 			if not self.processGetResIntEn:
+				return True
+
+			if not self.processGetResIntEn.is_alive():
 				return True
 
 			# Is the user sure about this?
@@ -238,18 +241,18 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 			# Reset calculation thread
 			self.processGetResIntEn = None
 
+			# Postponing output folder deletion to a later version.
 			# Check calculation state: if it is 'Corr', ask the user about removing output folder.
 			# If not, just remove the output folder.
-			if self.calcParams.calcState == 'Corr':
-				buttonReply = QtWidgets.QMessageBox.question(
-					self, 'Remove output folder?', "Would you like to delete the output folder ?",
-				QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
-				if buttonReply == QtWidgets.QMessageBox.No:
-					pass
-				elif buttonReply == QtWidgets.QMessageBox.Yes:
-					if os.path.exists(self.calcParams.outFolder):
-						rmtree(self.calcParams.outFolder,ignore_errors=True)
-			elif self.calcParams.calcState in ['Filtering','Calc']:
+			buttonReply = QtWidgets.QMessageBox.question(
+				self, 'Remove output folder?', "Would you like to delete the output folder "+
+				self.calcParams.outFolder+" ?\n\nWARNING: This will permanently delete this folder.",
+			QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+			if buttonReply == QtWidgets.QMessageBox.No:
+				pass
+			elif buttonReply == QtWidgets.QMessageBox.Yes:
+				if os.path.exists(self.calcParams.outFolder):
+					rmtree(self.calcParams.outFolder,ignore_errors=True)
 				while os.path.exists(self.calcParams.outFolder):
 					# Why while? Because processGetResIntEn might still be writing to the log.
 					rmtree(self.calcParams.outFolder,ignore_errors=True)
@@ -336,7 +339,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.logFile = os.path.join(str(self.calcParams.outFolder),'grinn.log')
 
 		if os.path.exists(os.path.abspath(str(self.calcParams.outFolder))):
-			self.error("The output folder exists. Please specify a path that does not exist."
+			self.error("The output folder exists."
 				 " Aborting now.")
 			return
 		elif not os.access(os.path.abspath(
