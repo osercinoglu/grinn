@@ -729,7 +729,7 @@ def tpr2pdb(params,tpr,pdb):
 		time_elapsed = time.time() - start_time
 
 	if not os.path.exists(pdb):
-		message = 'Could not extract PDB out of TPR for at least 30 seconds. Aborting now.'
+		message = 'Could not extract PDB out of TPR file. Aborting now.'
 		return False, message
 
 	# Check whether the file is still being written to...
@@ -743,6 +743,22 @@ def getParams(args):
 
 	# Make a new parameters object.
 	params = parameters()
+
+	# Check whether the output folder exists. If it exists, abort.
+	outFolder = os.path.abspath(args.outfolder[0])
+	currentFolder = os.getcwd()
+	if outFolder != currentFolder:
+		if os.path.exists(outFolder):
+			print("The output folder exists. Please delete this folder or "
+				" specify a folder path that does not exist. Aborting now.")
+			sys.exit(1)
+		elif not os.access(os.path.abspath(
+			os.path.dirname(outFolder)), os.W_OK):
+			print("Can't write to the output folder path. Do you have write access?")
+			return
+		else:
+			params.outFolder = outFolder
+			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
 	params.numCores = args.numcores[0]
 	frameRange = args.framerange
@@ -779,22 +795,6 @@ def getParams(args):
 			params.sel2 = ' '.join(args.sel2)
 		else:
 			params.sel2= args.sel2[0]
-
-	# Check whether the output folder exists. If it exists, abort.
-	outFolder = os.path.abspath(args.outfolder[0])
-	currentFolder = os.getcwd()
-	if outFolder != currentFolder:
-		if os.path.exists(outFolder):
-			print("The output folder exists. Please delete this folder or "
-				" specify a folder path that does not exist. Aborting now.")
-			sys.exit(0)
-		elif not os.access(os.path.abspath(
-			os.path.dirname(outFolder)), os.W_OK):
-			print("Can't write to the output folder path. Do you have write access?")
-			return
-		else:
-			params.outFolder = outFolder
-			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
 	# Check input simulation data.
 	if not args.top[0]:

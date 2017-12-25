@@ -60,11 +60,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
-		# On MAC OSX, getcwd() does not work when an app bundle is used.
-		if platform.system() == 'Darwin':
-			homepath = os.path.expanduser("~")
-			self.lineEdit_outputFolder.setText(
-				os.path.join(homepath,'grinn_output'))
+		# # On MAC OSX, getcwd() does not work when an app bundle is used.
+		# if platform.system() == 'Darwin':
+		# 	homepath = os.path.expanduser("~")
+		# 	self.lineEdit_outputFolder.setText(
+		# 		os.path.join(homepath,'grinn_output'))
 
 		self.lineEdit_namd2.setText('gmx')
 		self.lineEdit_pdb.setText(common.resource_path(
@@ -74,15 +74,24 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.lineEdit_dcd.setText(common.resource_path(
 			os.path.join('samples','1eey_md_25_50ns_str25_nojump.xtc')))
 
+		self.checkBox_interactionCorrelation.setCheckState(2)
+		self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
+
+		self.doubleSpinBox_soluteDielectric.setValue(1)
+		self.doubleSpinBox_filteringPercent.setValue(60)
+		self.doubleSpinBox_filteringCutoff.setValue(12)
+		self.spinBox_numProcessors.setValue(multiprocessing.cpu_count())
+		self.spinBox_dcdStride.setValue(1)
+
 	def loadSampleNAMDdata(self):
 		#root_path = sys.path[0]
 		self.lineEdit_outputFolder.setText(os.path.join(os.getcwd(),'grinn_output'))
 
 		# On MAC OSX, getcwd() does not work when an app bundle is used.
-		if platform.system() == 'Darwin':
-			homepath = os.path.expanduser("~")
-			self.lineEdit_outputFolder.setText(
-				os.path.join(homepath,'grinn_output'))
+		# if platform.system() == 'Darwin':
+		# 	homepath = os.path.expanduser("~")
+		# 	self.lineEdit_outputFolder.setText(
+		# 		os.path.join(homepath,'grinn_output'))
 
 		self.lineEdit_namd2.setText('namd2')
 		self.lineEdit_pdb.setText(common.resource_path(
@@ -97,6 +106,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.checkBox_interactionCorrelation.setCheckState(2)
 		self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
 
+		self.doubleSpinBox_soluteDielectric.setValue(1)
+		self.doubleSpinBox_filteringPercent.setValue(60)
+		self.doubleSpinBox_filteringCutoff.setValue(12)
+		self.spinBox_numProcessors.setValue(multiprocessing.cpu_count())
+		self.spinBox_dcdStride.setValue(1)
 
 	def closeEvent(self, event):
 			# Check whether user agrees to stop calculation (if any)
@@ -125,7 +139,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 	def updateOutputFolder(self):
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(self,'Select',os.getcwd()))
-		self.lineEdit_outputFolder.setText(name)
+		outputFolder = os.path.join(name,'grinn_output')
+		self.lineEdit_outputFolder.setText(outputFolder)
 
 	def updateNAMDPath(self):
 		name,__ = QtWidgets.QFileDialog.getOpenFileName(self,'Select',os.getcwd())
@@ -440,9 +455,13 @@ class monitorProgress(QtCore.QThread):
 		percent = 0
 
 		while not continueFlag and self._isRunning:
-			logFile = open(self.params.logFile,'r')
-			lines = logFile.readlines()
-			logFile.close()
+			try:
+				logFile = open(self.params.logFile,'r')
+				lines = logFile.readlines()
+				logFile.close()
+			except:
+				lines = []
+
 			for i in range(nextStartingLine,len(lines)):
 				line = lines[i]
 				if 'DEBUG' in line: continue
@@ -504,7 +523,7 @@ class monitorProgress(QtCore.QThread):
 				self._isRunning = False # Prevent going back to reading log, cause error could delete output folder.
 				#self.mainWindow.processGetResIntEn = None
 				self.error.emit("Encountered an unexpected error that is not handled by gRINN. "
-					"Please check for anomalies in your input data and settings. \n\n"
+					"Please check for anomalies in your input data and settings (e.g. input file paths, trajectory stride and cutoff values, etc)\n\n"
 					"If this error persist, let us know about it via email by describing your input data "
 					"(and sending it, if you're OK with that). We'll try our best to identify the cause and debug the issue.")
 				self.exit()
