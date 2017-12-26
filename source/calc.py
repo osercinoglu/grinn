@@ -497,7 +497,25 @@ def calcEnergiesGMX(params):
 
 		signal.signal(signal.SIGINT,sigint_handler)
 		proc = subprocess.Popen([params.exe,'mdrun','-rerun',params.traj,'-s',tprFile,
-			'-e',edrFile,'-nt',str(params.numCores)])
+			'-e',edrFile,'-nt',str(params.numCores)],stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE)
+
+		output,error = proc.communicate()
+		if error:
+			error = error.split('\n') # Splitting into lines to be able to process each line separately.
+			fatalErrorLines = None
+
+			# Collect fatal error and subsequent lines.
+			for i in range(0,len(error)):
+				if 'Fatal error' in error[i]:
+					fatalErrorLines = error[i:]
+					continue
+
+			if fatalErrorLines:
+				fatalError = '\n'.join(fatalErrorLines)
+				message = 'Fatal error from gmx:\n\n' + fatalError
+				errorSuicide(params,message)
+				
 		proc.wait()
 
 		edrFiles.append(edrFile)
@@ -663,6 +681,7 @@ def errorSuicide(params,message,removeOutput=False):
 	if removeOutput:
 		rmtree(params.outFolder,ignore_error=True)
 	#psutil.Process(os.getpid()).kill()
+	# Exit normally after printing the error to the log file.
 	os._exit(0)
 
 def calcNAMD(params):
