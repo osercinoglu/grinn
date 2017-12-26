@@ -54,7 +54,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		# Set the numCores to the maximum cpu count in this system.
 		numCores = multiprocessing.cpu_count()
 		self.calcParams.numCores = numCores
-		self.spinBox_numProcessors.setValue(int(numCores))
+		self.spinBox_numProcessors.setValue(int(numCores)-1) # gRINN should keep one CPU to itself.
+		self.spinBox_numProcessors.setMaximum(int(numCores)-1)
 
 	def loadSampleGMXdata(self):
 		#root_path = sys.path[0]
