@@ -491,11 +491,17 @@ def calcEnergiesGMX(params):
 
 		# Catching CTRL+C SIGINT signals.
 		def sigint_handler(signum, frame):
-			params.logger.exception('Keyboard interrupt detected. Aborting now.')
 			proc.kill()
-			sys.exit(0)
+			if sys.stdin.isatty():
+				if not click.confirm('Would you like to delete the output folder?', default=True):
+					errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=False)
+				else:
+					errorSuicide(params,'Keyboard interrupt detected. Aborting now.',removeOutput=True)
+			else:
+				errorSuicide(params,'GUI interrupt detected. Aborting now.',removeOutput=False)
 
 		signal.signal(signal.SIGINT,sigint_handler)
+
 		proc = subprocess.Popen([params.exe,'mdrun','-rerun',params.traj,'-s',tprFile,
 			'-e',edrFile,'-nt',str(params.numCores)],stdout=subprocess.PIPE,
 			stderr=subprocess.PIPE)
