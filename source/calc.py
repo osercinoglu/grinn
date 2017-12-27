@@ -306,10 +306,23 @@ def calcEnergiesSingleCoreNAMD(args):
 				_,error = pid_namd2.communicate()
 			except KeyboardInterrupt:
 				print('Keyboard interrupt detected.')
-			if error:
-				#logger.exception('Error while calling NAMD executable:\n'+error)
 				sys.exit(0)
+
+			if error:
+				#logger.exception('Error while calling NAMD executable:\n'+error).
+				error = error.split('\n')
+				fatalErrorLine = None
+
+				for i in range(0,len(error)):
+					if 'FATAL ERROR:' in error[i]:
+						fatalErrorLine = error[i]
+						continue
+
+				if fatalErrorLine:
+					return fatalErrorLine
+
 			pid_namd2.wait()
+			return None
 
 			#subprocess.call('rm %s' % namdConf,shell=True)
 			#subprocess.call('rm %s' % pairIntPDB,shell=True)
@@ -336,11 +349,14 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	for pairsFilteredChunk in pairsFilteredChunks:
 		try:
-			calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
+			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 				pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
 		except (SystemExit):
-			#logger.exception('Fatal error while calling NAMD executable')
+			#logger.exception('Fatal error while calling NAMD executable.
 			return 'SystemExit'
+
+		if errorMessage:
+			return errorMessage
 
 		progBar.update()
 		percent = percent + 100/float(numChunks)
@@ -432,8 +448,15 @@ def calcEnergiesNAMD(params):
 	
 	if 'SystemExit' in results:
 		removeOutput = False if sys.stdin.isatty() else False
-		errorSuicide(params,'Fatal error while calling NAMD executable.',
+		errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
+			'Error could not be further identified. Please inspect your input data carefully.\n'
+			'If the error persists, contact us. Aborting now.',
 			removeOutput=removeOutput)
+	elif results:
+		removeOutput = False if sys.stdin.isatty() else False
+		errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
+		errorSuicide(params,'Fatal error from NAMD: '+
+			errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
