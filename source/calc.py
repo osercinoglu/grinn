@@ -525,25 +525,28 @@ def calcEnergiesGMX(params):
 
 		signal.signal(signal.SIGINT,sigint_handler)
 
-		proc = subprocess.Popen([params.exe,'mdrun','-rerun',params.traj,'-s',tprFile,
-			'-e',edrFile,'-nt',str(params.numCores)],stdout=subprocess.PIPE,
-			stderr=subprocess.PIPE)
+		proc = subprocess.Popen([params.exe,'mdrun','-rerun',params.traj,'-v','-s',tprFile,
+			'-e',edrFile,'-nt',str(params.numCores)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 
-		output,error = proc.communicate()
+		error = proc.communicate()[1]
 		if error:
 			error = error.split('\n') # Splitting into lines to be able to process each line separately.
 			fatalErrorLines = None
 
 			# Collect fatal error and subsequent lines.
-			for i in range(0,len(error)):
-				if 'Fatal error' in error[i]:
-					fatalErrorLines = error[i:]
+			for j in range(0,len(error)):
+				if 'Fatal error' in error[j]:
+					fatalErrorLines = error[j:]
 					continue
 
 			if fatalErrorLines:
 				fatalError = '\n'.join(fatalErrorLines)
 				message = 'Fatal error from gmx:\n\n' + fatalError
 				errorSuicide(params,message)
+			# else:
+			# 	error = '\n'.join(error)
+			# 	message = 'Error from gmx:\n\n' + error
+			# 	errorSuicide(params,message)
 				
 		proc.wait()
 
