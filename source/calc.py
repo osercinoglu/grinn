@@ -583,12 +583,11 @@ def filterPairs(params):
 	# Get target selection residues
 	try:
 		targetCA = system.select(str(params.sel2+' and name CA'))
+		numTarget = len(targetCA)
+		targetResids = targetCA.getResindices()
 	except:
 		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
 		return
-
-		numTarget = len(targetCA)
-		targetResids = targetCA.getResindices()
 
 	# Generate all possible unique pairwise residue-residue combinations
 	pairProduct = itertools.product(sourceResids,targetResids)
