@@ -449,14 +449,15 @@ def calcEnergiesNAMD(params):
 	if 'SystemExit' in results:
 		removeOutput = False if sys.stdin.isatty() else False
 		errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
-			'Error could not be further identified. Please inspect your input data carefully.\n'
+			'Error could not be identified in detail. Please inspect your input data carefully.\n'
 			'If the error persists, contact us. Aborting now.',
 			removeOutput=removeOutput)
-	elif results:
-		removeOutput = False if sys.stdin.isatty() else False
-		errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
-		errorSuicide(params,'Fatal error from NAMD: '+
-			errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
+	elif results[0] is not None:
+		if 'FATAL ERROR: ' in results[0]:
+			removeOutput = False if sys.stdin.isatty() else False
+			errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
+			errorSuicide(params,'Fatal error from NAMD: '+
+				errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
