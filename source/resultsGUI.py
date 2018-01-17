@@ -205,14 +205,20 @@ class MyStaticMplCanvas(MyMplCanvas):
 
 		elif type.startswith('network'):
 			if type == 'network-bc':
-				metric = nx.betweenness_centrality(viewResultsParams.networkRO)
+				metric = nx.betweenness_centrality(viewResultsParams.networkRO,
+					weight='distance')
 				title = 'Betweenness centrality'
 			elif type == 'network-cc':
-				metric = nx.closeness_centrality(viewResultsParams.networkRO)
+				metric = nx.closeness_centrality(viewResultsParams.networkRO,
+					distance='distance')
 				title = 'Closeness centrality'
 			elif type == 'network-degree':
 				metric = dict(nx.degree(viewResultsParams.networkRO))
 				title = 'Degree'
+
+			### Save to file in the output folder.
+			### It could be a better idea to delete this and add the feature to the UI once
+			### the UI is deleted
 
 			chainResnameResnums = [getChainResnameResnum(
 				viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
