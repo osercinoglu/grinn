@@ -76,11 +76,22 @@ def getRibeiroOrtizNetwork(pdb,resMeanIntEnFile=False,includeCovalents=True,intE
 	resIntEnMat = np.loadtxt(resMeanIntEnFile)
 
 	# Determine RMSD of interaction energies (needed later on)
-	resIntEnArray = [i for i in np.abs(np.reshape(resIntEnMat,(1,numResidues**2))[0]) if i > 0]
-	rmsdIntEn = np.sqrt(((resIntEnArray - np.mean(resIntEnArray)) ** 2).mean())
+	resIntEnArray = [i for i in np.reshape(resIntEnMat,(1,numResidues**2))[0]]
+	#rmsdIntEn = np.sqrt(np.mean((resIntEnArray - np.mean(resIntEnArray)) ** 2))
 
 	# Construct an matrix to make edge weights later on according to Ribeiro et al. (2014)
-	X = 0.5*(1-(resIntEnMat-np.mean(resIntEnArray))/(5*rmsdIntEn))
+	#X = 0.5*(1-(resIntEnMat-np.mean(resIntEnArray))/(5*rmsdIntEn))
+
+	# Construct an edge weights matrix.
+	resIntEnMatNegFavor = np.zeros(np.shape(resIntEnMat))
+	for i in range(0,np.shape(resIntEnMat)[0]):
+		for j in range(0,np.shape(resIntEnMat)[0]):
+			if resIntEnMat[i,j] < 0:
+				resIntEnMatNegFavor[i,j] = np.abs(resIntEnMat[i,j])
+			else:
+				resIntEnMatNegFavor[i,j] = 0
+
+	X = np.abs(resIntEnMatNegFavor)/np.max(np.abs(resIntEnMatNegFavor))
 
 	for i in range(0,numResidues):
 		for j in range(0,numResidues):
