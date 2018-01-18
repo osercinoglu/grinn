@@ -37,6 +37,9 @@ class viewResultsParams(object):
 		self.resCorrTotal = None
 		self.intEnCorrTotal = None
 		self.networkRO = None
+		self.networkBC = None
+		self.networkCC = None
+		self.networkDegrees = None
 		self.selectedSourceRes = 0
 		self.selectedTargetRes = 0
 		self.selectedShortestPath = None
@@ -205,15 +208,13 @@ class MyStaticMplCanvas(MyMplCanvas):
 
 		elif type.startswith('network'):
 			if type == 'network-bc':
-				metric = nx.betweenness_centrality(viewResultsParams.networkRO,
-					weight='distance')
+				metric = viewResultsParams.networkBC
 				title = 'Betweenness centrality'
 			elif type == 'network-cc':
-				metric = nx.closeness_centrality(viewResultsParams.networkRO,
-					distance='distance')
+				metric = viewResultsParams.networkCC
 				title = 'Closeness centrality'
 			elif type == 'network-degree':
-				metric = dict(nx.degree(viewResultsParams.networkRO))
+				metric = viewResultsParams.networkDegrees
 				title = 'Degree'
 
 			### Save to file in the output folder.
@@ -505,6 +506,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			#self.checkBox_nwInclCovBonds.clicked.connect(self.updateNetwork)
 			#self.doubleSpinBox_nwIntEnCutoff.valueChanged.connect(self.updateNetwork)
 			self.pushButton_updateNetwork.clicked.connect(self.updateNetwork)
+			self.pushButton_exportNetwork.clicked.connect(self.exportNetwork)
 			return True
 		else:
 			return False
@@ -543,8 +545,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		#self.networkPlot.update_figure(self,'network')
 
-		bc = nx.betweenness_centrality(self.viewResultsParams.networkRO)
-		numBC = len(bc)
+		# Compute network metrics
+		self.viewResultsParams.networkBC = nx.betweenness_centrality(self.viewResultsParams.networkRO,weight='distance')
+		self.viewResultsParams.networkCC = nx.closeness_centrality(self.viewResultsParams.networkRO,distance='distance')
+		self.viewResultsParams.networkDegrees = dict(nx.degree(self.viewResultsParams.networkRO))
+
+		numBC = len(self.viewResultsParams.networkBC)
 		newFrameSize = 10*numBC
 		width = self.frame_ResidueMetrics.size().width()
 		self.frame_ResidueMetrics.setMinimumSize(QtCore.QSize(width, newFrameSize))
@@ -895,6 +901,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.degreePlot.update_figure(self,'network-degree')
 		self.bcPlot.update_figure(self,'network-bc')
 		self.ccPlot.update_figure(self,'network-cc')
+
+	def exportNetwork(self):
+		fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Specify the file name to save the network into...","","GML Files (*.gml)")
+		if fileName:
+			print(fileName)
+			nx.write_gml(self.viewResultsParams.networkRO,os.path.abspath(fileName))
 
 def main():
 	sys_argv = sys.argv

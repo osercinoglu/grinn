@@ -160,7 +160,7 @@
              <enum>QTabWidget::Rounded</enum>
             </property>
             <property name="currentIndex">
-             <number>0</number>
+             <number>4</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -553,11 +553,19 @@
                    </property>
                   </widget>
                  </item>
+                 <item>
+                  <widget class="QPushButton" name="pushButton_exportNetwork">
+                   <property name="text">
+                    <string>Export Network to File...</string>
+                   </property>
+                  </widget>
+                 </item>
                 </layout>
                 <zorder>label_3</zorder>
                 <zorder>doubleSpinBox_nwIntEnCutoff</zorder>
                 <zorder>checkBox_nwInclCovBonds</zorder>
                 <zorder>pushButton_updateNetwork</zorder>
+                <zorder>pushButton_exportNetwork</zorder>
                </widget>
               </item>
               <item>
@@ -575,7 +583,7 @@
                  <enum>QTabWidget::Rounded</enum>
                 </property>
                 <property name="currentIndex">
-                 <number>1</number>
+                 <number>0</number>
                 </property>
                 <widget class="QWidget" name="tab_ResidueMetrics">
                  <attribute name="title">
@@ -604,8 +612,8 @@
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>100</width>
-                       <height>30</height>
+                       <width>956</width>
+                       <height>360</height>
                       </rect>
                      </property>
                      <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -636,6 +644,49 @@
                       </item>
                      </layout>
                     </widget>
+                   </widget>
+                  </item>
+                  <item alignment="Qt::AlignLeft|Qt::AlignVCenter">
+                   <widget class="QFrame" name="frame_2">
+                    <property name="minimumSize">
+                     <size>
+                      <width>0</width>
+                      <height>40</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>16777215</width>
+                      <height>40</height>
+                     </size>
+                    </property>
+                    <property name="frameShape">
+                     <enum>QFrame::NoFrame</enum>
+                    </property>
+                    <property name="frameShadow">
+                     <enum>QFrame::Plain</enum>
+                    </property>
+                    <layout class="QHBoxLayout" name="horizontalLayout_9">
+                     <item>
+                      <widget class="QPushButton" name="pushButton_saveResidueMetrics">
+                       <property name="minimumSize">
+                        <size>
+                         <width>0</width>
+                         <height>25</height>
+                        </size>
+                       </property>
+                       <property name="maximumSize">
+                        <size>
+                         <width>250</width>
+                         <height>16777215</height>
+                        </size>
+                       </property>
+                       <property name="text">
+                        <string>Save Residue Metrics to File...</string>
+                       </property>
+                      </widget>
+                     </item>
+                    </layout>
                    </widget>
                   </item>
                  </layout>
