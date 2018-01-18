@@ -217,10 +217,6 @@ class MyStaticMplCanvas(MyMplCanvas):
 				metric = viewResultsParams.networkDegrees
 				title = 'Degree'
 
-			### Save to file in the output folder.
-			### It could be a better idea to delete this and add the feature to the UI once
-			### the UI is deleted
-
 			chainResnameResnums = [getChainResnameResnum(
 				viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
 			# Note that the following does not work in mpl=2.1.0
@@ -451,28 +447,32 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			if hasattr(self,"intEnBarPlot"):
 				self.intEnBarPlot.setParent(None)
 
-			self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
+			self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,
+				width=5,height=4,
 				dpi=100)
 			self.verticalLayout_3.addWidget(self.intEnBarPlot)
 
 			if hasattr(self,"intEnTimeSeries"):
 				self.intEnTimeSeries.setParent(None)
 
-			self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+			self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,
+				width=5,height=4,
 				dpi=100,toolbar=True)
 			self.verticalLayout.addWidget(self.intEnTimeSeries)
 
 			if hasattr(self,"intEnDistributions"):
 				self.intEnDistributions.setParent(None)
 
-			self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
+			self.intEnDistributions = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,
+				width=5,height=4,
 				dpi=100)
 			self.verticalLayout.addWidget(self.intEnDistributions)
 
 			if hasattr(self,"intEnMeanMat"):
 				self.intEnMeanMat.setParent(None)
 
-			self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,dpi=100,toolbar=True)
+			self.intEnMeanMat = MyStaticMplCanvas(self.frame_tabIEM,width=5,height=4,
+				dpi=100,toolbar=True)
 			self.verticalLayout_5.addWidget(self.intEnMeanMat)
 
 			if hasattr(self,"iecEnergiesPlot"):
@@ -496,17 +496,24 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.populateGUI()
 
 			# Connect some callbacks that need to be connected only once some data is loaded.
-			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnBarPlot)
-			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',self.onClick_intEnMeanMat)
+			self.intEnBarPlot.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_intEnBarPlot)
+			self.intEnMeanMat.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_intEnMeanMat)
 			self.verticalSlider_IEM.valueChanged.connect(self.updateIEMrange)
-			self.resCorrTotalMat.fig.canvas.mpl_connect('button_press_event',self.onClick_resCorrTotalMat)
-			self.bcPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
-			self.ccPlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
-			self.degreePlot.fig.canvas.mpl_connect('button_press_event',self.onClick_networkBarPlots)
+			self.resCorrTotalMat.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_resCorrTotalMat)
+			self.bcPlot.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_networkBarPlots)
+			self.ccPlot.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_networkBarPlots)
+			self.degreePlot.fig.canvas.mpl_connect('button_press_event',
+				self.onClick_networkBarPlots)
 			#self.checkBox_nwInclCovBonds.clicked.connect(self.updateNetwork)
 			#self.doubleSpinBox_nwIntEnCutoff.valueChanged.connect(self.updateNetwork)
 			self.pushButton_updateNetwork.clicked.connect(self.updateNetwork)
 			self.pushButton_exportNetwork.clicked.connect(self.exportNetwork)
+			self.pushButton_saveResidueMetrics.clicked.connect(self.saveResidueMetrics)
 			return True
 		else:
 			return False
@@ -516,7 +523,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		numResidues = len(self.viewResultsParams.intEnMeanTotal)
 		self.tableWidget_sourceTargetResEnergies.setRowCount(numResidues)
 		self.tableWidget_sourceTargetResEnergies.setColumnCount(3)
-		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(["Residue","Residue","IE [kcal/mol]"])
+		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(
+			["Residue","Residue","IE [kcal/mol]"])
 		self.tableWidget_sourceTargetResEnergies.setSortingEnabled(False)
 		header = self.tableWidget_sourceTargetResEnergies.horizontalHeader()
 		header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
@@ -546,9 +554,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		#self.networkPlot.update_figure(self,'network')
 
 		# Compute network metrics
-		self.viewResultsParams.networkBC = nx.betweenness_centrality(self.viewResultsParams.networkRO,weight='distance')
-		self.viewResultsParams.networkCC = nx.closeness_centrality(self.viewResultsParams.networkRO,distance='distance')
-		self.viewResultsParams.networkDegrees = dict(nx.degree(self.viewResultsParams.networkRO))
+		self.viewResultsParams.networkBC = nx.betweenness_centrality(
+			self.viewResultsParams.networkRO,weight='distance')
+		self.viewResultsParams.networkCC = nx.closeness_centrality(
+			self.viewResultsParams.networkRO,distance='distance')
+		self.viewResultsParams.networkDegrees = dict(nx.degree(
+			self.viewResultsParams.networkRO))
 
 		numBC = len(self.viewResultsParams.networkBC)
 		newFrameSize = 10*numBC
@@ -903,10 +914,32 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.ccPlot.update_figure(self,'network-cc')
 
 	def exportNetwork(self):
-		fileName, _ = QtWidgets.QFileDialog.getSaveFileName(self,"Specify the file name to save the network into...","","GML Files (*.gml)")
+		fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+			self,"Specify the file name to save the network into...",
+			"","GML Files (*.gml)")
 		if fileName:
-			print(fileName)
 			nx.write_gml(self.viewResultsParams.networkRO,os.path.abspath(fileName))
+
+	def saveResidueMetrics(self):
+		fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+			self,"Specify the file name to save the residue network metrics into...",
+			"","CSV Files (*.csv)")
+		if fileName:
+			# Make a dataframe
+			df = pandas.DataFrame(columns=['Index','Residue','Degree','Betweenness-centrality',
+				'Closeness-centrality'])
+			chainResnameResnums = [getChainResnameResnum(
+				self.viewResultsParams.system,key) for key in [key-1 for key in list(
+				self.viewResultsParams.networkBC.keys())]]
+			for i in range(0,len(chainResnameResnums)):
+				df.loc[i] = [i,
+				chainResnameResnums[i],
+				self.viewResultsParams.networkDegrees.values()[i],
+				self.viewResultsParams.networkBC.values()[i],
+				self.viewResultsParams.networkCC.values()[i]]
+
+			# Save to a CSV file.
+			df.to_csv(fileName)
 
 def main():
 	sys_argv = sys.argv
