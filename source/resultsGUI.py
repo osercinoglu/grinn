@@ -493,6 +493,11 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.resCorrTotalMat = MyStaticMplCanvas(self.frame_tabRC,toolbar=True)
 			self.verticalLayout_13.addWidget(self.resCorrTotalMat)
 
+			# Clearing UI Tables.
+			self.tableWidget_sourceTargetResEnergies.setRowCount(0)
+			self.tableWidget_IEC.setRowCount(0)
+			self.tableWidget_ShortestPaths.setRowCount(0)
+
 			self.populateGUI()
 
 			# Connect some callbacks that need to be connected only once some data is loaded.
