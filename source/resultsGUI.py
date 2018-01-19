@@ -914,6 +914,14 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 				intEnCutoff=self.nwIntEnCutoff,
 				outPrefix=self.viewResultsParams.outputFolder)
 
+		# Compute network metrics
+		self.viewResultsParams.networkBC = nx.betweenness_centrality(
+			self.viewResultsParams.networkRO,weight='distance')
+		self.viewResultsParams.networkCC = nx.closeness_centrality(
+			self.viewResultsParams.networkRO,distance='distance')
+		self.viewResultsParams.networkDegrees = dict(nx.degree(
+			self.viewResultsParams.networkRO))
+
 		self.degreePlot.update_figure(self,'network-degree')
 		self.bcPlot.update_figure(self,'network-bc')
 		self.ccPlot.update_figure(self,'network-cc')
