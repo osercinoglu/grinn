@@ -456,7 +456,7 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFilt
 		for res in chunkResidues:
 			resString += 'res'+str(res)+' '
 
-		resString += ' SOL'
+		#resString += ' SOL'
 
 		f.write('energygrps = '+resString+'\n')
 
