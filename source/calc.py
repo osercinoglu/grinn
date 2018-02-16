@@ -882,12 +882,20 @@ def getParams(args):
 			message = 'Could not select sel1 or sel2 in the PDB file. Aborting now.'
 			return params, False, message
 
+		# Check whether there any chain ids not assigned a valid letter.
+		chids = systemProtein.getChids()
+		for chid in chids:
+			if not chid.strip():
+				message = 'There is at least one residue with no chain ID assigned to it. This is not '\
+				'allowed. Aborting now...'
+				return params, False, message
+
 		numResidues = len(np.unique(systemProtein.getResindices()))
 		for resindex in np.unique(systemProtein.getResindices()):
 			residue = systemProtein.select(str('resindex %i' % resindex))
 			index = np.unique(residue.getResnames())
 			if len(index) > 1:
-				message = 'There are multiple residues with the same residue index in your PDB file. '
+				message = 'There are multiple residues with the same residue index in your PDB file. '\
 				' This is not allowed. Aborting now...'
 				return params, False, message
 
@@ -944,7 +952,7 @@ def getParams(args):
 
 		# Check whether stride is higher than the number of frames in trajectory:
 		if params.stride > trajectory.numFrames():
-			message = 'Stride value is higher than the number of frames in the trajectory. '
+			message = 'Stride value is higher than the number of frames in the trajectory. '\
 			'Please use a lower stride value.'
 			return params, False, message
 
@@ -997,6 +1005,15 @@ def getParams(args):
 				message = 'Could not select sel1 or sel2 in the PDB file extracted from the '
 				'TPR. Aborting now.'
 				return params, False, message
+
+			# Check whether there any chain ids not assigned a valid letter.
+			systemProtein = system.select('protein')
+			chids = systemProtein.getChids()
+			for chid in chids:
+				if not chid.strip():
+					message = 'There is at least one residue with no chain ID assigned to it. This is not '\
+					'allowed. Aborting now...'
+					return params, False, message
 
 	params.calcCorr = args.calccorr
 
