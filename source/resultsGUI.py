@@ -686,9 +686,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			'red','resi '+target_string[4:]+' and chain '+target_string[0])
 		self.ProteinView._pymol.cmd.set('label_size','-2')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+source_string[4:]+' and chain '+source_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+source_string[4:]+' and chain '+source_string[0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+target_string[4:]+' and chain '+target_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+target_string[4:]+' and chain '+target_string[0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinResidueQuadruples(self):
@@ -724,13 +724,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			'blue','resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0])
 		self.ProteinView._pymol.cmd.set('label_size','-2')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+selectedPair1[1][4:]+' and chain '+selectedPair1[1][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+selectedPair1[1][4:]+' and chain '+selectedPair1[1][0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+selectedPair2[0][4:]+' and chain '+selectedPair2[0][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+selectedPair2[0][4:]+' and chain '+selectedPair2[0][0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+selectedPair2[1][4:]+' and chain '+selectedPair2[1][0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinResidueMetrics(self,resIndex,bfacColorScheme=None):
@@ -747,7 +747,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.ProteinView._pymol.cmd.color('red','resi '+res_string[4:]+' and chain '+res_string[0])
 		self.ProteinView._pymol.cmd.set('label_size','-2')
 		self.ProteinView._pymol.cmd.label(
-			'resi '+res_string[4:]+' and chain '+res_string[0]+' and name ca','"%s%s%s" % (chain,resn,resi)')
+			'resi '+res_string[4:]+' and chain '+res_string[0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymolProcess()
 
 	def updateProteinShortestPaths(self,path):
@@ -766,7 +766,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			#self.ProteinView._pymol.cmd.show_as('spheres',res_pymol_select)
 			self.ProteinView._pymol.cmd.color('red',res_pymol_select)
 			self.ProteinView._pymol.cmd.label(
-				res_pymol_select+' and name ca','"%s%s%s" % (chain,resn,resi)')
+				res_pymol_select+' and name CA','"%s%s%s" % (chain,resn,resi)')
 
 		self.ProteinView._pymolProcess()
 
