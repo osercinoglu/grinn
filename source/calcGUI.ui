@@ -39,10 +39,10 @@
      </rect>
     </property>
     <property name="toolTip">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass must come closer than this value for at least the specified percent of the trajectory frames.&lt;/p&gt;&lt;p&gt;This is also the non-bonded interaction energy cutoff for NAMD data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;For a residue pair to be selected for computations, their Centers of Mass (all atoms) must come closer than this value for at least the specified percent of the trajectory frames.&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;It is advised to keep this value significantly higher than the non-bonded cutoff value used for the simulation.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="value">
-     <double>12.000000000000000</double>
+     <double>20.000000000000000</double>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_residueGroup1">
@@ -349,7 +349,7 @@
      <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the full path to the folder where you wish to store calculation results. &lt;/p&gt;&lt;p&gt;The path must not exist prior to calculation; it is going to be created by gRINN.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="text">
-     <string>getResIntEn_output</string>
+     <string>grinn_output</string>
     </property>
    </widget>
    <widget class="QLineEdit" name="lineEdit_namd2">
@@ -677,9 +677,9 @@
    <widget class="QLabel" name="label_8">
     <property name="geometry">
      <rect>
-      <x>220</x>
+      <x>10</x>
       <y>240</y>
-      <width>201</width>
+      <width>151</width>
       <height>21</height>
      </rect>
     </property>
@@ -696,7 +696,7 @@
     </property>
     <property name="geometry">
      <rect>
-      <x>460</x>
+      <x>180</x>
       <y>240</y>
       <width>62</width>
       <height>24</height>
@@ -809,6 +809,44 @@
     </property>
     <property name="flat">
      <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QDoubleSpinBox" name="doubleSpinBox_nonbondedCutoff">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>460</x>
+      <y>240</y>
+      <width>62</width>
+      <height>24</height>
+     </rect>
+    </property>
+    <property name="toolTip">
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;This is the non-bonded interaction cutoff (in Angstroms) for NAMD (the cutoff parameter in NAMD configuration file).&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-weight:600;&quot;&gt;You should set this value to the value you've used for the simulation.&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+    </property>
+    <property name="maximum">
+     <double>80.000000000000000</double>
+    </property>
+    <property name="value">
+     <double>12.000000000000000</double>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_10">
+    <property name="geometry">
+     <rect>
+      <x>260</x>
+      <y>240</y>
+      <width>191</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Non-bonded cutoff (NAMD)</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
     </property>
    </widget>
   </widget>

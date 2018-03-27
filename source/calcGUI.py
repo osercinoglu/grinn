@@ -310,6 +310,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		args.sel2 = [calcParams.sel2]
 		args.pairfiltercutoff = [calcParams.pairFilterCutoff]
 		args.pairfilterpercentage = [calcParams.pairFilterPercentage]
+		args.cutoff = [calcParams.cutoff]
 		args.stride = [calcParams.stride]
 		args.framerange = [False]
 		args.exe = [calcParams.exe]
@@ -334,6 +335,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.dielectric = float(self.doubleSpinBox_soluteDielectric.value())
 		self.calcParams.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
 		self.calcParams.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
+		self.calcParams.cutoff = float(self.doubleSpinBox_nonbondedCutoff.value())
 		self.calcParams.numCores = int(self.spinBox_numProcessors.value())
 		self.calcParams.stride = int(self.spinBox_dcdStride.value())
 		self.calcParams.outFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))

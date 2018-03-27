@@ -187,10 +187,13 @@ if __name__ == '__main__':
 		'for at least PAIRCUTOFFPERCENTAGE of the trajectory will be included '
 		'in energy calculations.')
 
-	parser.add_argument('--pairfilterpercentage',default=[0.75],nargs=1,
+	parser.add_argument('--pairfilterpercentage',default=[75],nargs=1,
 		help='When given, residues that	are within the PAIRFILTERCUTOFF distance from each '
 		'other for at least PAIRFILTERPERCENTAGE percent of the trajectory will be taken '
-		'into account in further evaluations. When not given, it defaults to 0.75 (75%%)')
+		'into account in further evaluations. When not given, it defaults to 75%%)')
+
+	parser.add_argument('--cutoff',default=[12],nargs=1,
+		help='Non-bonded interaction distance cutoff (Angstroms) for NAMD-type data.')
 
 	parser.add_argument('--stride',default=[1],type=int,nargs=1,
 		help='If specified, a stride with value of STRIDE will be applied to the trajectory '

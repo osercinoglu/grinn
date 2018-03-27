@@ -21,6 +21,7 @@ class parameters(object):
 		self.sel2 = None
 		self.pairFilterCutoff = None
 		self.pairFilterPercentage = None
+		self.cutoff = None
 		self.stride = None
 		self.frameRange = None
 		self.namd2exe = None
