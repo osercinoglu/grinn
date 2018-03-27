@@ -202,6 +202,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	dcdFilePath = os.path.join(params.outFolder,'traj_dry.dcd')
 	skip = 1 # We implemented this stride (skip) in the DCD file already.
 	pairFilterCutoff = params.pairFilterCutoff
+	cutoff = params.cutoff
 	environment = 'vacuum'
 	soluteDielectric = params.dielectric
 	solventDielectric = 80
@@ -227,7 +228,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,
-		pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
+		pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
 		logger):
 		for pair in pairsFiltered:
 			# Write PDB files for pairInteractionGroup specification
@@ -266,13 +267,13 @@ def calcEnergiesSingleCoreNAMD(args):
 			f.write('outputname %i_%i-temp\n' % (pair[0],pair[1]))
 			f.write('temperature 0\n')
 			f.write('COMmotion yes\n')
-			f.write('cutoff %d\n' % pairFilterCutoff)
+			f.write('cutoff %d\n' % cutoff)
 			
 			if environment == 'implicit-solvent':
 				f.write('GBIS on\n')
 				f.write('solventDielectric %d\n' % solventDielectric)
 				f.write('dielectric %d\n' % soluteDielectric)
-				f.write('alphaCutoff %d\n' % (float(pairFilterCutoff)-3)) # Setting GB radius to cutoff for now. We might want to change this behaviour later.
+				f.write('alphaCutoff %d\n' % (float(cutoff)-3)) # Setting GB radius to cutoff for now. We might want to change this behaviour later.
 				f.write('SASA on\n')
 			elif environment == 'vacuum':
 				f.write('dielectric %d\n' % soluteDielectric)
@@ -350,7 +351,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	for pairsFilteredChunk in pairsFilteredChunks:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-				pairFilterCutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+				pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
 		except (SystemExit):
 			#logger.exception('Fatal error while calling NAMD executable.
 			return 'SystemExit'
@@ -368,6 +369,12 @@ def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
 	params.logger.info('Splitting the pairs into chunks...')
 	params.pairsFilteredChunks = np.array_split(np.asarray(params.pairsFiltered),params.numCores)
+
+	f = open('pairsFilteredChunks.txt','w')
+	for chunk in params.pairsFilteredChunks:
+		f.write(str(chunk))
+		f.write('\n')
+	f.close()
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -623,7 +630,8 @@ def filterPairs(params):
 		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsFilteredFlag = np.abs(kh)/(len(traj)/float(1)) > params.pairFilterCutoff*0.01
+	pairsInclusionFraction = np.abs(kh)/(len(traj)/float(1))
+	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
 	pairsFiltered = list()
 	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
@@ -637,14 +645,14 @@ def filterPairs(params):
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
 	
-	# file = open('pairsFiltered.txt','w')
-	# for pair in pairsFiltered:
-	# 	file.write('%i-%i\n' % (pair[0],pair[1]))
-	# file.close()
+	file = open('pairsFiltered.txt','w')
+	for pair in pairsFiltered:
+	 	file.write('%.2f-%i-%i\n' % (pairsInclusionFraction[pair[0],pair[1]],pair[0],pair[1]))
+	file.close()
 
 	if not pairsFiltered:
 		params.logger.exception('Filtering step did not yield any pairs. '
-			'Either your cutoff value is too small or the percentage criteria is too high.')
+			'Either your cutoff value is too small or the percentage value is too high.')
 		return
 
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
@@ -834,6 +842,8 @@ def getParams(args):
 		return params, False, message
 
 	params.pairFilterPercentage = args.pairfilterpercentage[0]
+
+	params.cutoff = args.cutoff[0]
 
 	if not type(args.sel1) == str:
 		if len(args.sel1) > 1:
