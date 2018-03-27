@@ -3,7 +3,7 @@ from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
-traceback, click
+traceback, click, copy
 from shutil import copyfile, rmtree
 from common import *
 import corr
@@ -195,7 +195,7 @@ def prepareFilesGMX(params):
 
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
-	pairsFiltered = args[0]
+	pairsFilteredSingleCore = args[0]
 	params = args[1]
 	psfFilePath = os.path.join(params.outFolder,'system_dry.psf')
 	pdbFilePath = os.path.join(params.outFolder,'system_dry.pdb')
@@ -227,10 +227,11 @@ def calcEnergiesSingleCoreNAMD(args):
 	logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
-	def calcEnergiesSingleChunk(pairsFiltered,psfFilePath,pdbFilePath,dcdFilePath,skip,
+	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 		pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
 		logger):
-		for pair in pairsFiltered:
+		logger.info('Length of pairsFilteredSingleChunk is %i' % len(pairsFilteredSingleChunk))
+		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
 			sel1 = system.select(str('resindex %i' % int(pair[0])))
@@ -323,7 +324,12 @@ def calcEnergiesSingleCoreNAMD(args):
 					return fatalErrorLine
 
 			pid_namd2.wait()
-			return None
+
+			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
+			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
+				return "I was supposed to generate %i_%i_energies.log but apparently I failed." % (pair[0],pair[1])
+
+		return None
 
 			#subprocess.call('rm %s' % namdConf,shell=True)
 			#subprocess.call('rm %s' % pairIntPDB,shell=True)
@@ -334,21 +340,21 @@ def calcEnergiesSingleCoreNAMD(args):
 		# Done.
 
 	# Split the pairsFiltered into chunks to print the progress on the screen.
-	if len(pairsFiltered) >= 100:
+	if len(pairsFilteredSingleCore) >= 100:
 		numChunks = 100
-	elif len(pairsFiltered) < 10:
+	elif len(pairsFilteredSingleCore) < 10:
 		numChunks = 1
 	else:
 		numChunks = 10
 
-	pairsFilteredChunks = np.array_split(list(pairsFiltered),numChunks)
+	pairsFilteredChunksSingleCore = np.array_split(pairsFilteredSingleCore,numChunks)
 
 	progBar = pyprind.ProgBar(numChunks)
 
 	# Perform the calculations in chunks
 	percent = 0
 
-	for pairsFilteredChunk in pairsFilteredChunks:
+	for pairsFilteredChunk in pairsFilteredChunksSingleCore:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 				pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
@@ -369,12 +375,6 @@ def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
 	params.logger.info('Splitting the pairs into chunks...')
 	params.pairsFilteredChunks = np.array_split(np.asarray(params.pairsFiltered),params.numCores)
-
-	f = open('pairsFilteredChunks.txt','w')
-	for chunk in params.pairsFilteredChunks:
-		f.write(str(chunk))
-		f.write('\n')
-	f.close()
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -639,16 +639,16 @@ def filterPairs(params):
 		for targetResid in targetResids:
 			if sourceResid == targetResid:
 				continue
-			elif pairsFilteredFlag[sourceResid,targetResid]:
+			elif pairsFilteredFlag[sourceResid,targetResid] > 0:
 				pairsFiltered.append(sorted([sourceResid,targetResid]))
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
 	
-	file = open('pairsFiltered.txt','w')
-	for pair in pairsFiltered:
-	 	file.write('%.2f-%i-%i\n' % (pairsInclusionFraction[pair[0],pair[1]],pair[0],pair[1]))
-	file.close()
+	# file = open('pairsFiltered.txt','w')
+	# for pair in pairsFiltered:
+	#  	file.write('%.2f-%i-%i\n' % (pairsInclusionFraction[pair[0],pair[1]],pair[0],pair[1]))
+	# file.close()
 
 	if not pairsFiltered:
 		params.logger.exception('Filtering step did not yield any pairs. '
@@ -730,9 +730,12 @@ def calcNAMD(params):
 
 	# Filter pairs.
 	params = filterPairs(params)
+	pairsFiltered = copy.deepcopy(params.pairsFiltered)
 
 	# Calculate interaction energies.
 	params = calcEnergiesNAMD(params)
+	if not pairsFiltered == params.pairsFiltered:
+		params.logger.error('pairsFiltered do not match...')
 
 	# Collect results.
 	params = collectResults(params)
