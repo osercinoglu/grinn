@@ -230,7 +230,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 		pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
 		logger):
-		logger.info('Length of pairsFilteredSingleChunk is %i' % len(pairsFilteredSingleChunk))
+
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
 			system = parsePDB(pdbFilePath)
@@ -327,7 +327,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
 			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
-				return "I was supposed to generate %i_%i_energies.log but apparently I failed." % (pair[0],pair[1])
+				return "gRINN was supposed to generate %i_%i_energies.log but apparently it failed." % (pair[0],pair[1])
 
 		return None
 
