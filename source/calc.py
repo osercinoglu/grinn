@@ -33,6 +33,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	progbar = pyprind.ProgBar(numResidues*numResidues)
 
+	filteredButNoInt = list() # Accumulate interactions that were included in calculation but resulted in zero interaction energy.
 	for i in range(numResidues):
 		i_chainResnameResnum = getChainResnameResnum(system_dry,i)
 		for j in range(numResidues):
@@ -41,18 +42,22 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 			if keyString in intEn:
 				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
 				intEnDict['Elec'][j,i] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][i,j] = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][j,i] = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
+				totalMeanEn = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
+				intEnDict['Total'][i,j] = totalMeanEn
+				intEnDict['Total'][j,i] = totalMeanEn
 				intEnDict['VdW'][i,j] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 				intEnDict['VdW'][j,i] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 
+				if not totalMeanEn:
+					filteredButNoInt.append(keyString)
+
 			else:
-				intEnDict['Elec'][i,j] = 0
-				intEnDict['Elec'][j,i] = 0
-				intEnDict['Total'][i,j] = 0
-				intEnDict['Total'][j,i] = 0
-				intEnDict['VdW'][i,j] = 0
-				intEnDict['VdW'][j,i] = 0
+				intEnDict['Elec'][i,j] = int(0)
+				intEnDict['Elec'][j,i] = int(0)
+				intEnDict['Total'][i,j] = int(0)
+				intEnDict['Total'][j,i] = int(0)
+				intEnDict['VdW'][i,j] = int(0)
+				intEnDict['VdW'][j,i] = int(0)
 
 			progbar.update()
 
@@ -66,12 +71,12 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	for i in range(0,len(intEnDict['Total'])):
 		for j in range(0,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
-			if value: # i.e. it it's not equal to zero
+			if value: # i.e. if it's not equal to zero (included in filtering step or included but was zero)
 				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system_dry,i),getChainResnameResnum(system_dry,j),str(value)))
 
 	f.close()
 	
-	return intEnDict
+	return intEnDict, filteredButNoInt
 
 def isStructureDry(pdb,psf):
 	# Load the PDB and PSF files
@@ -686,9 +691,14 @@ def collectResults(params):
 
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
-	getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
+	intEnDict, filteredButNoInt = getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
 		os.path.join(params.outFolder,'system_dry.pdb'),
 		prefix=os.path.join(params.outFolder,'energies'))
+
+	# Report interactions with zero mean.
+	for noint in filteredButNoInt:
+		params.logger.info('The interaction %s was included in energy calculation but yielded '
+			'zero kcal/mol mean interaction energy.' % noint)	
 
 	return params
 	if resIntCorr:
