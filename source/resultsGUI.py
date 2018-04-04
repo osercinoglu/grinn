@@ -599,6 +599,11 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.ProteinView._pymol.idle()
 			self.ProteinView._pymol.draw()
 			self.ProteinView._pymolProcess()
+			self.ProteinView.show()
+
+			self.updateProteinResiduePairs()
+			self.ProteinView.resize(self.frame_ProteinViewControl.size())
+			self.ProteinView._pymolProcess()
 			self.ProteinView.show()	
 
 		# Load trajectory if it exists in the output folder!
