@@ -314,7 +314,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		args.stride = [calcParams.stride]
 		args.framerange = [False]
 		args.exe = [calcParams.exe]
-		args.parameterfile = [calcParams.parameterFile]
+		args.parameterfile = calcParams.parameterFile
 		args.calccorr = calcParams.calcCorr
 		args.corrintencutoff = [calcParams.corrIntEnCutoff]
 		args.outfolder = [calcParams.outFolder]
@@ -340,7 +340,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.stride = int(self.spinBox_dcdStride.value())
 		self.calcParams.outFolder = os.path.abspath(str(self.lineEdit_outputFolder.text()))
 		self.calcParams.exe = str(self.lineEdit_namd2.text())
-		self.calcParams.parameterFile = str(self.lineEdit_parameterFile.text())
+		self.calcParams.parameterFile = str(self.lineEdit_parameterFile.text()).split(' ')
 		state = self.checkBox_interactionCorrelation.checkState()
 		if state == 2:
 			self.calcParams.calcCorr = True
