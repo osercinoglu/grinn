@@ -4,7 +4,7 @@ gRINN is a software for residue interaction enery-based analysis of protein MD s
 
 ## Version
 
-1.1.1
+1.1.0
 
 ## Authors
 
