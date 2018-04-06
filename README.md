@@ -47,11 +47,15 @@ This version introduces a major internal code rehaul, leaving major features of 
 There are additional new features as well as minor bug fixes:
 
 New Features:
+
 * A new calculation setting for non-bonded interaction cutoff for NAMD simulation input is introduced. In the previous version, filtering cutoff distance parameter specified for filtering cutoff distance and non-bonded cutoff for NAMD simulation input.
+
 * gRINN now supports Charmm simulation input as well.
 
 Minor bug fixes:
+
 * A bug which cause multiple parameter files reading to fail for NAMD simulation input is fixed.
+
 * A minor bug which caused incorrect protein structure display upon start of View Results interface in Mac OS version is fixed.
 
 ### v1.0.1 (2017/12/27)
