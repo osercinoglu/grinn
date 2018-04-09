@@ -80,7 +80,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		self.doubleSpinBox_soluteDielectric.setValue(1)
 		self.doubleSpinBox_filteringPercent.setValue(60)
-		self.doubleSpinBox_filteringCutoff.setValue(12)
+		self.doubleSpinBox_filteringCutoff.setValue(20)
 		self.spinBox_numProcessors.setValue(multiprocessing.cpu_count())
 		self.spinBox_dcdStride.setValue(1)
 
@@ -109,7 +109,8 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		self.doubleSpinBox_soluteDielectric.setValue(1)
 		self.doubleSpinBox_filteringPercent.setValue(60)
-		self.doubleSpinBox_filteringCutoff.setValue(12)
+		self.doubleSpinBox_filteringCutoff.setValue(20)
+		self.doubleSpinBox_nonbondedCutoff.setValue(12)
 		self.spinBox_numProcessors.setValue(multiprocessing.cpu_count())
 		self.spinBox_dcdStride.setValue(1)
 
