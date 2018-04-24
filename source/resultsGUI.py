@@ -172,12 +172,12 @@ class MyStaticMplCanvas(MyMplCanvas):
 			hm.set_yticklabels(hm.get_yticklabels(), rotation = 0)
 			hm.invert_yaxis()
 
-			xticks = np.arange(0,viewResultsParams.system.numResidues(),10)
+			xticks = np.arange(0,viewResultsParams.system.numResidues(),15)
 			xticklabels = [getChainResnameResnum(viewResultsParams.system,xtick) for xtick in xticks]
 			self.axes.set_xticks(xticks)
-			self.axes.set_xticklabels(xticklabels,fontsize=7)
+			self.axes.set_xticklabels(xticklabels,fontsize=10)
 			self.axes.set_yticks(xticks)
-			self.axes.set_yticklabels(xticklabels,fontsize=7)
+			self.axes.set_yticklabels(xticklabels,fontsize=10)
 			self.axes.set_xlabel('Residue')
 			self.axes.set_ylabel('Residue')
 
@@ -222,10 +222,10 @@ class MyStaticMplCanvas(MyMplCanvas):
 			# Note that the following does not work in mpl=2.1.0
 			self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
 			self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
-			self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=7)
+			self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=9)
 			self.axes.set_ylim([0,len(metric.keys())])
 			self.axes.set_title(title,fontsize=10)
-			self.fig.subplots_adjust(left=0.2,right=0.95,bottom=0.01,top=0.99)
+			self.fig.subplots_adjust(left=0.25,right=0.95,bottom=0.01,top=0.99)
 
 		# Note that the following does not work in mpl=2.0.2
 		# Works fine in mpl=2.1.0 but leaving the newest stable version out until a toolbar issue is fixed in mpl=2.2.0.
@@ -567,7 +567,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.viewResultsParams.networkRO))
 
 		numBC = len(self.viewResultsParams.networkBC)
-		newFrameSize = 10*numBC
+		newFrameSize = 20*numBC
 		width = self.frame_ResidueMetrics.size().width()
 		self.frame_ResidueMetrics.setMinimumSize(QtCore.QSize(width, newFrameSize))
 		self.update()
