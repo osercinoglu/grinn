@@ -808,6 +808,22 @@ def tpr2pdb(params,tpr,pdb):
 	while has_handle(pdb):
 		time.sleep(1)
 
+	# Check whether there any chain ids not assigned a valid letter.
+	noChid = False
+	system = parsePDB(pdb)
+	systemProtein = system.select('protein')
+	chids = systemProtein.getChids()
+	for chid in chids:
+		if not chid.strip():
+			noChid = True
+	
+	if noChid:
+		if params.logger: # Considering the case when this method is called during argument checking step..
+			params.logger.info('At least one atom with no chain IDs present. Assigning the default chain ID P to such atoms right now...')
+		system_noChids = system.select('chain " "')
+		system_noChids.setChids(['P']*system_noChids.numAtoms())
+		writePDB(pdb,system)			
+
 	return True, "Success'"
 
 # Method to check args and get params if they are valid
@@ -1028,15 +1044,6 @@ def getParams(args):
 				message = 'Could not select sel1 or sel2 in the PDB file extracted from the '
 				'TPR. Aborting now.'
 				return params, False, message
-
-			# Check whether there any chain ids not assigned a valid letter.
-			systemProtein = system.select('protein')
-			chids = systemProtein.getChids()
-			for chid in chids:
-				if not chid.strip():
-					message = 'There is at least one residue with no chain ID assigned to it. This is not '\
-					'allowed. Aborting now...'
-					return params, False, message
 
 	params.calcCorr = args.calccorr
 
