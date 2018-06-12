@@ -161,7 +161,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 				vmin = 0
 				cmap = 'Blues'
 
-			if len(matrix) > 100:
+			if len(matrix) > 20:
 				annot = False
 			else:
 				annot = True
