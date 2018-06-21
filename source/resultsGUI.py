@@ -1,6 +1,12 @@
-#!/usr/bin/env python
 import matplotlib
 matplotlib.use("Qt5Agg")
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
+import matplotlib.axes
+import matplotlib.pyplot as plt
+import matplotlib.figure
+#import matplotlib.backends.qt_editor.matplotlib
+import matplotlib.mlab
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -11,10 +17,6 @@ import pandas
 import numpy as np
 import seaborn
 import os
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
-from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
 from common import getResindex
 from common import getChainResnameResnum
 import common
@@ -51,7 +53,7 @@ class viewResultsParams(object):
 
 class MyMplCanvas(FigureCanvas):
 	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
-		fig = Figure(figsize=(width, height), dpi=dpi)
+		fig = matplotlib.figure.Figure(figsize=(width, height), dpi=dpi)
 		self.fig = fig
 		self.axes = fig.add_subplot(111)
 		self.axes.clear()
@@ -412,6 +414,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.onClick_intEnMeanMat(event)
 
 	def updateOutputFolder(self):
+
+		#Update the output folder and UI components using data included in output folder.
 		name = str(QtWidgets.QFileDialog.getExistingDirectory(
 			self,'Select an output folder containing energy calculation results.',os.getcwd()))
 		if name:

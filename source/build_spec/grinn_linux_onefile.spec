@@ -1,6 +1,9 @@
 # -*- mode: python -*-
-
+import sys
+sys.setrecursionlimit(5000)
 block_cipher = None
+
+options = [('v', None, 'OPTION')]
 
 # Icons and other stuff that I discover to be necessary by trial-and-error
 datas = [('../resources/clover.ico','resources'),
@@ -29,7 +32,7 @@ a = Analysis(['../grinn.py'],
              'pandas._libs.tslibs.timedeltas','scipy._lib.messagestream'],
              hookspath=[],
              runtime_hooks=[],
-             excludes=['PyQt4'],
+             excludes=['PyQt4','PySide'],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher)
@@ -42,6 +45,7 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
+          options,
           exclude_binaries=False,
           name='grinn',
           debug=True,

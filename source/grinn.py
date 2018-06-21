@@ -26,7 +26,6 @@ class DesignInteract(QMainWindow,grinnGUI_design.Ui_gRINN):
 		self.pushButton.clicked.connect(self.calculateGUI)
 		self.pushButton_2.clicked.connect(self.resultsGUI)
 
-
 	def calculateGUI(self):
 		self.formGetResIntEnGUI = calcGUI.DesignInteractCalculate(self)
 		self.formGetResIntEnGUI.show()
