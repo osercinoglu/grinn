@@ -45,7 +45,7 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          options,
+          #options, # Comment out this when debugging to have python in verbose mode.
           exclude_binaries=False,
           name='grinn',
           debug=True,
