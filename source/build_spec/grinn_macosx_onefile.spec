@@ -1,5 +1,8 @@
 # -*- mode: python -*-
+import sys
 import glob
+sys.setrecursionlimit(5000)
+block_cipher = None
 
 block_cipher = None
 # Icons and other stuff that I discover to be necessary by trial-and-error
