@@ -9,9 +9,12 @@ options = [('v', None, 'OPTION')]
 datas = [('../resources/clover.ico','resources'),
 ('../VERSION','.'),
 ('../samples','samples'),
-('/home/onur/anaconda2/lib/python2.7/'
+('/home/onur/anaconda2/envs/grinn_dev_pymol1p9/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
+('/home/onur/anaconda2/envs/grinn_dev_pymol1p9/lib/python2.7/site-packages/PyQt5/','.'),
+('/home/onur/anaconda2/envs/grinn_dev_pymol1p9/plugins/platforms/','platforms/'),
+('/home/onur/anaconda2/envs/grinn_dev_pymol1p9/plugins/','plugins/'),
 ('../data','data'),
 ('/home/onur/anaconda2/lib/python2.7/'
   'site-packages/panedr','panedr')]

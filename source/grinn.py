@@ -97,6 +97,26 @@ def prepareEnvironment():
 		os.path.join('data','etc','fonts'))
 	os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
 		os.path.join('data','xkb'))
+	if os.getenv('LD_LIBRARY_PATH'):
+		os.environ['LD_LIBRARY_PATH'] = os.getenv('LD_LIBRARY_PATH')+':'+common.resource_path(
+		os.path.join('data','xcbglintegrations'))
+	else:
+		os.environ['LD_LIBRARY_PATH'] = common.resource_path(
+		os.path.join('data','xcbglintegrations'))
+
+	os.environ['LD_LIBRARY_PATH'] = os.getenv('LD_LIBRARY_PATH')+':'+common.resource_path(
+		'data')
+	os.environ['LD_LIBRARY_PATH'] = os.getenv('LD_LIBRARY_PATH')+':'+common.resource_path(
+		os.path.join('platforms'))
+	if os.getenv('QT_QPA_PLATFORM_PLUGIN_PATH'):
+		os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = \
+		os.getenv('QT_QPA_PLATFORM_PLUGIN_PATH')+':'+common.resource_path('plugins')
+	else:
+		os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = common.resource_path('plugins')
+	print('LD_LIBRARY_PATH is set to:')
+	print(os.getenv('LD_LIBRARY_PATH'))
+	print('QT_QPA_PLATFORM_PLUGIN_PATH is set to:')
+	print(os.getenv('QT_QPA_PLATFORM_PLUGIN_PATH'))
 
 def main():
 	sys_argv = sys.argv
