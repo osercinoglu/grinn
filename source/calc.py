@@ -8,6 +8,7 @@ from shutil import copyfile, rmtree
 from common import *
 import corr
 
+# Method for calculating mean interaction energies.
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Load interaction energy pickle file
@@ -78,6 +79,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 	
 	return intEnDict, filteredButNoInt
 
+# Method for checking whether structure is dry (NAMD-type input)
 def isStructureDry(pdb,psf):
 	# Load the PDB and PSF files
 	pdb = parsePDB(pdb)
@@ -92,6 +94,7 @@ def isStructureDry(pdb,psf):
 	else:
 		return True
 
+# Method for preparing input files for NAMD-type data.
 def prepareFilesNAMD(params):
 	# Detect whether there are non-protein components in the system.
 	params.logger.info('Checking whether the structure has non-protein atoms...')
@@ -129,6 +132,7 @@ def prepareFilesNAMD(params):
 	if not proceed:
 		errorSuicide(params,message,removeOutput=False)
 
+# Method for preparing input files for gromacs-type data.
 def prepareFilesGMX(params):
 	params.logger.info('Converting TPR to PDB...')
 
@@ -198,6 +202,8 @@ def prepareFilesGMX(params):
 
 	return params
 
+# Method for calculation of interaction energies on NAMD-type data
+# (called by calcEnergiesNAMD)
 def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
 	pairsFilteredSingleCore = args[0]
@@ -376,6 +382,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	logger.info('Completed a pairwise energy calculation thread.')
 
+# Main method performing interaction energy calculations on NAMD-type data.
 def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
 	params.logger.info('Splitting the pairs into chunks...')
@@ -497,6 +504,7 @@ def calcEnergiesNAMD(params):
 	params.parsedEnergies = parsedEnergies
 	return params
 
+# Main method performing interaction energy calculations on gromacs-type data.
 def calcEnergiesGMX(params):
 
 	params.logger.info('Started an energy calculation thread.')
@@ -569,6 +577,8 @@ def calcEnergiesGMX(params):
 
 	return edrFiles, pairsFilteredChunks
 
+# Method for filtering pairs to include in the calculation based on pairwise distances using
+# criteria specified by the user.
 def filterPairs(params):
 	
 	system = parsePDB(os.path.join(params.outFolder,'system_dry.pdb'))
@@ -665,6 +675,7 @@ def filterPairs(params):
 	params.pairsFiltered = pairsFiltered
 	return params
 
+# A method for collecting results from the output directory.
 def collectResults(params):
 	params.logger.info('Collecting results...')
 
@@ -708,6 +719,7 @@ def collectResults(params):
 			pdb=pdb,meanIntEnCutoff=resIntCorrAverageIntEnCutoff,
 			outPrefix=os.path.join(outputFolder,'energies'),logger=logger)
 
+# Cleaning up the output folder.
 def cleanUp(params):
 	params.logger.info('Cleaning up...')
 	# Delete all namd-generated energies file from output folder.
@@ -717,6 +729,7 @@ def cleanUp(params):
 	for item in glob.glob(os.path.join(params.outFolder,'*temp*')):
 		os.remove(item)
 
+	# Delete all gromacs-generated energies file from output folder.
 	for item in glob.glob(os.path.join(params.outFolder,'interact*')):
 		os.remove(item)
 
@@ -726,6 +739,8 @@ def cleanUp(params):
 	if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
 		os.remove(os.path.join(params.outFolder,'traj.dcd'))
 
+# A small helper method which removes output directory 
+# upon user's request.
 def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
 	if removeOutput:
@@ -734,6 +749,8 @@ def errorSuicide(params,message,removeOutput=False):
 	# Exit normally after printing the error to the log file.
 	os._exit(0)
 
+# Main method serving as entry point for interaction energy calculations
+# on NAMD data.
 def calcNAMD(params):
 	# Prepare input files for NAMD energy calculation.
 	prepareFilesNAMD(params) 
@@ -755,6 +772,8 @@ def calcNAMD(params):
 
 	return params
 
+# Main method serving as entry point for interaction energy calculations
+# on NAMD data.
 def calcGMX(params):
 	# Prepare input files for GMX energy calculation.
 	params = prepareFilesGMX(params)
