@@ -48,9 +48,9 @@ If you know your way around python packages, then you can figure out which ones 
 
 Starting gRINN is straightforward. Simply type `python source/grinn.py` to start the Main GUI (after you clone/fork this repository, of course).
 
-Accessing the calc mode from the (command-line interface) CLI: `python source/grinn.py -calc <args>'
+Accessing the calc mode from the (command-line interface) CLI: `python source/grinn.py -calc <args>`
 
-Accessing the results GUI from the CLI: `python source/grinn.py -results <args>'
+Accessing the results GUI from the CLI: `python source/grinn.py -results <args>`
 
 ## Compiling your own gRINN
 
