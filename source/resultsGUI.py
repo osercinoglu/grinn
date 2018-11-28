@@ -142,7 +142,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 			res = data_nonzero['res'].values
 			en = data_nonzero['en'].values
 			# Mind that the following does not work in mpl2.1.x
-			self.axes.barh(bottom=np.arange(0,len(res),1),width=en,color="b")
+			self.axes.barh(y=np.arange(0,len(res),1),width=en,color="b")
 			self.axes.set_yticks(np.arange(0,len(res),1))
 			self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
 			self.axes.set_xlabel('Mean IE [kcal/mol]')
@@ -220,7 +220,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 			chainResnameResnums = [getChainResnameResnum(
 				viewResultsParams.system,key) for key in [key-1 for key in list(metric.keys())]]
 			# Note that the following does not work in mpl=2.1.0
-			self.axes.barh(bottom=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
+			self.axes.barh(y=np.arange(0,len(metric.keys()),1),width=list(metric.values()))
 			self.axes.set_yticks(np.arange(0,len(metric.keys()),1))
 			self.axes.set_yticklabels(chainResnameResnums,rotation=0,fontsize=9)
 			self.axes.set_ylim([0,len(metric.keys())])
