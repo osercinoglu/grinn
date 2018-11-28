@@ -98,6 +98,10 @@ def prepareEnvironment():
 		os.path.join('data','etc','fonts'))
 	os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
 		os.path.join('data','xkb'))
+	#os.environ['LD_LIBRARY_PATH'] = common.resource_path(
+	#	os.path.join('data','xkb'))
+	#print(os.environ['LD_LIBRARY_PATH'])
+	#print(os.environ['QT_PLUGIN_PATH'])
 
 def main():
 	sys_argv = sys.argv

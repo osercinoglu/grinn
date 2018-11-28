@@ -78,12 +78,12 @@ class MyMplCanvas(FigureCanvas):
 			self.axes.clear()
 
 class MyStaticMplCanvas(MyMplCanvas):
-    def compute_initial_figure(self):
-        t = np.arange(0.0, 3.0, 0.01)
-        s = np.sin(2*np.pi*t)
-        self.axes.plot(t, s)
+	def compute_initial_figure(self):
+		t = np.arange(0.0, 3.0, 0.01)
+		s = np.sin(2*np.pi*t)
+		self.axes.plot(t, s)
 
-    def update_figure(self,mainWindow,type='time-series'):
+	def update_figure(self,mainWindow,type='time-series'):
 
 		# Update the figure with new parameters
 		viewResultsParams = mainWindow.viewResultsParams

@@ -441,7 +441,7 @@ def calcEnergiesNAMD(params):
 
 	global pool
 	pool = multiprocessing.Pool(params.numCores)
- 	logger = params.logger
+	logger = params.logger
 
 	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
 	# energy calculation threads.
@@ -810,6 +810,7 @@ def tpr2pdb(params,tpr,pdb):
 
 	# Check whether there any chain ids not assigned a valid letter.
 	noChid = False
+	print(pdb)
 	system = parsePDB(pdb)
 	systemProtein = system.select('protein')
 	chids = systemProtein.getChids()
