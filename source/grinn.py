@@ -176,6 +176,12 @@ if __name__ == '__main__':
 		help='Solute dielectric constant to be used in electrostatic interaction energy '
 		'computation. Applies only to NAMD-generated trajectories (DCD).')
 
+	parser.add_argument('--switchdist',default=[False],type=float,nargs=1,
+		help='Switch distance (Angstroms) at which smoothing functions should be applied '
+		'on van der Waals and electrostatic forces. Applied only to NAMD-generated '
+		'trajectories (DCD). If not specified, switching is not applied, and a truncated '
+		'cutoff is applied.')
+
 	parser.add_argument('--sel1',default=['all'],nargs='+',
 		help='A ProDy atom selection string which determines the first group of selected '
 		'residues. ')

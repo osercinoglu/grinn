@@ -208,6 +208,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	skip = 1 # We implemented this stride (skip) in the DCD file already.
 	pairFilterCutoff = params.pairFilterCutoff
 	cutoff = params.cutoff
+	switchdist = params.switchdist
 	environment = 'vacuum'
 	soluteDielectric = params.dielectric
 	solventDielectric = 80
@@ -233,7 +234,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-		pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
+		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
 		logger):
 
 		for pair in pairsFilteredSingleChunk:
@@ -268,12 +269,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			else:
 				f.write('parameters %s\n' % (sys.path[0]+'/par_all27_prot_lipid_na.inp'))
 			f.write('numsteps 1\n')
-			f.write('switching off\n')
 			f.write('exclude scaled1-4\n')
 			f.write('outputname %i_%i-temp\n' % (pair[0],pair[1]))
 			f.write('temperature 0\n')
 			f.write('COMmotion yes\n')
-			f.write('cutoff %d\n' % cutoff)
+			f.write('cutoff %f\n' % cutoff)
 			
 			if environment == 'implicit-solvent':
 				f.write('GBIS on\n')
@@ -286,7 +286,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			else:
 				f.write('#environment is %s\n' % str(environment))
 
-			f.write('switchdist 10.0\n')
+			if switchdist:
+				f.write('switching on\n')
+				f.write('switchdist %f\n' % switchdist)
+			else:
+				f.write('switching off\n')
 			f.write('pairInteraction on\n')
 			f.write('pairInteractionGroup1 1\n')
 			f.write('pairInteractionFile %s\n' % pairIntPDB)
@@ -362,7 +366,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	for pairsFilteredChunk in pairsFilteredChunksSingleCore:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-				pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
 		except (SystemExit):
 			#logger.exception('Fatal error while calling NAMD executable.
 			return 'SystemExit'
@@ -876,6 +880,8 @@ def getParams(args):
 
 	params.cutoff = args.cutoff[0]
 
+	params.switchdist = args.switchdist[0]
+
 	if not type(args.sel1) == str:
 		if len(args.sel1) > 1:
 			params.sel1 = ' '.join(args.sel1)
@@ -1007,6 +1013,14 @@ def getParams(args):
 		params.parameterFile = [os.path.abspath(paramFile) for paramFile in parameterFile]
 		#print(params.parameterFile)
 		#return params, False, "what the hell?"
+
+		# Check whether switching is requested and if yes, whether it is smaller than 
+		# or equal to the non-bonded cutoff.
+		if params.switchdist:
+			if params.switchdist > params.cutoff:
+				message = 'Switch distance must be smaller than or equal to the non-bonded'\
+				' cutoff distance. Aborting now.'
+				return params, False, message
 		
 	elif params.dataType == 'gmx':
 
