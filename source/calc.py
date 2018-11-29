@@ -317,7 +317,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			if error:
 				#logger.exception('Error while calling NAMD executable:\n'+error).
-				error = error.split('\n')
+				error = error.decode().split('\n')
 				fatalErrorLine = None
 
 				for i in range(0,len(error)):
@@ -543,7 +543,8 @@ def calcEnergiesGMX(params):
 
 		error = proc.communicate()[1]
 		if error:
-			error = error.split('\n') # Splitting into lines to be able to process each line separately.
+			print(error)
+			error = error.decode().split('\n') # Splitting into lines to be able to process each line separately.
 			fatalErrorLines = None
 
 			# Collect fatal error and subsequent lines.
