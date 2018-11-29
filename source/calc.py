@@ -832,6 +832,29 @@ def tpr2pdb(params,tpr,pdb):
 
 	return True, "Success'"
 
+# Method to write parameters to the log file.
+def params2log(params):
+
+	params.logger.info('Using the following input files and parameters:')
+	params.logger.info('PDB: %s' % str(params.pdb))
+	params.logger.info('TPR: %s' % str(params.tpr))
+	params.logger.info('TOP: %s' % str(params.top))
+	params.logger.info('Trajectory: %s' % str(params.traj))
+	params.logger.info('Number of cores: %s' % str(params.numCores))
+	params.logger.info('Solute dielectric (NAMD): %s' % str(params.dielectric))
+	params.logger.info('Switch distance (NAMD): %s' % str(params.switchdist))
+	params.logger.info('Selection 1: %s' % str(params.sel1))
+	params.logger.info('Selection 2: %s' % str(params.sel2))
+	params.logger.info('Filtering distance cutoff (Angstroms): %s' % str(params.pairFilterCutoff))
+	params.logger.info('Filtering percentage (%%): %s' % str(params.pairFilterPercentage))
+	params.logger.info('Non-bonded distance cutoff (Angstroms, NAMD): %s' % str(params.cutoff))
+	params.logger.info('Trajectory stride: %s' % str(params.stride))
+	params.logger.info('Executable: %s' % str(params.exe))
+	params.logger.info('Parameter file(s) (NAMD) %s' % str(params.parameterFile))
+	params.logger.info('Correlation: %s' % str(params.calcCorr))
+	params.logger.info('Correlation cutoff: %s' % str(params.corrIntenCutoff))
+	params.logger.info('Output folder: %s' % str(params.outFolder))
+
 # Method to check args and get params if they are valid
 def getParams(args):
 
@@ -1062,6 +1085,7 @@ def getParams(args):
 				return params, False, message
 
 	params.calcCorr = args.calccorr
+	params.corrIntenCutoff = args.corrintencutoff
 
 	return params, True, "Success"
 
@@ -1107,6 +1131,9 @@ def getResIntEn(args):
 			return
 
 	params.logger.info('Argument check completed. Proceeding...')
+
+	# Write parameters to the log file.
+	params2log(params)
 
 	params.logger.info('Started calculation.')
 
