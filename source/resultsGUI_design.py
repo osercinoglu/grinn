@@ -316,7 +316,7 @@ class Ui_MainWindow(object):
         self.scrollArea_Degree.setWidgetResizable(True)
         self.scrollArea_Degree.setObjectName("scrollArea_Degree")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 956, 360))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 100, 30))
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.horizontalLayout_4 = QtWidgets.QHBoxLayout(self.scrollAreaWidgetContents)
         self.horizontalLayout_4.setSizeConstraint(QtWidgets.QLayout.SetMaximumSize)
@@ -372,7 +372,6 @@ class Ui_MainWindow(object):
         self.frame_ShortestPathsTop.setFrameShadow(QtWidgets.QFrame.Plain)
         self.frame_ShortestPathsTop.setObjectName("frame_ShortestPathsTop")
         self.horizontalLayout_6 = QtWidgets.QHBoxLayout(self.frame_ShortestPathsTop)
-        self.horizontalLayout_6.setSizeConstraint(QtWidgets.QLayout.SetMinimumSize)
         self.horizontalLayout_6.setObjectName("horizontalLayout_6")
         self.label = QtWidgets.QLabel(self.frame_ShortestPathsTop)
         self.label.setObjectName("label")
@@ -387,8 +386,13 @@ class Ui_MainWindow(object):
         self.comboBox_TargetResidue.setObjectName("comboBox_TargetResidue")
         self.horizontalLayout_6.addWidget(self.comboBox_TargetResidue)
         self.pushButton_findShortestPaths = QtWidgets.QPushButton(self.frame_ShortestPathsTop)
+        self.pushButton_findShortestPaths.setMinimumSize(QtCore.QSize(0, 0))
         self.pushButton_findShortestPaths.setObjectName("pushButton_findShortestPaths")
         self.horizontalLayout_6.addWidget(self.pushButton_findShortestPaths)
+        self.pushButton_saveShortestPaths = QtWidgets.QPushButton(self.frame_ShortestPathsTop)
+        self.pushButton_saveShortestPaths.setMinimumSize(QtCore.QSize(200, 0))
+        self.pushButton_saveShortestPaths.setObjectName("pushButton_saveShortestPaths")
+        self.horizontalLayout_6.addWidget(self.pushButton_saveShortestPaths)
         self.verticalLayout_7.addWidget(self.frame_ShortestPathsTop)
         self.tableWidget_ShortestPaths = QtWidgets.QTableWidget(self.tab_ShortestPaths)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
@@ -451,7 +455,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(4)
-        self.tabWidget_2.setCurrentIndex(0)
+        self.tabWidget_2.setCurrentIndex(1)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
@@ -472,6 +476,7 @@ class Ui_MainWindow(object):
         self.label.setText(_translate("MainWindow", "Source Residue"))
         self.label_2.setText(_translate("MainWindow", "Target Residue"))
         self.pushButton_findShortestPaths.setText(_translate("MainWindow", "Find"))
+        self.pushButton_saveShortestPaths.setText(_translate("MainWindow", "Save to file..."))
         self.tabWidget_2.setTabText(self.tabWidget_2.indexOf(self.tab_ShortestPaths), _translate("MainWindow", "Shortest Paths"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.tab_Network), _translate("MainWindow", "Network Analysis"))
 

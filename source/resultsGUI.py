@@ -312,6 +312,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.tableWidget_IEC.cellClicked.connect(self.updateIECtable)
 		self.pushButton_findShortestPaths.clicked.connect(self.findShortestPaths)
 		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
+		self.pushButton_saveShortestPaths.clicked.connect(self.saveShortestPaths)
 
 	def isFolderGood(self,folderPath):
 		# Check sequentially if the folder contains the bare minimum necessary to load results
@@ -955,6 +956,27 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 				self.viewResultsParams.networkDegrees.values()[i],
 				self.viewResultsParams.networkBC.values()[i],
 				self.viewResultsParams.networkCC.values()[i]]
+
+			# Save to a CSV file.
+			df.to_csv(fileName)
+
+	def saveShortestPaths(self):
+
+		numRows = self.tableWidget_ShortestPaths.rowCount()
+		if numRows == 0:
+			return
+
+		fileName, _ = QtWidgets.QFileDialog.getSaveFileName(
+			self,"Specify the file name to save the shortest paths into...",
+			"","CSV Files (*.csv)")
+		if fileName:
+
+			# Make a dataframe
+			df = pandas.DataFrame(columns=['Path','Length'])
+			for i in range(0,numRows):
+				path = self.tableWidget_ShortestPaths.item(i,0).text()
+				length = self.tableWidget_ShortestPaths.item(i,1).text()
+				df.loc[i] = [path,length]
 
 			# Save to a CSV file.
 			df.to_csv(fileName)
