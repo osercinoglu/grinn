@@ -98,6 +98,8 @@ def prepareEnvironment():
 		os.path.join('data','etc','fonts'))
 	os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
 		os.path.join('data','xkb'))
+	os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = common.resource_path(
+		os.path.join('PyQt5','Qt','plugins','platforms'))
 	#os.environ['LD_LIBRARY_PATH'] = common.resource_path(
 	#	os.path.join('data','xkb'))
 	#print(os.environ['LD_LIBRARY_PATH'])

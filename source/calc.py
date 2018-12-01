@@ -148,7 +148,7 @@ def prepareFilesGMX(params):
 
 	params.pdb = os.path.join(params.outFolder,'system.pdb')
 
-	params.logger.info('Converting TPR to PDB... Done.')
+	params.logger.info('Converting TPR to PDB/GRO... Done.')
 	pdb = os.path.join(params.outFolder,'system.pdb')
 	copyfile(params.tpr,os.path.join(params.outFolder,'system.tpr'))
 	tpr = os.path.join(params.outFolder,'system.tpr')
@@ -163,11 +163,11 @@ def prepareFilesGMX(params):
 	try:
 		if params.traj.endswith('.xtc'):
 			traj = mdtraj.load_xtc(params.traj,
-				top=os.path.join(params.outFolder,'system.pdb'),
+				top=os.path.join(params.outFolder,'system.gro'),
 				stride=params.stride)
 		elif params.traj.endswith('.trr'):
 			traj = mdtraj.load_trr(params.traj,
-				top=os.path.join(params.outFolder,'system.pdb'),
+				top=os.path.join(params.outFolder,'system.gro'),
 				stride=params.stride)
 
 		traj.save_trr(os.path.join(params.outFolder,'traj.trr'))
@@ -547,7 +547,6 @@ def calcEnergiesGMX(params):
 
 		error = proc.communicate()[1]
 		if error:
-			print(error)
 			error = error.decode().split('\n') # Splitting into lines to be able to process each line separately.
 			fatalErrorLines = None
 
@@ -787,35 +786,38 @@ def calcGMX(params):
 
 # Method to convert TPR to PDB files.
 def tpr2pdb(params,tpr,pdb):
-	# Convert tpr to pdb, selecting just Protein.
+	# Convert tpr to pdb and gro, selecting just Protein.
 	# Apparently directly spawning gmx in the following does not work as expect in OSX
 	# Prepending bash -c to the command line prior to gmx.
-	proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
-		(params.exe,tpr,pdb),stdout=subprocess.PIPE,
-		stderr=subprocess.PIPE,shell=True)
-	_,error = proc.communicate()
-	#if error:
-	#	message = repr(error)
-	#	return False, message
 
-	proc.wait()
-	start_time = time.time()
-	time_elapsed = 0 # Seconds
-	while not os.path.exists(pdb) and time_elapsed < 30:
-		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
-		time_elapsed = time.time() - start_time
+	filenames = [pdb,pdb.rstrip('.pdb')+'.gro']
+	for filename in filenames:
+		print(filename)
+		proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
+			(params.exe,tpr,filename),stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,shell=True)
+		_,error = proc.communicate()
+		#if error:
+		#	message = repr(error)
+		#	return False, message
 
-	if not os.path.exists(pdb):
-		message = 'Could not extract PDB out of TPR file. Aborting now.'
-		return False, message
+		proc.wait()
+		start_time = time.time()
+		time_elapsed = 0 # Seconds
+		while not os.path.exists(filename) and time_elapsed < 30:
+			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
+			time_elapsed = time.time() - start_time
 
-	# Check whether the file is still being written to...
-	while has_handle(pdb):
-		time.sleep(1)
+		if not os.path.exists(filename):
+			message = 'Could not extract PDB/GRO out of TPR file. Aborting now.'
+			return False, message
+
+		# Check whether the file is still being written to...
+		while has_handle(filename):
+			time.sleep(1)
 
 	# Check whether there any chain ids not assigned a valid letter.
 	noChid = False
-	print(pdb)
 	system = parsePDB(pdb)
 	systemProtein = system.select('protein')
 	chids = systemProtein.getChids()
@@ -876,6 +878,17 @@ def getParams(args):
 		else:
 			params.outFolder = outFolder
 			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
+
+
+	# Check whether any input file paths include space character.
+	files = [args.pdb,args.tpr,args.top,args.traj]
+	files = [filename[0] for filename in files if not filename[0] == None]
+	for filename in files:
+		print(filename)
+		if ' ' in filename:
+			message = "A file path (%s) includes a space character, which is not allowed. "\
+			"Aborting now" % filename
+			return params, False, message
 
 	params.numCores = args.numcores[0]
 	frameRange = args.framerange
