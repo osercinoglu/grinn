@@ -375,6 +375,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		if selectedRes:
 			self.updateProteinResidueMetrics(resIndex=selectedRes)
 
+
+
 	def onClick_intEnMeanMat(self,event):
 
 		if not event.dblclick:
@@ -666,8 +668,78 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.ProteinView.glDraw()
 			self.ProteinView._pymolProcess()
 
+	#Define a method (borrowed from Jake VanderPlas Github Gist) for discrete colormap creation from default colormaps.
+	#This is needed for seaborn boxplot color palette definition below.
+	def discrete_cmap(self, N, base_cmap=None):
+		"""Create an N-bin discrete colormap from the specified input map"""
+
+		# Note that if base_cmap is a string or None, you can simply do
+		#    return plt.cm.get_cmap(base_cmap, N)
+		# The following works for string, None, or a colormap instance:
+
+		base = plt.cm.get_cmap(base_cmap)
+		color_list = base(np.linspace(0, 1, N))
+		cmap_name = base.name + str(N)
+		color_list_hex = list()
+		for i in range(len(color_list)):
+			rgb = color_list[i][:3] # will return rgba, we take only first 3 so we get rgb
+			hex_color = matplotlib.colors.rgb2hex(rgb)
+			color_list_hex.append(hex_color)
+		return base.from_list(cmap_name, color_list, N), color_list, color_list_hex
+
+	def makeProteinColorPalette(self,value_array,cmap):
+		# Make a color palette using residue-based value arrays and colormap provided.
+		cmap, color_list, color_list_hex = self.discrete_cmap(50,cmap)
+		pal_array = dict()
+		# So min_FI should be assigned using np.min and np.max below,
+		# but we manually hack this here to limit the range of colors between -1 and 1
+		# considering any value above and beyond and exception.
+		# change this to suit the visualization purpose!
+		min_value = np.min(value_array)
+		max_value = np.max(value_array)
+		#min_FI = -1
+		#max_FI = 1
+		range_value = np.linspace(min_value,max_value,51)
+		for i in range(0,50):
+			lower_value = range_value[i]
+			upper_value = range_value[i+1]
+
+			for value in value_array:
+				if value >= lower_value and value <= upper_value:
+					pal_array[value] = color_list[i]
+				elif value < min_value:
+					pal_array[value] = color_list[0]
+				elif value > max_value:
+					pal_array[value] = color_list[-1]
+		return pal_array
+
+	def colorProtein(self,pal_array,value_array):
+		# Color protein according to the input palette.
+		chain_resnums = list()
+		system = self.viewResultsParams.system
+		resindices = np.unique(system.getResindices())
+		for index in resindices:
+			res = system.select('resindex %i' % index)
+			chain = res.getChids()[0]
+			resnum = res.getResnums()[0]
+			chain_resnums.append([chain,resnum])
+
+		self.ProteinView._pymol.cmd.show_as('cartoon','all')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0')
+		print(len(chain_resnums))
+		print(len(value_array))
+		for i in range(0,len(chain_resnums)):
+			value = value_array[i]
+			self.ProteinView._pymol.cmd.set_color('mycolor','[%f,%f,%f]\n' % (pal_array[value][0],pal_array[value][1],pal_array[value][2]))
+			self.ProteinView._pymol.cmd.color('mycolor','resi '+str(chain_resnums[i][1])+' and chain '+chain_resnums[i][0])
+		self.ProteinView._pymolProcess()
 
 	def updateProteinResiduePairs(self):
+
+		value_array = list(self.viewResultsParams.networkBC.values())
+		palette = self.makeProteinColorPalette(value_array,'YlGn')
+		self.colorProtein(palette,value_array)
+
 		# Get selected two residues.
 		selectedSourceRes = self.viewResultsParams.selectedSourceRes
 		selectedTargetRes = self.viewResultsParams.selectedTargetRes
@@ -679,9 +751,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		# Select all and reset the view
 		#self.ProteinView._pymol.cmd.select('all','all')
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
-		self.ProteinView._pymol.cmd.color('green','all')
+		#self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
-		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0')
 		self.ProteinView._pymol.cmd.show_as(
 			'sticks','resi '+source_string[4:]+' and chain '+source_string[0])
 		self.ProteinView._pymol.cmd.show_as(
@@ -695,6 +767,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			'resi '+source_string[4:]+' and chain '+source_string[0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
 		self.ProteinView._pymol.cmd.label(
 			'resi '+target_string[4:]+' and chain '+target_string[0]+' and name CA','"%s%s%s" % (chain,resn,resi)')
+
 		self.ProteinView._pymolProcess()
 
 	def updateProteinResidueQuadruples(self):
@@ -709,9 +782,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		# Select all and reset the view
 		#self.ProteinView._pymol.cmd.select('all','all')
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
-		self.ProteinView._pymol.cmd.color('green','all')
+		#self.ProteinView._pymol.cmd.color('green','all')
 		self.ProteinView._pymol.cmd.label('all','')
-		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		self.ProteinView._pymol.cmd.set('cartoon_transparency','0')
 		self.ProteinView._pymol.cmd.show_as(
 			'sticks','resi '+selectedPair1[0][4:]+' and chain '+selectedPair1[0][0])
 		self.ProteinView._pymol.cmd.show_as(
@@ -746,7 +819,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		res_string = getChainResnameResnum(self.viewResultsParams.system,resIndex)
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
 		self.ProteinView._pymol.cmd.color('white','all')
-		self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
+		#self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
 		self.ProteinView._pymol.cmd.set('sphere_transparency','0')
 		self.ProteinView._pymol.cmd.label('all','')
 		self.ProteinView._pymol.cmd.show_as('spheres','resi '+res_string[4:]+' and chain '+res_string[0])

@@ -70,11 +70,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		self.lineEdit_namd2.setText('gmx')
 		self.lineEdit_pdb.setText(common.resource_path(
-			os.path.join('samples','1eey_md_0_50.tpr')))
+			os.path.join('samples','1eey_md_0_50_dry.tpr')))
 		self.lineEdit_psf.setText(common.resource_path(
-			os.path.join('samples','1eey_md_0_50_topol.top')))
+			os.path.join('samples','1eey_md_0_50_topol_dry.top')))
 		self.lineEdit_dcd.setText(common.resource_path(
-			os.path.join('samples','1eey_md_25_50ns_str25_nojump.xtc')))
+			os.path.join('samples','1eey_md_25_50ns_str25_nojump_dry.xtc')))
 
 		self.checkBox_interactionCorrelation.setCheckState(2)
 		self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
