@@ -42,10 +42,7 @@
      <height>0</height>
     </size>
    </property>
-   <layout class="QVBoxLayout" name="verticalLayout_2">
-    <property name="sizeConstraint">
-     <enum>QLayout::SetMaximumSize</enum>
-    </property>
+   <layout class="QVBoxLayout" name="verticalLayout_8">
     <item>
      <widget class="QFrame" name="frame_Top">
       <property name="minimumSize">
@@ -160,7 +157,7 @@
              <enum>QTabWidget::Rounded</enum>
             </property>
             <property name="currentIndex">
-             <number>4</number>
+             <number>0</number>
             </property>
             <widget class="QWidget" name="tab_PairwiseEnergies">
              <property name="sizePolicy">
@@ -220,7 +217,7 @@
                </widget>
               </item>
               <item>
-               <widget class="QFrame" name="frame_tabPairWiseEnergiesBarPlot">
+               <widget class="QScrollArea" name="scrollArea_tabPairWiseEnergiesBarPlot">
                 <property name="sizePolicy">
                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
                   <horstretch>1</horstretch>
@@ -229,27 +226,49 @@
                 </property>
                 <property name="minimumSize">
                  <size>
-                  <width>200</width>
-                  <height>0</height>
-                 </size>
-                </property>
-                <property name="maximumSize">
-                 <size>
-                  <width>200</width>
-                  <height>16777215</height>
+                  <width>150</width>
+                  <height>450</height>
                  </size>
                 </property>
                 <property name="frameShape">
                  <enum>QFrame::NoFrame</enum>
                 </property>
                 <property name="frameShadow">
-                 <enum>QFrame::Raised</enum>
+                 <enum>QFrame::Plain</enum>
                 </property>
-                <layout class="QVBoxLayout" name="verticalLayout_3">
-                 <property name="sizeConstraint">
-                  <enum>QLayout::SetMaximumSize</enum>
+                <property name="sizeAdjustPolicy">
+                 <enum>QAbstractScrollArea::AdjustIgnored</enum>
+                </property>
+                <property name="widgetResizable">
+                 <bool>true</bool>
+                </property>
+                <widget class="QWidget" name="scrollAreaWidgetContents_2">
+                 <property name="geometry">
+                  <rect>
+                   <x>0</x>
+                   <y>0</y>
+                   <width>266</width>
+                   <height>517</height>
+                  </rect>
                  </property>
-                </layout>
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+                   <horstretch>1</horstretch>
+                   <verstretch>1</verstretch>
+                  </sizepolicy>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>150</width>
+                   <height>450</height>
+                  </size>
+                 </property>
+                 <layout class="QVBoxLayout" name="verticalLayout_2">
+                  <property name="sizeConstraint">
+                   <enum>QLayout::SetMaximumSize</enum>
+                  </property>
+                 </layout>
+                </widget>
                </widget>
               </item>
               <item>
@@ -583,7 +602,7 @@
                  <enum>QTabWidget::Rounded</enum>
                 </property>
                 <property name="currentIndex">
-                 <number>1</number>
+                 <number>0</number>
                 </property>
                 <widget class="QWidget" name="tab_ResidueMetrics">
                  <attribute name="title">
@@ -612,8 +631,8 @@
                       <rect>
                        <x>0</x>
                        <y>0</y>
-                       <width>100</width>
-                       <height>30</height>
+                       <width>956</width>
+                       <height>368</height>
                       </rect>
                      </property>
                      <layout class="QHBoxLayout" name="horizontalLayout_4">
@@ -826,6 +845,74 @@
              <property name="sizeConstraint">
               <enum>QLayout::SetMaximumSize</enum>
              </property>
+             <item>
+              <widget class="QFrame" name="frame_ProteinColor">
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>40</height>
+                </size>
+               </property>
+               <property name="frameShape">
+                <enum>QFrame::NoFrame</enum>
+               </property>
+               <property name="frameShadow">
+                <enum>QFrame::Plain</enum>
+               </property>
+               <layout class="QHBoxLayout" name="horizontalLayout_11">
+                <item>
+                 <widget class="QLabel" name="label_4">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="layoutDirection">
+                   <enum>Qt::RightToLeft</enum>
+                  </property>
+                  <property name="text">
+                   <string>Color by:</string>
+                  </property>
+                  <property name="alignment">
+                   <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QComboBox" name="comboBox_ColorBy">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
+                  <property name="minimumSize">
+                   <size>
+                    <width>40</width>
+                    <height>0</height>
+                   </size>
+                  </property>
+                  <item>
+                   <property name="text">
+                    <string>Degree</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Betweenness Centrality</string>
+                   </property>
+                  </item>
+                  <item>
+                   <property name="text">
+                    <string>Closeness Centrality</string>
+                   </property>
+                  </item>
+                 </widget>
+                </item>
+               </layout>
+              </widget>
+             </item>
              <item>
               <widget class="QFrame" name="frame_ProteinView">
                <property name="sizePolicy">

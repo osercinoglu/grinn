@@ -146,7 +146,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 			self.axes.set_yticks(np.arange(0,len(res),1))
 			self.axes.set_yticklabels([getChainResnameResnum(viewResultsParams.system,res) for res in res])
 			self.axes.set_xlabel('Mean IE [kcal/mol]')
-			self.fig.subplots_adjust(left=0.45,right=0.95,bottom=0.1,top=0.99)
+			self.fig.subplots_adjust(left=0.35,right=0.95,bottom=0.05,top=0.99)
 
 		elif type in ['iem','rc']:
 			if type=='iem':
@@ -246,9 +246,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.tableWidget_sourceTargetResEnergies.setHorizontalHeaderLabels(
 			["Residue","Residue","IE [kcal/mol]"])
 
-		self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,width=5,height=4,
+		self.intEnBarPlot = MyStaticMplCanvas(self.scrollAreaWidgetContents_2,width=5,height=4,
 			dpi=100)
-		self.verticalLayout_3.addWidget(self.intEnBarPlot)
+		self.verticalLayout_2.addWidget(self.intEnBarPlot)
 
 		self.intEnTimeSeries = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesPlots,width=5,height=4,
 			dpi=100,toolbar=True)
@@ -313,6 +313,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		self.pushButton_findShortestPaths.clicked.connect(self.findShortestPaths)
 		self.tableWidget_ShortestPaths.cellClicked.connect(self.updateShortestPathsTable)
 		self.pushButton_saveShortestPaths.clicked.connect(self.saveShortestPaths)
+		self.comboBox_ColorBy.activated.connect(self.colorBy)
 
 	def isFolderGood(self,folderPath):
 		# Check sequentially if the folder contains the bare minimum necessary to load results
@@ -450,10 +451,10 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			if hasattr(self,"intEnBarPlot"):
 				self.intEnBarPlot.setParent(None)
 
-			self.intEnBarPlot = MyStaticMplCanvas(self.frame_tabPairWiseEnergiesBarPlot,
+			self.intEnBarPlot = MyStaticMplCanvas(self.scrollAreaWidgetContents_2,
 				width=5,height=4,
 				dpi=100)
-			self.verticalLayout_3.addWidget(self.intEnBarPlot)
+			self.verticalLayout_2.addWidget(self.intEnBarPlot)
 
 			if hasattr(self,"intEnTimeSeries"):
 				self.intEnTimeSeries.setParent(None)
@@ -668,6 +669,19 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.ProteinView.glDraw()
 			self.ProteinView._pymolProcess()
 
+	def colorBy(self):
+
+		string = str(self.comboBox_ColorBy.currentText())
+		if string == 'Degree':
+			value_array = list(self.viewResultsParams.networkDegrees.values())
+		elif string == 'Betweenness Centrality':
+			value_array = list(self.viewResultsParams.networkBC.values())
+		elif string == 'Closeness Centrality':
+			value_array = list(self.viewResultsParams.networkCC.values())
+
+		palette = self.makeProteinColorPalette(value_array,'Blues')
+		self.colorProtein(palette,value_array)
+
 	#Define a method (borrowed from Jake VanderPlas Github Gist) for discrete colormap creation from default colormaps.
 	#This is needed for seaborn boxplot color palette definition below.
 	def discrete_cmap(self, N, base_cmap=None):
@@ -689,7 +703,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 	def makeProteinColorPalette(self,value_array,cmap):
 		# Make a color palette using residue-based value arrays and colormap provided.
-		cmap, color_list, color_list_hex = self.discrete_cmap(50,cmap)
+		cmap, color_list, color_list_hex = self.discrete_cmap(10,cmap)
 		pal_array = dict()
 		# So min_FI should be assigned using np.min and np.max below,
 		# but we manually hack this here to limit the range of colors between -1 and 1
@@ -699,8 +713,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		max_value = np.max(value_array)
 		#min_FI = -1
 		#max_FI = 1
-		range_value = np.linspace(min_value,max_value,51)
-		for i in range(0,50):
+		range_value = np.linspace(min_value,max_value,11)
+		for i in range(0,10):
 			lower_value = range_value[i]
 			upper_value = range_value[i+1]
 
@@ -726,19 +740,13 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
 		self.ProteinView._pymol.cmd.set('cartoon_transparency','0')
-		print(len(chain_resnums))
-		print(len(value_array))
 		for i in range(0,len(chain_resnums)):
 			value = value_array[i]
-			self.ProteinView._pymol.cmd.set_color('mycolor','[%f,%f,%f]\n' % (pal_array[value][0],pal_array[value][1],pal_array[value][2]))
-			self.ProteinView._pymol.cmd.color('mycolor','resi '+str(chain_resnums[i][1])+' and chain '+chain_resnums[i][0])
+			self.ProteinView._pymol.cmd.set_color('mycolor%i' % i,'[%f,%f,%f]\n' % (pal_array[value][0],pal_array[value][1],pal_array[value][2]))
+			self.ProteinView._pymol.cmd.color('mycolor%i' % i,'resi '+str(chain_resnums[i][1])+' and chain '+chain_resnums[i][0])
 		self.ProteinView._pymolProcess()
 
 	def updateProteinResiduePairs(self):
-
-		value_array = list(self.viewResultsParams.networkBC.values())
-		palette = self.makeProteinColorPalette(value_array,'YlGn')
-		self.colorProtein(palette,value_array)
 
 		# Get selected two residues.
 		selectedSourceRes = self.viewResultsParams.selectedSourceRes
@@ -870,8 +878,29 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.tableWidget_sourceTargetResEnergies.item(row,0).setBackground(
 				QtGui.QColor(100,100,150))
 
+			# Need to adjust frame size according to the number of non-zero values!
+			intEnMeanTotal = self.viewResultsParams.intEnMeanTotal
+			selectedSourceRes = self.viewResultsParams.selectedSourceRes
+			data = pandas.DataFrame(columns=['res','en'])
+			data['res'] = np.arange(0,len(intEnMeanTotal),1)
+			data['en'] = intEnMeanTotal[selectedSourceRes,:]
+			data_nonzero = data[data['en'] != np.float64(0)]
+			numNonZero = len(data_nonzero['en'].values)
+			newFrameSize = 20*numNonZero
+			width = self.scrollAreaWidgetContents_2.size().width()
+			print(newFrameSize, width)
+			self.scrollAreaWidgetContents_2.setMinimumSize(QtCore.QSize(width, newFrameSize))
+
+			# if hasattr(self,"intEnBarPlot"):
+			# 	self.intEnBarPlot.setParent(None)
+
+			# self.intEnBarPlot = MyStaticMplCanvas(self.frame_pairWiseEnergiesBarPlot,
+			# 	width=5,height=4,dpi=100)
+			# self.verticalLayout_2.addWidget(self.intEnBarPlot)
+
 			# plot bar plot of all other interactions with this residue
 			self.intEnBarPlot.update_figure(self,'bar-plot')
+
 		# if the cell is a target residue
 		elif column in [1,2]:
 			selectedTargetRes = row
