@@ -83,7 +83,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 		s = np.sin(2*np.pi*t)
 		self.axes.plot(t, s)
 
-	def update_figure(self,mainWindow,type='time-series'):
+	def update_figure(self,mainWindow,type='time-series',cmap=None,norm=None):
 
 		# Update the figure with new parameters
 		viewResultsParams = mainWindow.viewResultsParams
@@ -231,6 +231,11 @@ class MyStaticMplCanvas(MyMplCanvas):
 		# Works fine in mpl=2.1.0 but leaving the newest stable version out until a toolbar issue is fixed in mpl=2.2.0.
 		#self.fig.set_tight_layout({'pad':0.1})
 
+		elif type == 'colorbar':
+			cb1 = matplotlib.colorbar.ColorbarBase(self.axes, cmap=cmap,norm=norm,orientation='horizontal')
+			self.axes.set_yticklabels(self.axes.get_yticklabels(),fontsize=9)
+			self.fig.subplots_adjust(left=0.05,right=0.95,bottom=0.50,top=0.99)
+
 		self.draw()
 
 class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindow):
@@ -300,6 +305,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.ProteinView.setSizePolicy(sizePolicy)
 			self.ProteinView.setMaximumSize(QtCore.QSize(500,1000000))
 			self.ProteinView.setMaximumSize(QtCore.QSize(1000,1000000))
+
+			self.ProteinColorBar = MyStaticMplCanvas(self.frame_ProteinColorBar,width=4,height=2,
+				dpi=100)
+			self.horizontalLayoutProteinColorBar = QtWidgets.QHBoxLayout(self.frame_ProteinColorBar)
+			self.horizontalLayoutProteinColorBar.addWidget(self.ProteinColorBar)
+
 		except Exception as instance:
 			QMessageBox.critical(self,'PyMol can''be initialized',
 				repr(instance)+"\n\nPyMol widget could not be initialized. Molecule viewer will not start, however the rest of the UI" 
@@ -679,8 +690,12 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 		elif string == 'Closeness Centrality':
 			value_array = list(self.viewResultsParams.networkCC.values())
 
-		palette = self.makeProteinColorPalette(value_array,'Blues')
+		palette, cmap = self.makeProteinColorPalette(value_array,'Blues')
 		self.colorProtein(palette,value_array)
+
+		# Update the color bar.
+		norm = matplotlib.colors.Normalize(vmin=np.min(value_array), vmax=np.max(value_array))
+		self.ProteinColorBar.update_figure(self,'colorbar',cmap=cmap,norm=norm)
 
 	#Define a method (borrowed from Jake VanderPlas Github Gist) for discrete colormap creation from default colormaps.
 	#This is needed for seaborn boxplot color palette definition below.
@@ -725,7 +740,7 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 					pal_array[value] = color_list[0]
 				elif value > max_value:
 					pal_array[value] = color_list[-1]
-		return pal_array
+		return pal_array, cmap
 
 	def colorProtein(self,pal_array,value_array):
 		# Color protein according to the input palette.
@@ -826,7 +841,8 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			return
 		res_string = getChainResnameResnum(self.viewResultsParams.system,resIndex)
 		self.ProteinView._pymol.cmd.show_as('cartoon','all')
-		self.ProteinView._pymol.cmd.color('white','all')
+		self.colorBy()
+		#self.ProteinView._pymol.cmd.color('white','all')
 		#self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
 		self.ProteinView._pymol.cmd.set('sphere_transparency','0')
 		self.ProteinView._pymol.cmd.label('all','')
@@ -888,7 +904,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			numNonZero = len(data_nonzero['en'].values)
 			newFrameSize = 20*numNonZero
 			width = self.scrollAreaWidgetContents_2.size().width()
-			print(newFrameSize, width)
 			self.scrollAreaWidgetContents_2.setMinimumSize(QtCore.QSize(width, newFrameSize))
 
 			# if hasattr(self,"intEnBarPlot"):
