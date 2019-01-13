@@ -792,7 +792,6 @@ def tpr2pdb(params,tpr,pdb):
 
 	filenames = [pdb,pdb.rstrip('.pdb')+'.gro']
 	for filename in filenames:
-		print(filename)
 		proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
 			(params.exe,tpr,filename),stdout=subprocess.PIPE,
 			stderr=subprocess.PIPE,shell=True)
@@ -883,8 +882,8 @@ def getParams(args):
 	# Check whether any input file paths include space character.
 	files = [args.pdb,args.tpr,args.top,args.traj]
 	files = [filename[0] for filename in files if not filename[0] == None]
+	files = [filename for filename in files if type(filename) == str]
 	for filename in files:
-		print(filename)
 		if ' ' in filename:
 			message = "A file path (%s) includes a space character, which is not allowed. "\
 			"Aborting now" % filename
