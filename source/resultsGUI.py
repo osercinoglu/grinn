@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env /home/onur/anaconda3/bin/python
 import matplotlib
 matplotlib.use("Qt5Agg")
 from PyQt5 import QtGui
@@ -619,7 +619,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.updateProteinResiduePairs()
 			self.ProteinView.resize(self.frame_ProteinViewControl.size())
 			self.ProteinView._pymolProcess()
-			self.ProteinView.show()	
+			self.ProteinView.show()
+
+			self.colorBy()	
 
 		# Load trajectory if it exists in the output folder!
 		# Usually it should exist!
@@ -681,6 +683,9 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 			self.ProteinView._pymolProcess()
 
 	def colorBy(self):
+
+		if not self.viewResultsParams.outputFolder:
+			return
 
 		string = str(self.comboBox_ColorBy.currentText())
 		if string == 'Degree':

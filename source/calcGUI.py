@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env /home/onur/anaconda3/bin/python
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets

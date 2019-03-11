@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env /home/onur/anaconda3/bin/python
 from prody import *
 import numpy as np
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
