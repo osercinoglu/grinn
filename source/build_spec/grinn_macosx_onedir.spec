@@ -20,21 +20,17 @@ datas = [('../resources/clover.ico','resources'),
 
 binaries = [('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libpython2.7.dylib','.'),
 ('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.1.13.dylib','.'),
-('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.1.13.0.dylib','.'),
-('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.dylib','.'),
-('/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib','.')]
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.1.13.0.dylib','.')]
 
 a = Analysis(['../grinn.py'],
              pathex=['/Users/onursercinoglu/PycharmProjects/grinn/source',
-                      '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib'
+                      '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib',
                       '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7',
                       '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7/site-packages'],
              binaries=binaries,
              datas=datas,
              hiddenimports=['pymol.povray','pymol.opengl','pymol.parser','pymol','pymol.contrib',
-             'pymol.bonds','pymol2','pandas._libs.tslibs.timedeltas','pandas._libs.skiplist','scipy._lib.messagestream',
-             'packaging','packaging.version','packaging.utils','packaging.specifiers','packaging.requirements','six.moves.html_parser',
-             'OpenGL','OpenGL.platform','OpenGL.GLU','OpenGL.platform.baseplatform','OpenGL.platform.ctypesloader'],
+             'pymol.bonds','pymol2','pandas._libs.tslibs.timedeltas','scipy._lib.messagestream'],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
@@ -45,10 +41,7 @@ pyz = PYZ(a.pure, a.zipped_data,
              cipher=block_cipher)
 exe = EXE(pyz,
           a.scripts,
-          a.binaries,
-          a.zipfiles,
-          a.datas,
-          exclude_binaries=False,
+          exclude_binaries=True,
           name='grinn',
           debug=True,
           strip=False,
@@ -56,13 +49,13 @@ exe = EXE(pyz,
           console=True,
           icon='resources/clover.ico')
 
-#coll = COLLECT(exe,
-#              a.binaries,
-#              a.zipfiles,
-#              a.datas,
-#              strip=False,
-#              upx=True,
-#              name='grinn')
+coll = COLLECT(exe,
+              a.binaries,
+              a.zipfiles,
+              a.datas,
+              strip=False,
+              upx=True,
+              name='grinn')
 
 # app = BUNDLE(exe,
 #              name='grinn.app',
