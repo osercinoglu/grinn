@@ -171,7 +171,7 @@ def parseEnergiesSingleCoreNAMD(args):
 def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger):
 
 	system = parsePDB(pdb)
-	system_dry = system.select('protein or nucleic')
+	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
 	system_dry = system_dry.select('not resname SOL')
 	#gmxExe = '/usr/local/gromacs/bin/gmx' # TEMPORARY!
 	# Parse the resulting interact.edr file from the output directory
@@ -329,7 +329,7 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFilt
 	# Modify atom serial numbers to account for possible PDB files with more than 99999 atoms
 	system.setSerials(np.arange(1,system.numAtoms()+1))
 	
-	system_dry = system.select('protein or nucleic')
+	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
 	system_dry = system_dry.select('not resname SOL')
 
 	if not pairsFiltered and sourceSel and targetSel: # For use outside of getResIntEn

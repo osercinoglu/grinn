@@ -20,7 +20,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Get number of residues
 	system = parsePDB(pdb)
-	system_dry = system.select('protein or nucleic')
+	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
 	system_dry = system_dry.select('not resname SOL')
 	numResidues = len(np.unique(system_dry.getResindices()))
 
@@ -81,13 +81,13 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 def isStructureDry(pdb,psf):
 	# Load the PDB and PSF files
 	pdb = parsePDB(pdb)
-	pdbProtein = pdb.select('protein')
-	pdbNonProtein = pdb.select('not protein')
+	pdbDry = pdb.select('protein or nucleic or hetero or lipid and not water and not resname SOL and not ion')
+	pdbNonDry = pdb.select('water or resname SOL or ion')
 
 	psf = parsePSF(psf)
-	psfNonProtein = psf.select('not protein')
+	psfNonDry = psf.select('water or resname SOL or ion')
 
-	if not pdbNonProtein == None and not psfNonProtein == None:
+	if not pdbNonDry == None and not psfNonDry == None:
 		return False
 	else:
 		return True
@@ -155,8 +155,8 @@ def prepareFilesGMX(params):
 
 	# Make dry PDB out of the resulting PDB.
 	pdb = parsePDB(params.pdb)
-	pdbProtein = pdb.select('protein')
-	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+	pdbDry = pdb.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbDry)
 
 	# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
 	params.logger.info('Converting XTC/TRR to DCD...')
@@ -182,14 +182,14 @@ def prepareFilesGMX(params):
 	# Load back this DCD and continue with it (for code compatibility with ProDy)
 	traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
 	traj.link(pdb)
-	traj.setAtoms(pdbProtein)
+	traj.setAtoms(pdbDry)
 
 	# Write
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
 
 	# Load it back and superpose, then write back.
 	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
-	traj.setAtoms(pdbProtein)
+	traj.setAtoms(pdbDry)
 	traj.superpose()
 	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
 	
@@ -579,18 +579,18 @@ def filterPairs(params):
 	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
 
 	try:
-		sourceCA = system.select(str(params.sel1)+' and name CA')
+		source = system.select(str(params.sel1))
 	except:
 		params.logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
 
-	numSource = len(sourceCA)
-	sourceResids = sourceCA.getResindices()
-	sourceResnums = sourceCA.getResnums()
-	sourceSegnames = sourceCA.getSegnames()
+	#NEEDS CAREFUL TWEAKING ALL BELOW
+	numSource = len(source)
+	sourceResids = np.unique(source.getResindices())
+	sourceResnums = [source.select('resindex %i' % i).getResnums()[0] for i in sourceResids]
+	sourceSegnames = [source.select('resindex %i' % i).getSegnames()[0] for i in sourceResids]
 
-	allResiduesCA = system.select('name CA')
-	numResidues = len(allResiduesCA)
+	numResidues = system.numResidues()
 	numTarget = numResidues
 
 	# By default, targetResids are all residues.
@@ -598,9 +598,8 @@ def filterPairs(params):
 	
 	# Get target selection residues
 	try:
-		targetCA = system.select(str(params.sel2+' and name CA'))
-		numTarget = len(targetCA)
-		targetResids = targetCA.getResindices()
+		target = system.select(str(params.sel2))
+		targetResids = np.unique(target.getResindices())
 	except:
 		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
 		return
@@ -618,28 +617,51 @@ def filterPairs(params):
 	params.logger.info('Starting the filtering step...')
 
 	# Continue with filtering operation
-	traj.setAtoms(allResiduesCA)
 	coordSets = traj.getCoordsets()
 
-	# Start a contact matrix (Kirchhoff matrix)
-	kh = np.zeros((numResidues,numResidues))
+	# Get a list of pairs within 20 angströms distance from each other, 
+	# based on the initial structure.
+	initialFilter = list()
+	for i in range(0,len(sourceResids)):
+		com1 = calcCenter(system.select('resindex %i' % sourceResids[i]))
+		for j in range(0,len(targetResids)):
+			com2 = calcCenter(system.select('resindex %i' % targetResids[j]))
+			dist = calcDistance(com1,com2)
+			if dist <= 40:
+				initialFilter.append((sourceResids[i],targetResids[j]))
+
+	# Start a contact matrix based on center of masses
+	contactMat = np.zeros((numResidues,numResidues))
 
 	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
 	monitor = 0
 
 	for i in range(0,len(coordSets),1):
-		coordSet = coordSets[i]
-		gnm = GNM('GNM')
-		gnm.buildKirchhoff(coordSet,cutoff=params.pairFilterCutoff)
-		kh = kh + gnm.getKirchhoff()
+		contactMatFrame = np.zeros((numResidues,numResidues))
+		traj.setAtoms(system)
+		traj.setCoords(traj.getCoordsets()[i])
+		for pair in initialFilter:
+			pair1 = system.select('resindex %i' % pair[0])
+			traj.setAtoms(pair1)
+			pair1.setCoords(traj.getCoords())
+			pair2 = system.select('resindex %i' % pair[1])
+			traj.setAtoms(pair2)
+			pair2.setCoords(traj.getCoords())
+			com1 = calcCenter(pair1)
+			com1 = calcCenter(pair2)
+			dist = calcDistance(com1,com2)
+			if dist <= params.pairFilterCutoff:
+				contactMatFrame[pair[0],pair[1]] = 1
+				contactMatFrame[pair[1],pair[0]] = 1
+		contactMat = contactMat + contactMatFrame
 		monitor = monitor + 1
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
 		if calculatedPercentage > 100: calculatedPercentage = 100
 		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsInclusionFraction = np.abs(kh)/(len(traj)/float(1))
+	pairsInclusionFraction = np.abs(contactMat)/(len(traj)/float(1))
 	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
 	pairsFiltered = list()
@@ -818,8 +840,8 @@ def tpr2pdb(params,tpr,pdb):
 	# Check whether there any chain ids not assigned a valid letter.
 	noChid = False
 	system = parsePDB(pdb)
-	systemProtein = system.select('protein')
-	chids = systemProtein.getChids()
+	systemDry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+	chids = systemDry.getChids()
 	for chid in chids:
 		if not chid.strip():
 			noChid = True
@@ -950,7 +972,7 @@ def getParams(args):
 	if args.pdb[0]:
 		try:
 			system = parsePDB(os.path.abspath(args.pdb[0]))
-			systemProtein = system.select(str('protein or nucleic'))
+			systemProtein = system.select(str('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion'))
 			params.pdb = os.path.abspath(args.pdb[0])
 			params.dataType = 'namd'
 		except:
@@ -1079,8 +1101,10 @@ def getParams(args):
 			return params, False, message
 		else:
 			try:
+				print('parsing dummy.pdb')
 				system = parsePDB('dummy.pdb')
-				systemProtein = system.select(str('protein or nucleic'))
+				print('selecting dry system')
+				systemDry = system.select(str('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion'))
 				os.remove('dummy.pdb')
 			except:
 				os.remove('dummy.pdb')
