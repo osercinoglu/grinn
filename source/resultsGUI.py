@@ -1035,13 +1035,16 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
                 allpaths_string = [[getChainResnameResnum(self.viewResultsParams.system,
                                                           int(index) - 1) for index in path] for path in allpaths]
                 self.tableWidget_ShortestPaths.setRowCount(len(allpaths_string))
+                print('start')
                 for i in range(0, len(allpaths_string)):
                     path_string = allpaths_string[i]
+                    print(path_string)
                     self.tableWidget_ShortestPaths.setItem(
                         i, 0, QtWidgets.QTableWidgetItem('-'.join(path_string)))
                     pathlen = allpathslen[i]
                     self.tableWidget_ShortestPaths.setItem(
                         i, 1, QtWidgets.QTableWidgetItem(str(pathlen)))
+                print('stop')
 
     def updateShortestPathsTable(self, row, column):
         selectedPath = str(self.tableWidget_ShortestPaths.item(row, 0).text())
@@ -1095,9 +1098,9 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
             for i in range(0, len(chainResnameResnums)):
                 df.loc[i] = [i,
                              chainResnameResnums[i],
-                             self.viewResultsParams.networkDegrees.values()[i],
-                             self.viewResultsParams.networkBC.values()[i],
-                             self.viewResultsParams.networkCC.values()[i]]
+                             list(self.viewResultsParams.networkDegrees.values())[i],
+                             list(self.viewResultsParams.networkBC.values())[i],
+                             list(self.viewResultsParams.networkCC.values())[i]]
 
             # Save to a CSV file.
             df.to_csv(fileName)
