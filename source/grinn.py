@@ -1,13 +1,16 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 # -*- coding: utf-8 -*-
-from PyQt5 import QtGui
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
-import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
-import sys, time, os, argparse, multiprocessing, subprocess
 
-multiprocessing.freeze_support()  # Required for Windows compatibility, harmless for Unix.
+def importExtras():
+    # A method to import packages only when necessary.
+    # This is only necessary to avoid importing graphics-related libraries when not necessary (e.g. grinn --calc calls)
+    from PyQt5 import QtGui
+    from PyQt5 import QtCore
+    from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
+    import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
+    import sys, time, os, argparse, multiprocessing, subprocess
 
+    multiprocessing.freeze_support()  # Required for Windows compatibility, harmless for Unix.
 
 class DesignInteract(QMainWindow, grinnGUI_design.Ui_gRINN):
 
@@ -133,7 +136,6 @@ def main():
     form.show()
     app.exec_()
 
-
 def convert_arg_line_to_args(arg_line):
     # To override the same method of the ArgumentParser (to read options from a file)
     for arg in arg_line.split():
@@ -141,9 +143,9 @@ def convert_arg_line_to_args(arg_line):
             continue
         yield arg
 
-
 if __name__ == '__main__':
 
+    import argparse, common, sys
     # Construct an argument parser.
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@',
                                      description='gRINN: get Residue Interaction eNergies and Networks. '
@@ -208,12 +210,12 @@ if __name__ == '__main__':
     parser.add_argument('--pairfiltercutoff', type=float, default=[15], nargs=1,
                         help='Cutoff distance (angstroms) for pairwise interaction energy calculations. '
                              'If not specified, it defaults to 15 Angstroms. '
-                             'Only those residues that are within the PAIRFILTERCUTOFF distance of each other '
+                             'Only those residues whose centers of mass are within the PAIRFILTERCUTOFF distance of each other '
                              'for at least PAIRCUTOFFPERCENTAGE of the trajectory will be included '
                              'in energy calculations.')
 
     parser.add_argument('--pairfilterpercentage', type=float, default=[75], nargs=1,
-                        help='When given, residues that	are within the PAIRFILTERCUTOFF distance from each '
+                        help='When given, residues whose centers of masses	are within the PAIRFILTERCUTOFF distance from each '
                              'other for at least PAIRFILTERPERCENTAGE percent of the trajectory will be taken '
                              'into account in further evaluations. When not given, it defaults to 75%%)')
 
@@ -290,12 +292,15 @@ if __name__ == '__main__':
     elif [calcMode, corrMode, resultsMode].count(True) == 1:
         if calcMode:
             # User requested command-line calculation of interaction energies.
+            import calc
             calc.getResIntEn(args)
         elif corrMode:
             # User requested command-line calculation of interaction energy correlations.
+            import corr
             corr.getResIntCorr(args, logFile=None)
         elif resultsMode:
             # User requested to view results of a completed calculation.
+            importExtras()
             prepareEnvironment()
             resultsGUI.main()
     else:
@@ -306,6 +311,7 @@ if __name__ == '__main__':
             version = versionline[0].rstrip('\n')
             print(version)
         else:
+            importExtras()
             prepareEnvironment()
             # Start the GUI.
             main()
