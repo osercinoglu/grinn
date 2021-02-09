@@ -136,9 +136,6 @@ def parseEnergiesSingleCoreNAMD(args):
 		res2 = int(matches.groups()[1])
 
 		system = parsePDB(pdb)
-		# Get chain-resname-resnum strings
-		res1_string = getChainResnameResnum(system,res1)
-		res2_string = getChainResnameResnum(system,res2)
 
 		# Read in the first line (header) output file and count number of total lines.
 		f = open(filePath,'r')
@@ -161,9 +158,9 @@ def parseEnergiesSingleCoreNAMD(args):
 			energyOutput[headers[i]] = [line[headerColumns[i]] for line in lines]
 
 		# Puts this energyOutput dict into energies dict with keys as residue ids
-		energiesDict[res1_string+'-'+res2_string] = energyOutput
-		# Also store it as res2,res2 (it is the same thing after all)
-		energiesDict[res2_string+'-'+res1_string] = energyOutput
+		energiesDict[str(res1)+'-'+str(res2)] = energyOutput
+		# Also store it as res2,res1 (it is the same thing after all)
+		energiesDict[str(res2)+'-'+str(res1)] = energyOutput
 
 	return energiesDict
 

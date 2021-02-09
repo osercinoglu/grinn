@@ -8,7 +8,7 @@ from shutil import copyfile, rmtree
 from common import *
 import corr
 
-def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
+def getResIntEnMean(intEnPickle,pdb,sel1,sel2,frameRange=False,prefix=''):
 
 	# Load interaction energy pickle file
 	intEnFile = open(intEnPickle,'rb')
@@ -20,57 +20,75 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Get number of residues
 	system = parsePDB(pdb)
-	numResidues = len(np.unique(system.getResindices()))
+	system_source = system.select(sel1)
+	system_target = system.select(sel2)
+
+	resindices_source = np.unique(system_source.getResindices())
+	numSource = len(resindices_source)
+
+	resindices_target = np.unique(system_target.getResindices())
+	numTarget = len(resindices_target)
 
 	# Start interaction energy variables
 	intEnDict = dict()
-	intEnDict['Elec'] = np.zeros((numResidues,numResidues))
-	intEnDict['Frame'] = np.zeros((numResidues,numResidues))
-	intEnDict['Total'] = np.zeros((numResidues,numResidues))
-	intEnDict['VdW'] = np.zeros((numResidues,numResidues))
 
-	progbar = pyprind.ProgBar(numResidues*numResidues)
+	# Each dict key here will hold a matrix for different IE types.
+	# It's a good idea to save residue indices in first row and column here!
+	# So that in results gui we can detect interacting pairs easily.
+	# For this, matrix sizes are adjusted (+1) below.
+	template_mat = np.zeros((numSource+1,numTarget+1))
+	template_mat[:,0] = np.hstack([0,resindices_source])
+	template_mat[0,:] = np.hstack([0,resindices_target])
+	intEnDict['Elec'] = template_mat
+	intEnDict['Frame'] = template_mat
+	intEnDict['Total'] = template_mat
+	intEnDict['VdW'] = template_mat
+
+	progbar = pyprind.ProgBar(numSource*numTarget)
 
 	filteredButNoInt = list() # Accumulate interactions that were included in calculation but resulted in zero interaction energy.
-	for i in range(numResidues):
-		i_chainResnameResnum = getChainResnameResnum(system,i)
-		for j in range(numResidues):
-			j_chainResnameResnum = getChainResnameResnum(system,j)
-			keyString = i_chainResnameResnum+'-'+j_chainResnameResnum
+	for i in range(numSource):
+		for j in range(numTarget):
+			keyString = str(resindices_source[i])+'-'+str(resindices_target[j])
 			if keyString in intEn:
-				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Elec'][j,i] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				intEnDict['Elec'][i+1,j+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				intEnDict['Elec'][j+1,i+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
 				totalMeanEn = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][i,j] = totalMeanEn
-				intEnDict['Total'][j,i] = totalMeanEn
-				intEnDict['VdW'][i,j] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
-				intEnDict['VdW'][j,i] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				intEnDict['Total'][i+1,j+1] = totalMeanEn
+				intEnDict['Total'][j+1,i+1] = totalMeanEn
+				intEnDict['VdW'][i+1,j+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				intEnDict['VdW'][j+1,i+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 
 				if not totalMeanEn:
 					filteredButNoInt.append(keyString)
 
 			else:
-				intEnDict['Elec'][i,j] = int(0)
-				intEnDict['Elec'][j,i] = int(0)
-				intEnDict['Total'][i,j] = int(0)
-				intEnDict['Total'][j,i] = int(0)
-				intEnDict['VdW'][i,j] = int(0)
-				intEnDict['VdW'][j,i] = int(0)
+				intEnDict['Elec'][i+1,j+1] = int(0)
+				intEnDict['Elec'][j+1,i+1] = int(0)
+				intEnDict['Total'][i+1,j+1] = int(0)
+				intEnDict['Total'][j+1,i+1] = int(0)
+				intEnDict['VdW'][i+1,j+1] = int(0)
+				intEnDict['VdW'][j+1,i+1] = int(0)
 
 			progbar.update()
 
 	# Save to text
+
 	np.savetxt('%s_intEnMeanTotal.dat' % prefix,intEnDict['Total'])
 	np.savetxt('%s_intEnMeanVdW.dat' % prefix,intEnDict['VdW'])
 	np.savetxt('%s_intEnMeanElec.dat' % prefix,intEnDict['Elec'])
 
 	# Save in column format as well (only Totals for now)
 	f = open('%s_intEnMeanTotal' % prefix+'List.dat','w')
-	for i in range(0,len(intEnDict['Total'])):
-		for j in range(0,len(intEnDict['Total'][i])):
+
+	# Below we start the ranges from 1 because the first row and column were spared for residue indices.
+	for i in range(1,len(intEnDict['Total'])):
+		for j in range(1,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
 			if value: # i.e. if it's not equal to zero (included in filtering step or included but was zero)
-				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system,i),getChainResnameResnum(system_dry,j),str(value)))
+				source_index = intEnDict['Total'][i][0]
+				target_index = intEnDict['Total'][0][j]
+				f.write('%s\t%s\t%s\n' % (str(source_index),str(target_index),str(value)))
 
 	f.close()
 	
@@ -641,8 +659,6 @@ def filterPairs(params):
 			initialFilter.append((pair[0],pair[1]))
 		progbar.update()
 
-	print('initialFilter:')
-	print(initialFilter)
 	##### WARNING ENDS
 
 	# Start a contact matrix based on center of masses
@@ -653,12 +669,10 @@ def filterPairs(params):
 	monitor = 0
 
 	for i in range(0,len(coordSets),1):
-		print('check 1')
 		contactMatFrame = np.zeros((numSource,numTarget))
 		traj.setAtoms(system)
 		traj.setCoords(traj.getCoordsets()[i])
 		for pair in initialFilter:
-			print('check 2')
 			pair1 = system.select('resindex %i' % pair[0])
 			traj.setAtoms(pair1)
 			pair1.setCoords(traj.getCoords())
@@ -674,18 +688,13 @@ def filterPairs(params):
 				contactMatFrame[source_index,target_index] = 1
 				#contactMatFrame[pair[1],pair[0]] = 1
 
-		print('check pre-3')
 		print(np.shape(contactMat))
 		### RED ALERT:
 		### The following fails because the matrices are HUGE :)
 		contactMat = contactMat + contactMatFrame
-		print('check 3')
 		monitor = monitor + 1
-		print('check 4')
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
-		print('check 5')
 		if calculatedPercentage > 100: calculatedPercentage = 100
-		print('check 6')
 		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
@@ -750,7 +759,7 @@ def collectResults(params):
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
 	intEnDict, filteredButNoInt = getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
-		os.path.join(params.outFolder,'system.pdb'),
+		os.path.join(params.outFolder,'system.pdb'),params.sel1,params.sel2,
 		prefix=os.path.join(params.outFolder,'energies'))
 
 	# Report interactions with zero mean.
