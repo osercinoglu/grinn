@@ -95,37 +95,40 @@ def isStructureDry(pdb,psf):
 def prepareFilesNAMD(params):
 	# Detect whether there are non-protein components in the system.
 	params.logger.info('Checking whether the structure has non-protein atoms...')
-	dryStructure = isStructureDry(params.pdb,params.top)
 
-	if not dryStructure:
-		params.logger.info('Non-protein atoms detected in structure...')
-		params.logger.info('There are non-protein elements in your input files. Please '
-			'consider generating PSF/PDB/DCD files containing only the protein in your '
-			'structure.') # Maybe add here a link where the user can check his/her options.
+	#### TEMP MODIFICATION: CANCELING DRY STRUCTURE CHECK NOW.
+	# dryStructure = isStructureDry(params.pdb,params.top)
 
-		if sys.stdin.isatty():
-			if not click.confirm('Do you want to continue?', default=True):
-				errorSuicide(params,'User requested abort. Aborting now.',removeOutput=False)
+	# if not dryStructure:
+	# 	params.logger.info('Non-protein atoms detected in structure...')
+	# 	params.logger.info('There are non-protein elements in your input files. Please '
+	# 		'consider generating PSF/PDB/DCD files containing only the protein in your '
+	# 		'structure.') # Maybe add here a link where the user can check his/her options.
+	#### TEMP MODIFICATION
+
+	if sys.stdin.isatty():
+		if not click.confirm('Do you want to continue?', default=True):
+			errorSuicide(params,'User requested abort. Aborting now.',removeOutput=False)
 
 	# Proceeding.
 	# Just copy psf and pdb files and the trajectory with stride to output folder.
-	copyfile(params.pdb,os.path.join(params.outFolder,'system_dry.pdb'))
-	copyfile(params.top,os.path.join(params.outFolder,'system_dry.psf'))
+	copyfile(params.pdb,os.path.join(params.outFolder,'system.pdb'))
+	copyfile(params.top,os.path.join(params.outFolder,'system.psf'))
 	# Load the DCD file, get rid of non-protein sections.
 	traj = Trajectory(params.traj)
 	pdb = parsePDB(params.pdb)
 	traj.link(pdb)
 	traj.setAtoms(pdb)
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),
+	writeDCD(os.path.join(params.outFolder,'traj.dcd'),
 		traj,step=params.stride)
 	# Load it back, superpose, save again.
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
 	traj.setAtoms(pdb)
 	traj.superpose()
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+	writeDCD(os.path.join(params.outFolder,'traj.dcd'),traj)
 
 	# Check whether system has enough memory to handle the computation...
-	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
+	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj.dcd'))
 	if not proceed:
 		errorSuicide(params,message,removeOutput=False)
 
@@ -202,9 +205,9 @@ def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
 	pairsFilteredSingleCore = args[0]
 	params = args[1]
-	psfFilePath = os.path.join(params.outFolder,'system_dry.psf')
-	pdbFilePath = os.path.join(params.outFolder,'system_dry.pdb')
-	dcdFilePath = os.path.join(params.outFolder,'traj_dry.dcd')
+	psfFilePath = os.path.join(params.outFolder,'system.psf')
+	pdbFilePath = os.path.join(params.outFolder,'system.pdb')
+	dcdFilePath = os.path.join(params.outFolder,'traj.dcd')
 	skip = 1 # We implemented this stride (skip) in the DCD file already.
 	pairFilterCutoff = params.pairFilterCutoff
 	cutoff = params.cutoff
@@ -488,7 +491,7 @@ def calcEnergiesNAMD(params):
 
 	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-			params.outFolder,'system_dry.pdb')),
+			params.outFolder,'system.pdb')),
 			itertools.repeat(params.logFile))).get(9999999)
 
 	parsedEnergies = dict()
@@ -575,8 +578,8 @@ def calcEnergiesGMX(params):
 
 def filterPairs(params):
 	
-	system = parsePDB(os.path.join(params.outFolder,'system_dry.pdb'))
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
 
 	try:
 		source = system.select(str(params.sel1))
@@ -619,16 +622,21 @@ def filterPairs(params):
 	# Continue with filtering operation
 	coordSets = traj.getCoordsets()
 
-	# Get a list of pairs within 20 angströms distance from each other, 
+	# Get a list of pairs within a certain distance from each other, 
 	# based on the initial structure.
 	initialFilter = list()
+	progbar = pyprind.ProgBar(len(sourceResids))
 	for i in range(0,len(sourceResids)):
 		com1 = calcCenter(system.select('resindex %i' % sourceResids[i]))
 		for j in range(0,len(targetResids)):
 			com2 = calcCenter(system.select('resindex %i' % targetResids[j]))
 			dist = calcDistance(com1,com2)
-			if dist <= 40:
+
+			### WARNING
+			if dist <= 40: #### IS THIS PROBLEMATIC?
+			### WARNING
 				initialFilter.append((sourceResids[i],targetResids[j]))
+		progbar.update()
 
 	# Start a contact matrix based on center of masses
 	contactMat = np.zeros((numResidues,numResidues))
@@ -900,7 +908,6 @@ def getParams(args):
 			params.outFolder = outFolder
 			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
-
 	# Check whether any input file paths include space character.
 	files = [args.pdb,args.tpr,args.top,args.traj]
 	files = [filename[0] for filename in files if not filename[0] == None]
@@ -972,7 +979,6 @@ def getParams(args):
 	if args.pdb[0]:
 		try:
 			system = parsePDB(os.path.abspath(args.pdb[0]))
-			systemProtein = system.select(str('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion'))
 			params.pdb = os.path.abspath(args.pdb[0])
 			params.dataType = 'namd'
 		except:
@@ -986,17 +992,19 @@ def getParams(args):
 			message = 'Could not select sel1 or sel2 in the PDB file. Aborting now.'
 			return params, False, message
 
+		#### TEMP MODIFICATION: CANCELLING THIS NOW.
 		# Check whether there any chain ids not assigned a valid letter.
-		chids = systemProtein.getChids()
-		for chid in chids:
-			if not chid.strip():
-				message = 'There is at least one residue with no chain ID assigned to it. This is not '\
-				'allowed. Aborting now...'
-				return params, False, message
+		# chids = system.getChids()
+		# for chid in chids:
+		# 	if not chid.strip():
+		# 		message = 'There is at least one residue with no chain ID assigned to it. This is not '\
+		# 		'allowed. Aborting now...'
+		# 		return params, False, message
+		#### TEMP MODIFICATION: CANCELLING THIS NOW.
 
-		numResidues = len(np.unique(systemProtein.getResindices()))
-		for resindex in np.unique(systemProtein.getResindices()):
-			residue = systemProtein.select(str('resindex %i' % resindex))
+		numResidues = len(np.unique(system.getResindices()))
+		for resindex in np.unique(system.getResindices()):
+			residue = system.select(str('resindex %i' % resindex))
 			index = np.unique(residue.getResnames())
 			if len(index) > 1:
 				message = 'There are multiple residues with the same residue index in your PDB file. '\
