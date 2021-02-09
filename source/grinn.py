@@ -139,9 +139,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     ### TEMP
-    print('clover logo path:')
-    print(common.resource_path(
-        os.path.join('resources', 'clover.ico')))
+    #print(common.resource_path(
+    #    os.path.join('resources', 'clover.ico')))
     ### TEMP
 
     calcMode = args.calc
