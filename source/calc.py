@@ -20,9 +20,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Get number of residues
 	system = parsePDB(pdb)
-	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
-	system_dry = system_dry.select('not resname SOL')
-	numResidues = len(np.unique(system_dry.getResindices()))
+	numResidues = len(np.unique(system.getResindices()))
 
 	# Start interaction energy variables
 	intEnDict = dict()
@@ -35,9 +33,9 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	filteredButNoInt = list() # Accumulate interactions that were included in calculation but resulted in zero interaction energy.
 	for i in range(numResidues):
-		i_chainResnameResnum = getChainResnameResnum(system_dry,i)
+		i_chainResnameResnum = getChainResnameResnum(system,i)
 		for j in range(numResidues):
-			j_chainResnameResnum = getChainResnameResnum(system_dry,j)
+			j_chainResnameResnum = getChainResnameResnum(system,j)
 			keyString = i_chainResnameResnum+'-'+j_chainResnameResnum
 			if keyString in intEn:
 				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
@@ -72,7 +70,7 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 		for j in range(0,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
 			if value: # i.e. if it's not equal to zero (included in filtering step or included but was zero)
-				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system_dry,i),getChainResnameResnum(system_dry,j),str(value)))
+				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system,i),getChainResnameResnum(system_dry,j),str(value)))
 
 	f.close()
 	
@@ -588,21 +586,22 @@ def filterPairs(params):
 		return
 
 	#NEEDS CAREFUL TWEAKING ALL BELOW
-	numSource = len(source)
+	numResidues = system.numResidues()
 	sourceResids = np.unique(source.getResindices())
 	sourceResnums = [source.select('resindex %i' % i).getResnums()[0] for i in sourceResids]
 	sourceSegnames = [source.select('resindex %i' % i).getSegnames()[0] for i in sourceResids]
 
-	numResidues = system.numResidues()
-	numTarget = numResidues
+	numSource = len(sourceResids)
 
 	# By default, targetResids are all residues.
 	targetResids = np.arange(numResidues)
+	numTarget = len(targetResids)
 	
 	# Get target selection residues
 	try:
 		target = system.select(str(params.sel2))
 		targetResids = np.unique(target.getResindices())
+		numTarget = len(targetResids)
 	except:
 		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
 		return
@@ -625,31 +624,41 @@ def filterPairs(params):
 	# Get a list of pairs within a certain distance from each other, 
 	# based on the initial structure.
 	initialFilter = list()
-	progbar = pyprind.ProgBar(len(sourceResids))
-	for i in range(0,len(sourceResids)):
-		com1 = calcCenter(system.select('resindex %i' % sourceResids[i]))
-		for j in range(0,len(targetResids)):
-			com2 = calcCenter(system.select('resindex %i' % targetResids[j]))
-			dist = calcDistance(com1,com2)
 
-			### WARNING
-			if dist <= 40: #### IS THIS PROBLEMATIC?
-			### WARNING
-				initialFilter.append((sourceResids[i],targetResids[j]))
+	##### WARNING:
+	##### Below includes only one pair chunk!
+	##### Later on you need to modify source to parallelize this code!!!	
+	progbar = pyprind.ProgBar(len(pairChunks[0]))
+	for pair in pairChunks[0]:
+		pair = list(pair)
+		com1 = calcCenter(system.select('resindex %i' % pair[0]))
+		com2 = calcCenter(system.select('resindex %i' % pair[1]))
+		dist = calcDistance(com1,com2)
+
+		### WARNING
+		if dist <= 40: #### IS THIS PROBLEMATIC?
+		### WARNING
+			initialFilter.append((pair[0],pair[1]))
 		progbar.update()
 
+	print('initialFilter:')
+	print(initialFilter)
+	##### WARNING ENDS
+
 	# Start a contact matrix based on center of masses
-	contactMat = np.zeros((numResidues,numResidues))
+	contactMat = np.zeros((numSource,numTarget))
 
 	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
 	monitor = 0
 
 	for i in range(0,len(coordSets),1):
-		contactMatFrame = np.zeros((numResidues,numResidues))
+		print('check 1')
+		contactMatFrame = np.zeros((numSource,numTarget))
 		traj.setAtoms(system)
 		traj.setCoords(traj.getCoordsets()[i])
 		for pair in initialFilter:
+			print('check 2')
 			pair1 = system.select('resindex %i' % pair[0])
 			traj.setAtoms(pair1)
 			pair1.setCoords(traj.getCoords())
@@ -660,12 +669,23 @@ def filterPairs(params):
 			com1 = calcCenter(pair2)
 			dist = calcDistance(com1,com2)
 			if dist <= params.pairFilterCutoff:
-				contactMatFrame[pair[0],pair[1]] = 1
-				contactMatFrame[pair[1],pair[0]] = 1
+				source_index = list(sourceResids).index(pair[0])
+				target_index = list(targetResids).index(pair[1])
+				contactMatFrame[source_index,target_index] = 1
+				#contactMatFrame[pair[1],pair[0]] = 1
+
+		print('check pre-3')
+		print(np.shape(contactMat))
+		### RED ALERT:
+		### The following fails because the matrices are HUGE :)
 		contactMat = contactMat + contactMatFrame
+		print('check 3')
 		monitor = monitor + 1
+		print('check 4')
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		print('check 5')
 		if calculatedPercentage > 100: calculatedPercentage = 100
+		print('check 6')
 		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
@@ -678,7 +698,11 @@ def filterPairs(params):
 		for targetResid in targetResids:
 			if sourceResid == targetResid:
 				continue
-			elif pairsFilteredFlag[sourceResid,targetResid] > 0:
+			source_index = list(sourceResids).index(sourceResid)
+			target_index = list(targetResids).index(targetResid)
+			print(source_index,target_index)
+
+			if pairsFilteredFlag[source_index,target_index] > 0:
 				pairsFiltered.append(sorted([sourceResid,targetResid]))
 
 	pairsFiltered = sorted(pairsFiltered)
@@ -726,7 +750,7 @@ def collectResults(params):
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
 	intEnDict, filteredButNoInt = getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
-		os.path.join(params.outFolder,'system_dry.pdb'),
+		os.path.join(params.outFolder,'system.pdb'),
 		prefix=os.path.join(params.outFolder,'energies'))
 
 	# Report interactions with zero mean.
@@ -1063,6 +1087,7 @@ def getParams(args):
 			return params, False, message
 
 		# Check whether stride is higher than the number of frames in trajectory:
+		print(trajectory.numFrames())
 		if params.stride > trajectory.numFrames():
 			message = 'Stride value is higher than the number of frames in the trajectory. '\
 			'Please use a lower stride value.'
