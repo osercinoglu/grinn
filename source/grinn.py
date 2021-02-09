@@ -1,141 +1,6 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 # -*- coding: utf-8 -*-
 
-def importExtras():
-    # A method to import packages only when necessary.
-    # This is only necessary to avoid importing graphics-related libraries when not necessary (e.g. grinn --calc calls)
-    from PyQt5 import QtGui
-    from PyQt5 import QtCore
-    from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
-    import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
-    import sys, time, os, argparse, multiprocessing, subprocess
-
-    multiprocessing.freeze_support()  # Required for Windows compatibility, harmless for Unix.
-
-class DesignInteract(QMainWindow, grinnGUI_design.Ui_gRINN):
-
-    def __init__(self, parent=None):
-        super(DesignInteract, self).__init__(parent)
-        self.setupUi(self)
-
-        _translate = QtCore.QCoreApplication.translate
-        self.label_3.setText(_translate("gRINN",
-                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/tutorial.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
-        self.label_4.setText(_translate("gRINN",
-                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/credits.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
-        self.label_5.setText(_translate("gRINN",
-                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/contact.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
-        self.label_6.setText(_translate("gRINN",
-                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/faq.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
-
-        self.label_3.setOpenExternalLinks(True)
-        self.label_4.setOpenExternalLinks(True)
-        self.label_5.setOpenExternalLinks(True)
-        self.label_6.setOpenExternalLinks(True)
-        self.pushButton.clicked.connect(self.calculateGUI)
-        self.pushButton_2.clicked.connect(self.resultsGUI)
-
-    def calculateGUI(self):
-        self.formGetResIntEnGUI = calcGUI.DesignInteractCalculate(self)
-        self.formGetResIntEnGUI.show()
-        icon = QtGui.QIcon()
-        pixmap = QtGui.QPixmap(common.resource_path(
-            os.path.join('resources', 'clover.ico')))
-        icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.formGetResIntEnGUI.setWindowIcon(icon)
-        self.formGetResIntEnGUI.label_3.setPixmap(pixmap)
-
-    def resultsGUI(self):
-        self.formResults = resultsGUI.DesignInteractResults(self)
-        self.formResults.show()
-        icon = QtGui.QIcon()
-        pixmap = QtGui.QPixmap(common.resource_path(
-            os.path.join('resources', 'clover.ico')))
-        icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
-        self.formResults.setWindowIcon(icon)
-        # Skip through tab widgets to show each GUI component
-        # (apparently necessary for plots to draw correctly...
-        self.formResults.tabWidget.setCurrentIndex(0)
-        self.formResults.tabWidget.setCurrentIndex(2)
-        self.formResults.tabWidget.setCurrentIndex(3)
-        self.formResults.tabWidget.setCurrentIndex(4)
-        self.formResults.tabWidget.setCurrentIndex(5)
-        self.formResults.tabWidget_2.setCurrentIndex(0)
-        self.formResults.tabWidget_2.setCurrentIndex(1)
-        self.formResults.tabWidget_2.setCurrentIndex(0)
-        self.formResults.tabWidget.setCurrentIndex(0)
-        time.sleep(1)
-        folderLoaded = self.formResults.updateOutputFolder()
-
-    # if not folderLoaded:
-    #	self.formResults.close()
-
-    def closeEvent(self, event):
-        message = False
-        closeCalc = False
-        # Check whether any calcGUI or resultsGUI views have been created.
-        if hasattr(self, "formGetResIntEnGUI"):
-            if self.formGetResIntEnGUI.isVisible():
-                message = 'At least one "New Calculation" interface is active. Are you sure ?'
-                closeCalc = True
-        if hasattr(self, "formResults"):
-            if self.formResults.isVisible():
-                message = 'At least one "View Results" interface is active. Are you sure ?'
-
-        if message:
-            # Is the user sure about this?
-            buttonReply = QMessageBox.question(
-                self, 'Are you sure?', message,
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-            if buttonReply == QMessageBox.No:
-                event.ignore()
-            elif buttonReply == QMessageBox.Yes:
-                if closeCalc:
-                    self.formGetResIntEnGUI.close()
-                    event.accept()
-                else:
-                    event.accept()
-        elif not message:
-            event.accept()
-
-
-def prepareEnvironment():
-    # Set some environment variable for pyinstaller executable function.
-    filePath = os.path.abspath(__file__)
-    os.environ['FONTCONFIG_FILE'] = common.resource_path(
-        os.path.join('data', 'etc', 'fonts', 'fonts.conf'))
-    os.environ['FONTCONFIG_PATH'] = common.resource_path(
-        os.path.join('data', 'etc', 'fonts'))
-    os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
-        os.path.join('data', 'xkb'))
-    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = common.resource_path(
-        os.path.join('PyQt5', 'Qt', 'plugins', 'platforms'))
-    os.environ['QT_PLUGIN_PATH'] = common.resource_path(
-        os.path.join('PyQt5', 'Qt', 'plugins', 'platforms'))
-
-
-# os.environ['LD_LIBRARY_PATH'] = common.resource_path(
-#	os.path.join('data','xkb'))
-# print(os.environ['LD_LIBRARY_PATH'])
-# print(os.environ['QT_PLUGIN_PATH'])
-
-def main():
-    sys_argv = sys.argv
-    sys_argv += ['--style', 'Fusion']
-    app = QApplication(sys_argv)
-    form = DesignInteract()
-    icon = QtGui.QIcon()
-    pixmap = QtGui.QPixmap(common.resource_path(
-        os.path.join('resources', 'clover.ico')))
-    icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
-    form.setWindowIcon(icon)
-    form.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
-    form.label.setText("")
-    form.label.setScaledContents(True)
-    form.label.setPixmap(pixmap)
-    form.show()
-    app.exec_()
-
 def convert_arg_line_to_args(arg_line):
     # To override the same method of the ArgumentParser (to read options from a file)
     for arg in arg_line.split():
@@ -145,7 +10,7 @@ def convert_arg_line_to_args(arg_line):
 
 if __name__ == '__main__':
 
-    import argparse, common, sys
+    import argparse, common, sys, multiprocessing, os
     # Construct an argument parser.
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@',
                                      description='gRINN: get Residue Interaction eNergies and Networks. '
@@ -289,7 +154,7 @@ if __name__ == '__main__':
         print('You should specify either -calc or -corr or specify none of them '
               'to enter the GUI mode.')
         sys.exit(0)
-    elif [calcMode, corrMode, resultsMode].count(True) == 1:
+    elif [calcMode, corrMode].count(True) == 1:
         if calcMode:
             # User requested command-line calculation of interaction energies.
             import calc
@@ -298,11 +163,6 @@ if __name__ == '__main__':
             # User requested command-line calculation of interaction energy correlations.
             import corr
             corr.getResIntCorr(args, logFile=None)
-        elif resultsMode:
-            # User requested to view results of a completed calculation.
-            importExtras()
-            prepareEnvironment()
-            resultsGUI.main()
     else:
         if args.version:
             # User requested printing of version.
@@ -310,8 +170,148 @@ if __name__ == '__main__':
             versionline = versionfile.readlines()
             version = versionline[0].rstrip('\n')
             print(version)
+
         else:
-            importExtras()
-            prepareEnvironment()
             # Start the GUI.
-            main()
+            def startGUI(mode):
+                
+                from PyQt5 import QtGui
+                from PyQt5 import QtCore
+                from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
+                import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
+                import sys, time, os, argparse, multiprocessing, subprocess
+
+                multiprocessing.freeze_support()  # Required for Windows compatibility, harmless for Unix.
+
+                class DesignInteract(QMainWindow, grinnGUI_design.Ui_gRINN):
+
+                    def __init__(self, parent=None):
+                        super(DesignInteract, self).__init__(parent)
+                        self.setupUi(self)
+
+                        _translate = QtCore.QCoreApplication.translate
+                        self.label_3.setText(_translate("gRINN",
+                                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/tutorial.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
+                        self.label_4.setText(_translate("gRINN",
+                                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/credits.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
+                        self.label_5.setText(_translate("gRINN",
+                                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/contact.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
+                        self.label_6.setText(_translate("gRINN",
+                                                        "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/faq.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
+
+                        self.label_3.setOpenExternalLinks(True)
+                        self.label_4.setOpenExternalLinks(True)
+                        self.label_5.setOpenExternalLinks(True)
+                        self.label_6.setOpenExternalLinks(True)
+                        self.pushButton.clicked.connect(self.calculateGUI)
+                        self.pushButton_2.clicked.connect(self.resultsGUI)
+
+                    def calculateGUI(self):
+                        self.formGetResIntEnGUI = calcGUI.DesignInteractCalculate(self)
+                        self.formGetResIntEnGUI.show()
+                        icon = QtGui.QIcon()
+                        pixmap = QtGui.QPixmap(common.resource_path(
+                            os.path.join('resources', 'clover.ico')))
+                        icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+                        self.formGetResIntEnGUI.setWindowIcon(icon)
+                        self.formGetResIntEnGUI.label_3.setPixmap(pixmap)
+
+                    def resultsGUI(self):
+                        self.formResults = resultsGUI.DesignInteractResults(self)
+                        self.formResults.show()
+                        icon = QtGui.QIcon()
+                        pixmap = QtGui.QPixmap(common.resource_path(
+                            os.path.join('resources', 'clover.ico')))
+                        icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+                        self.formResults.setWindowIcon(icon)
+                        # Skip through tab widgets to show each GUI component
+                        # (apparently necessary for plots to draw correctly...
+                        self.formResults.tabWidget.setCurrentIndex(0)
+                        self.formResults.tabWidget.setCurrentIndex(2)
+                        self.formResults.tabWidget.setCurrentIndex(3)
+                        self.formResults.tabWidget.setCurrentIndex(4)
+                        self.formResults.tabWidget.setCurrentIndex(5)
+                        self.formResults.tabWidget_2.setCurrentIndex(0)
+                        self.formResults.tabWidget_2.setCurrentIndex(1)
+                        self.formResults.tabWidget_2.setCurrentIndex(0)
+                        self.formResults.tabWidget.setCurrentIndex(0)
+                        time.sleep(1)
+                        folderLoaded = self.formResults.updateOutputFolder()
+
+                    # if not folderLoaded:
+                    #   self.formResults.close()
+
+                    def closeEvent(self, event):
+                        message = False
+                        closeCalc = False
+                        # Check whether any calcGUI or resultsGUI views have been created.
+                        if hasattr(self, "formGetResIntEnGUI"):
+                            if self.formGetResIntEnGUI.isVisible():
+                                message = 'At least one "New Calculation" interface is active. Are you sure ?'
+                                closeCalc = True
+                        if hasattr(self, "formResults"):
+                            if self.formResults.isVisible():
+                                message = 'At least one "View Results" interface is active. Are you sure ?'
+
+                        if message:
+                            # Is the user sure about this?
+                            buttonReply = QMessageBox.question(
+                                self, 'Are you sure?', message,
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                            if buttonReply == QMessageBox.No:
+                                event.ignore()
+                            elif buttonReply == QMessageBox.Yes:
+                                if closeCalc:
+                                    self.formGetResIntEnGUI.close()
+                                    event.accept()
+                                else:
+                                    event.accept()
+                        elif not message:
+                            event.accept()
+
+                def prepareEnvironment():
+                    # Set some environment variable for pyinstaller executable function.
+                    filePath = os.path.abspath(__file__)
+                    os.environ['FONTCONFIG_FILE'] = common.resource_path(
+                        os.path.join('data', 'etc', 'fonts', 'fonts.conf'))
+                    os.environ['FONTCONFIG_PATH'] = common.resource_path(
+                        os.path.join('data', 'etc', 'fonts'))
+                    os.environ['QT_XKB_CONFIG_ROOT'] = common.resource_path(
+                        os.path.join('data', 'xkb'))
+                    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = common.resource_path(
+                        os.path.join('PyQt5', 'Qt', 'plugins', 'platforms'))
+                    os.environ['QT_PLUGIN_PATH'] = common.resource_path(
+                        os.path.join('PyQt5', 'Qt', 'plugins', 'platforms'))
+
+                prepareEnvironment()
+                # os.environ['LD_LIBRARY_PATH'] = common.resource_path(
+                #   os.path.join('data','xkb'))
+                # print(os.environ['LD_LIBRARY_PATH'])
+                # print(os.environ['QT_PLUGIN_PATH'])
+
+                def main():
+                    sys_argv = sys.argv
+                    sys_argv += ['--style', 'Fusion']
+                    app = QApplication(sys_argv)
+                    form = DesignInteract()
+                    icon = QtGui.QIcon()
+                    pixmap = QtGui.QPixmap(common.resource_path(
+                        os.path.join('resources', 'clover.ico')))
+                    icon.addPixmap(pixmap, QtGui.QIcon.Normal, QtGui.QIcon.Off)
+                    form.setWindowIcon(icon)
+                    form.label.setGeometry(QtCore.QRect(50, 10, 161, 151))
+                    form.label.setText("")
+                    form.label.setScaledContents(True)
+                    form.label.setPixmap(pixmap)
+                    form.show()
+                    app.exec_()
+
+                if mode=='results':
+                    resultsGUI.main()
+                elif mode=='main':
+                    main()
+
+            if resultsMode:
+                startGUI(mode='results')
+            else:
+                startGUI(mode='main')
