@@ -688,7 +688,6 @@ def filterPairs(params):
 				contactMatFrame[source_index,target_index] = 1
 				#contactMatFrame[pair[1],pair[0]] = 1
 
-		print(np.shape(contactMat))
 		### RED ALERT:
 		### The following fails because the matrices are HUGE :)
 		contactMat = contactMat + contactMatFrame
@@ -709,7 +708,6 @@ def filterPairs(params):
 				continue
 			source_index = list(sourceResids).index(sourceResid)
 			target_index = list(targetResids).index(targetResid)
-			print(source_index,target_index)
 
 			if pairsFilteredFlag[source_index,target_index] > 0:
 				pairsFiltered.append(sorted([sourceResid,targetResid]))
