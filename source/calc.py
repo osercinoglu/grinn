@@ -592,6 +592,39 @@ def calcEnergiesGMX(params):
 
 	return edrFiles, pairsFilteredChunks
 
+# A method for initial filtering using a single core.
+def filterInitialPairsSingleCore(args):
+
+	outFolder = args[0]
+	pairs = args[1]
+	system = parsePDB(os.path.join(outFolder,'system.pdb'))
+
+	# Define a method for initial filtering of a single pair.
+	def filterInitialPair(outFolder,pair):
+		com1 = calcCenter(system.select("resindex %i" % pair[0]))
+		com2 = calcCenter(system.select("resindex %i" % pair[1]))
+		dist = calcDistance(com1,com2)
+		if dist <= 40:
+			return pair
+		else:
+			return None
+
+	# Get a list of included pairs after initial filtering.
+	filterList = list()
+	progbar = pyprind.ProgBar(len(pairs))
+	for pair in pairs:
+		filtered = filterInitialPair(outFolder,pair)
+		if filtered is not None:
+			filterList.append(pair)
+		progbar.update()
+
+	return filterList
+
+# A method for filtering using a single core.
+def filterPairsSingleCore(args):
+	print('just some dummy text until this is filled in.')
+
+# A method for filtering of pairs.
 def filterPairs(params):
 	
 	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
@@ -631,35 +664,45 @@ def filterPairs(params):
 		if x != y:
 			pairSet.add(frozenset((x,y)))
 
-	# Split the pair set list into chunks according to number of cores
-	pairChunks = np.array_split(list(pairSet),params.numCores)
-
-	params.logger.info('Starting the filtering step...')
+	params.logger.info('Starting filtering operations...')
 
 	# Continue with filtering operation
 	coordSets = traj.getCoordsets()
+
+	# Prepare a pairSet list.
+	params.logger.info('Preparing a list of pairs...')
+	pairSet = [list(pair) for pair in list(pairSet)]
+	params.logger.info('Preparing a list of pairs... Done.')
 
 	# Get a list of pairs within a certain distance from each other, 
 	# based on the initial structure.
 	initialFilter = list()
 
-	##### WARNING:
-	##### Below includes only one pair chunk!
-	##### Later on you need to modify source to parallelize this code!!!	
-	progbar = pyprind.ProgBar(len(pairChunks[0]))
-	for pair in pairChunks[0]:
-		pair = list(pair)
-		com1 = calcCenter(system.select('resindex %i' % pair[0]))
-		com2 = calcCenter(system.select('resindex %i' % pair[1]))
-		dist = calcDistance(com1,com2)
+	# Initial filtering of pairs
+	params.logger.info('Starting initial filtering step...')
 
-		### WARNING
-		if dist <= 40: #### IS THIS PROBLEMATIC?
-		### WARNING
-			initialFilter.append((pair[0],pair[1]))
-		progbar.update()
+	# Start a multiprocessing pool, and perform initial filtering.
+	pool = multiprocessing.Pool(params.numCores)
 
-	##### WARNING ENDS
+	params.logger.info('Parallelizing initial filtering calculation...')
+
+	# Split the pair set list into chunks according to number of cores
+	pairChunks = np.array_split(list(pairSet),params.numCores)
+
+	# Perform initial filtering on each of these chunks.
+	params.logger.info('Performing initial filtering now... This may take a while...')
+	initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i]] for i in range(0,params.numCores)])
+	if len(initialFilter) > 1:
+		initialFilter = np.vstack(initialFilter)
+
+	pool.close()
+
+	initialFilter = list(initialFilter)
+	initialFilter = [pair for pair in initialFilter if pair is not None]
+	params.logger.info('Initial filtering... Done.')
+	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
+		len(initialFilter))
+	#raise SystemExit(0)
 
 	# Start a contact matrix based on center of masses
 	contactMat = np.zeros((numSource,numTarget))
@@ -668,28 +711,43 @@ def filterPairs(params):
 	calculatedPercentage = 0
 	monitor = 0
 
+	# Define a method for filtering of pairs based on pairFilterCutoff:
+	def filterPair(pair,pairFilterCutoff):
+		pair1 = system.select('resindex %i' % pair[0])
+		traj.setAtoms(pair1)
+		pair1.setCoords(traj.getCoords())
+		pair2 = system.select('resindex %i' % pair[1])
+		traj.setAtoms(pair2)
+		pair2.setCoords(traj.getCoords())
+		com1 = calcCenter(pair1)
+		com2 = calcCenter(pair2)
+		dist = calcDistance(com1,com2)
+		if dist <= pairFilterCutoff:
+			if pair[0] in sourceResids and pair[1] in targetResids:
+				source_index = list(sourceResids).index(pair[0])
+				target_index = list(targetResids).index(pair[1])
+			elif pair[1] in sourceResids and pair[0] in targetResids:
+				source_index = list(sourceResids).index(pair[1])
+				target_index = list(targetResids).index(pair[0])
+
+			return [source_index,target_index]
+		else:
+			return None
+
+	params.logger.info('Starting the filtering step...')
 	for i in range(0,len(coordSets),1):
 		contactMatFrame = np.zeros((numSource,numTarget))
 		traj.setAtoms(system)
 		traj.setCoords(traj.getCoordsets()[i])
-		for pair in initialFilter:
-			pair1 = system.select('resindex %i' % pair[0])
-			traj.setAtoms(pair1)
-			pair1.setCoords(traj.getCoords())
-			pair2 = system.select('resindex %i' % pair[1])
-			traj.setAtoms(pair2)
-			pair2.setCoords(traj.getCoords())
-			com1 = calcCenter(pair1)
-			com1 = calcCenter(pair2)
-			dist = calcDistance(com1,com2)
-			if dist <= params.pairFilterCutoff:
-				source_index = list(sourceResids).index(pair[0])
-				target_index = list(targetResids).index(pair[1])
-				contactMatFrame[source_index,target_index] = 1
-				#contactMatFrame[pair[1],pair[0]] = 1
+		filteredPairIndices = list(map(filterPair,initialFilter,
+			[params.pairFilterCutoff]*len(initialFilter)))
+		filteredPairIndices = [el for el in filteredPairIndices if el != None]
+		for [source_index,target_index] in filteredPairIndices:
+			contactMatFrame[source_index,target_index] = 1
 
 		### RED ALERT:
-		### The following fails because the matrices are HUGE :)
+		### The following may choke computer if the matrices are extremely large.
+		### For now we will take that the user makes a reasonable size selection for interaction energies.	
 		contactMat = contactMat + contactMatFrame
 		monitor = monitor + 1
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
@@ -728,6 +786,7 @@ def filterPairs(params):
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
 
 	params.pairsFiltered = pairsFiltered
+
 	return params
 
 def collectResults(params):
@@ -794,7 +853,7 @@ def cleanUp(params):
 def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
 	if removeOutput:
-		rmtree(params.outFolder,ignore_error=True)
+		rmtree(params.outFolder)
 	#psutil.Process(os.getpid()).kill()
 	# Exit normally after printing the error to the log file.
 	os._exit(0)
