@@ -473,8 +473,15 @@ def calcEnergiesNAMD(params):
 	params.logger.info('Starting threads for interaction energy calculation...')
 	# Strip logger away from params temporarily to be able to map.
 	params.logger = None
+
+	# Cancelling the following for map_async, it was intended for python 2.7
+	#results = pool.map_async(calcEnergiesSingleCoreNAMD,
+	#	zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+
+	# Instead, the following line.
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
-		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+		zip(params.pairsFilteredChunks,itertools.repeat(params)))
+	
 	params.logger = logger
 	
 	# If the pool return at least one 'SystemExit' string
@@ -505,10 +512,17 @@ def calcEnergiesNAMD(params):
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
 		params.numCores)
 
+	# Cancelling the following for map_async, it was intended for python 2.7
+	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
+	#	zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+	#		params.outFolder,'system.pdb')),
+	#		itertools.repeat(params.logFile))).get(9999999)
+
+	# Instead, the following line.
 	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
 			params.outFolder,'system.pdb')),
-			itertools.repeat(params.logFile))).get(9999999)
+			itertools.repeat(params.logFile)))
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
@@ -702,7 +716,6 @@ def filterPairs(params):
 	params.logger.info('Initial filtering... Done.')
 	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
 		len(initialFilter))
-	#raise SystemExit(0)
 
 	# Start a contact matrix based on center of masses
 	contactMat = np.zeros((numSource,numTarget))
