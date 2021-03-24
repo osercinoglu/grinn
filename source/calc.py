@@ -481,6 +481,7 @@ def calcEnergiesNAMD(params):
 	# Instead, the following line.
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
 		zip(params.pairsFilteredChunks,itertools.repeat(params)))
+	results = list(results=)
 	
 	params.logger = logger
 	
