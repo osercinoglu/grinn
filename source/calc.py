@@ -522,7 +522,7 @@ def calcEnergiesNAMD(params):
 	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
 			params.outFolder,'system.pdb')),
-			itertools.repeat(params.logFile)))
+			itertools.repeat(params.logFile))).get()
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
