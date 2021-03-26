@@ -679,9 +679,6 @@ def filterPairs(params):
 
 	params.logger.info('Starting filtering operations...')
 
-	# Continue with filtering operation
-	coordSets = traj.getCoordsets()
-
 	# Prepare a pairSet list.
 	params.logger.info('Preparing a list of pairs...')
 	pairSet = [list(pair) for pair in list(pairSet)]
@@ -727,10 +724,15 @@ def filterPairs(params):
 		frameRange = frameRanges[i]
 		traj_i = traj[frameRange[0],frameRange[-1]]
 		writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
-		del traj_i
+		del traj_i,
+
+	params.logger.info('Splitting trajectory into chunks... Done.')
+
 
 	raise SystemExit(0)
 
+	# Continue with filtering operation
+	coordSets = traj.getCoordsets()
 	# Start a contact matrix based on center of masses
 	contactMat = np.zeros((numSource,numTarget))
 
