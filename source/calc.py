@@ -724,7 +724,7 @@ def filterPairs(params):
 		frameRange = frameRanges[i]
 		traj_i = traj[frameRange[0],frameRange[-1]]
 		writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
-		del traj_i,
+		del traj_i
 
 	params.logger.info('Splitting trajectory into chunks... Done.')
 
