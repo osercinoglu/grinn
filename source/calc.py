@@ -719,7 +719,7 @@ def filterPairs(params):
 	# Split the trajectory into chunks according to number of cores.
 	params.logger.info('Splitting trajectory into chunks...')
 	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
-	frameRanges = np.array_split(0,len(traj),params.numCores)
+	frameRanges = np.array_split([0:len(traj)],params.numCores)
 	for i in range(0,len(frameRanges)):
 		frameRange = frameRanges[i]
 		traj_i = traj[frameRange[0],frameRange[-1]]
@@ -728,6 +728,10 @@ def filterPairs(params):
 
 	params.logger.info('Splitting trajectory into chunks... Done.')
 
+	params.logger.info('Parallelizing filtering calculation...')
+
+	# Start a multiprocessing pool, and perform filtering.
+	#pool = multiprocessing.Pool(params.numCores)
 
 	raise SystemExit(0)
 
