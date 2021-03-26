@@ -642,7 +642,6 @@ def filterPairsSingleCore(args):
 def filterPairs(params):
 	
 	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
-	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
 
 	try:
 		source = system.select(str(params.sel1))
@@ -717,6 +716,21 @@ def filterPairs(params):
 	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
 		len(initialFilter))
 
+
+	params.logger.info('Starting the filtering step...')
+
+	# Split the trajectory into chunks according to number of cores.
+	params.logger.info('Splitting trajectory into chunks...')
+	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+	frameRanges = np.array_split(0,len(traj),params.numCores)
+	for i in range(0,len(frameRanges)):
+		frameRange = frameRanges[i]
+		traj_i = traj[frameRange[0],frameRange[-1]]
+		writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
+		del traj_i
+
+	raise SystemExit(0)
+
 	# Start a contact matrix based on center of masses
 	contactMat = np.zeros((numSource,numTarget))
 
@@ -747,7 +761,6 @@ def filterPairs(params):
 		else:
 			return None
 
-	params.logger.info('Starting the filtering step...')
 	for i in range(0,len(coordSets),1):
 		contactMatFrame = np.zeros((numSource,numTarget))
 		traj.setAtoms(system)
