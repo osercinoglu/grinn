@@ -9,13 +9,19 @@ from itertools import islice
 from common import *
 import corr
 
-def getResIntEnMean(intEnPickle,pdb,sel1,sel2,frameRange=False,prefix=''):
+def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 
-	# Load interaction energy pickle file
-	intEnFile = open(intEnPickle,'rb')
-	intEn = pickle.load(intEnFile)
+	# Load interaction energy pickle files
+	# First, load the first dictionary (there must be at least one).
+	intEn = open(intEnPicklePaths[0],'rb')
 	numFrames = len(intEn[list(intEn.keys())[0]]['Total'])
 
+	# Then update its content with the rest.
+	for fpath in intEnPicklePaths[1:]:
+		intEnFile = open(intEnPickle,'rb')
+		intEn2update = pickle.load(intEnFile)
+		intEn.update(intEn2update)
+		
 	if not frameRange:
 		frameRange = [0,numFrames]
 
@@ -874,17 +880,20 @@ def collectResults(params):
 		enDicts.append(enDict)
 
 	# Pickle the chunks.
+	intEnPicklePaths = list()
 	for i in range(0,len(enDicts)):
-		file = open(os.path.join(params.outFolder,'energies_%i.pickle' % i),'wb')
+		fpath = os.path.join(params.outFolder,'energies_%i.pickle' % i)
+		file = open(fpath,'wb')
 		params.logger.info('Pickling to energies_%i.pickle...' % i)
 		pickle.dump(enDicts[i],file)
 		file.close()
+		intEnPicklePaths.append(fpath)
 
 	params.logger.info('Pickling results... Done.')
 
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
-	intEnDict, filteredButNoInt = getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
+	intEnDict, filteredButNoInt = getResIntEnMean(intEnPicklePaths,
 		os.path.join(params.outFolder,'system.pdb'),params.sel1,params.sel2,
 		prefix=os.path.join(params.outFolder,'energies'))
 
