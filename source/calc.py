@@ -722,7 +722,7 @@ def filterPairs(params):
 	frameRanges = np.array_split(list(range(len(traj))),params.numCores)
 	for i in range(0,len(frameRanges)):
 		frameRange = frameRanges[i]
-		traj_i = traj[frameRange[0],frameRange[-1]]
+		traj_i = traj[frameRange[0]:frameRange[-1]]
 		writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
 		del traj_i
 
