@@ -803,7 +803,6 @@ def filterPairs(params):
 		contactMaps = sum(contactMaps)
 		print(contactMaps)
 
-	raise SystemExit(0)
 	pool.close()
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
