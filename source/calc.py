@@ -643,7 +643,7 @@ def filterPairsSingleCore(args):
 	numTarget = args[2][1]
 	initialFilter = args[3]
 
-	traj = parseDCD(os.path.join(params.outFolder,'traj_%i' % trajIndex))
+	traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
 	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
 
 	coordSets = traj.getCoordsets()
@@ -805,7 +805,7 @@ def filterPairs(params):
 
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsInclusionFraction = np.abs(contactMat)/(len(traj)/float(1))
+	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
 	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
 	pairsFiltered = list()
