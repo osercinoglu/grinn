@@ -641,6 +641,8 @@ def filterPairsSingleCore(args):
 	trajIndex = args[1]
 	numSource = args[2][0]
 	numTarget = args[2][1]
+	sourceResids = args[2][2]
+	targetResids = args[2][3]
 	initialFilter = args[3]
 
 	traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
@@ -795,7 +797,8 @@ def filterPairs(params):
 
 	params.logger.info('Performing filtering now... This may take a while...')
 	contactMaps = pool.map(
-		filterPairsSingleCore,[[params,i,[numSource,numTarget],initialFilter] for i in range(0,params.numCores)])
+		filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+		initialFilter] for i in range(0,params.numCores)])
 	if len(contactMaps) > 1:
 		contactMaps = np.vstack(contactMaps)
 	print(contactMaps)
