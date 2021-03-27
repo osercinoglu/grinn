@@ -719,7 +719,7 @@ def filterPairs(params):
 	# Split the trajectory into chunks according to number of cores.
 	params.logger.info('Splitting trajectory into chunks...')
 	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
-	frameRanges = np.array_split([0:len(traj)],params.numCores)
+	frameRanges = np.array_split(list(range(len(traj))),params.numCores)
 	for i in range(0,len(frameRanges)):
 		frameRange = frameRanges[i]
 		traj_i = traj[frameRange[0],frameRange[-1]]
