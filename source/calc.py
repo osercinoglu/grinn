@@ -800,7 +800,6 @@ def filterPairs(params):
 		filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
 		initialFilter] for i in range(0,params.numCores)])
 	if len(contactMaps) > 1:
-		contactMaps = np.vstack(contactMaps)
 		contactMaps = contactMaps.sum(axis=0)
 		print(contactMaps)
 
