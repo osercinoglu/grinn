@@ -5,6 +5,7 @@ import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, 
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
 from shutil import copyfile, rmtree
+from itertools import islice
 from common import *
 import corr
 
@@ -73,7 +74,6 @@ def getResIntEnMean(intEnPickle,pdb,sel1,sel2,frameRange=False,prefix=''):
 			progbar.update()
 
 	# Save to text
-
 	np.savetxt('%s_intEnMeanTotal.dat' % prefix,intEnDict['Total'])
 	np.savetxt('%s_intEnMeanVdW.dat' % prefix,intEnDict['VdW'])
 	np.savetxt('%s_intEnMeanElec.dat' % prefix,intEnDict['Elec'])
@@ -859,10 +859,28 @@ def collectResults(params):
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnVdW.csv'))
 	df_vdw.to_csv(os.path.join(params.outFolder,'energies_intEnVdW.csv'))
 
-	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies.pickle'))
-	file = open(os.path.join(params.outFolder,'energies.pickle'),'wb')
-	pickle.dump(params.parsedEnergies,file)
-	file.close()
+	params.logger.info('Pickling results...')
+
+	# Define a method for splitting dictionary into chunks.
+	def chunks(data, SIZE=10000):
+	    it = iter(data)
+	    for i in range(0, len(data), SIZE):
+	        yield {k:data[k] for k in islice(it, SIZE)}
+
+	# Split the dictionary into 10 chunks, this is for managing very large file sizes.
+	# The dictionaries containing energies should be merged upon reading for analysis.
+	enDicts = list()
+	for enDict in chunks(params.parsedEnergies, 1000):
+		enDicts.append(enDict)
+
+	# Pickle the chunks.
+	for i in range(0,len(enDicts)):
+		file = open(os.path.join(params.outFolder,'energies_%i.pickle' % i),'wb')
+		params.logger.info('Pickling to energies_%i.pickle...' % i)
+		pickle.dump(enDicts[i],file)
+		file.close()
+
+	params.logger.info('Pickling results... Done.')
 
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
