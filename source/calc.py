@@ -801,6 +801,7 @@ def filterPairs(params):
 		initialFilter] for i in range(0,params.numCores)])
 	if len(contactMaps) > 1:
 		contactMaps = np.vstack(contactMaps)
+		contactMaps = contactMaps.sum(axis=1)
 
 	pool.close()
 
