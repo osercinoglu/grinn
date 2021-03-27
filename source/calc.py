@@ -636,7 +636,67 @@ def filterInitialPairsSingleCore(args):
 
 # A method for filtering using a single core.
 def filterPairsSingleCore(args):
-	print('just some dummy text until this is filled in.')
+	
+	params = args[0]
+	trajIndex = args[1]
+	numSource = args[2][0]
+	numTarget = args[2][1]
+	initialFilter = args[3]
+
+	traj = parseDCD(os.path.join(params.outFolder,'traj_%i' % trajIndex))
+	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+
+	coordSets = traj.getCoordsets()
+	# Start a contact matrix based on center of masses
+	contactMat = np.zeros((numSource,numTarget))
+
+	# Accumulate contact matrix as the sim progresses
+	calculatedPercentage = 0
+	monitor = 0
+
+	# Define a method for filtering of pairs based on pairFilterCutoff:
+	def filterSinglePair(pair,pairFilterCutoff):
+		pair1 = system.select('resindex %i' % pair[0])
+		traj.setAtoms(pair1)
+		pair1.setCoords(traj.getCoords())
+		pair2 = system.select('resindex %i' % pair[1])
+		traj.setAtoms(pair2)
+		pair2.setCoords(traj.getCoords())
+		com1 = calcCenter(pair1)
+		com2 = calcCenter(pair2)
+		dist = calcDistance(com1,com2)
+		if dist <= pairFilterCutoff:
+			if pair[0] in sourceResids and pair[1] in targetResids:
+				source_index = list(sourceResids).index(pair[0])
+				target_index = list(targetResids).index(pair[1])
+			elif pair[1] in sourceResids and pair[0] in targetResids:
+				source_index = list(sourceResids).index(pair[1])
+				target_index = list(targetResids).index(pair[0])
+
+			return [source_index,target_index]
+		else:
+			return None
+
+	for i in range(0,len(coordSets),1):
+		contactMatFrame = np.zeros((numSource,numTarget))
+		traj.setAtoms(system)
+		traj.setCoords(traj.getCoordsets()[i])
+		filteredPairIndices = list(map(filterSinglePair,initialFilter,
+			[params.pairFilterCutoff]*len(initialFilter)))
+		filteredPairIndices = [el for el in filteredPairIndices if el != None]
+		for [source_index,target_index] in filteredPairIndices:
+			contactMatFrame[source_index,target_index] = 1
+
+		### RED ALERT:
+		### The following may choke computer if the matrices are extremely large.
+		### For now we will take that the user makes a reasonable size selection for interaction energies.	
+		contactMat = contactMat + contactMatFrame
+		monitor = monitor + 1
+		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		if calculatedPercentage > 100: calculatedPercentage = 100
+		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+
+	return contactMat
 
 # A method for filtering of pairs.
 def filterPairs(params):
@@ -731,60 +791,18 @@ def filterPairs(params):
 	params.logger.info('Parallelizing filtering calculation...')
 
 	# Start a multiprocessing pool, and perform filtering.
-	#pool = multiprocessing.Pool(params.numCores)
+	pool = multiprocessing.Pool(params.numCores)
+
+	params.logger.info('Performing filtering now... This may take a while...')
+	contactMaps = pool.map(
+		filterPairsSingleCore,[[params,i,[numSource,numTarget],initialFilter] for i in range(0,params.numCores)])
+	if len(contactMaps) > 1:
+		contactMaps = np.vstack(contactMaps)
+	print(contactMaps)
 
 	raise SystemExit(0)
 
-	# Continue with filtering operation
-	coordSets = traj.getCoordsets()
-	# Start a contact matrix based on center of masses
-	contactMat = np.zeros((numSource,numTarget))
 
-	# Accumulate contact matrix as the sim progresses
-	calculatedPercentage = 0
-	monitor = 0
-
-	# Define a method for filtering of pairs based on pairFilterCutoff:
-	def filterPair(pair,pairFilterCutoff):
-		pair1 = system.select('resindex %i' % pair[0])
-		traj.setAtoms(pair1)
-		pair1.setCoords(traj.getCoords())
-		pair2 = system.select('resindex %i' % pair[1])
-		traj.setAtoms(pair2)
-		pair2.setCoords(traj.getCoords())
-		com1 = calcCenter(pair1)
-		com2 = calcCenter(pair2)
-		dist = calcDistance(com1,com2)
-		if dist <= pairFilterCutoff:
-			if pair[0] in sourceResids and pair[1] in targetResids:
-				source_index = list(sourceResids).index(pair[0])
-				target_index = list(targetResids).index(pair[1])
-			elif pair[1] in sourceResids and pair[0] in targetResids:
-				source_index = list(sourceResids).index(pair[1])
-				target_index = list(targetResids).index(pair[0])
-
-			return [source_index,target_index]
-		else:
-			return None
-
-	for i in range(0,len(coordSets),1):
-		contactMatFrame = np.zeros((numSource,numTarget))
-		traj.setAtoms(system)
-		traj.setCoords(traj.getCoordsets()[i])
-		filteredPairIndices = list(map(filterPair,initialFilter,
-			[params.pairFilterCutoff]*len(initialFilter)))
-		filteredPairIndices = [el for el in filteredPairIndices if el != None]
-		for [source_index,target_index] in filteredPairIndices:
-			contactMatFrame[source_index,target_index] = 1
-
-		### RED ALERT:
-		### The following may choke computer if the matrices are extremely large.
-		### For now we will take that the user makes a reasonable size selection for interaction energies.	
-		contactMat = contactMat + contactMatFrame
-		monitor = monitor + 1
-		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
-		if calculatedPercentage > 100: calculatedPercentage = 100
-		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMat)/(len(traj)/float(1))
