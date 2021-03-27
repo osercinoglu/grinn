@@ -801,8 +801,10 @@ def filterPairs(params):
 		initialFilter] for i in range(0,params.numCores)])
 	if len(contactMaps) > 1:
 		contactMaps = np.vstack(contactMaps)
-		contactMaps = contactMaps.sum(axis=1)
+		contactMaps = contactMaps.sum(axis=0)
+		print(contactMaps)
 
+	raise SystemExit(0)
 	pool.close()
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
