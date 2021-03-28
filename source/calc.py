@@ -414,7 +414,8 @@ def calcEnergiesSingleCoreNAMD(args):
 def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
 	params.logger.info('Splitting the pairs into chunks...')
-	params.pairsFilteredChunks = np.array_split(np.asarray(params.pairsFiltered),params.numCores)
+	params.pairsFilteredChunks = np.array_split(
+		np.asarray(params.pairsFiltered),params.numCores)
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -472,6 +473,7 @@ def calcEnergiesNAMD(params):
 		#print("suicide: %s" % os.getpid())
 		#psutil.Process(os.getpid()).kill()
 		os._exit(0)
+
 	signal.signal(signal.SIGINT, sigint_handler)
 
 	global pool
@@ -493,6 +495,9 @@ def calcEnergiesNAMD(params):
 	# Instead, the following line.
 	results = pool.map(calcEnergiesSingleCoreNAMD,
 		zip(params.pairsFilteredChunks,itertools.repeat(params)))
+
+	pool.close()
+	pool.join()
 	
 	params.logger = logger
 	
@@ -523,6 +528,8 @@ def calcEnergiesNAMD(params):
 
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
 		params.numCores)
+
+	pool = multiprocessing.Pool(params.numCores)
 
 	# Cancelling the following for map_async, it was intended for python 2.7
 	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
