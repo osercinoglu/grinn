@@ -363,7 +363,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			pid_namd2.wait()
 
-			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
+			#logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
 			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
 				return "gRINN was supposed to generate %i_%i_energies.log but apparently it failed." % (pair[0],pair[1])
 
