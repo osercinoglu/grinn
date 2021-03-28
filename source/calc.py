@@ -412,6 +412,9 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	#logger.info('Completed a pairwise energy calculation thread.')
 
+	# Necessary to proceed in parent method?
+	return None
+
 def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
 	params.logger.info('Splitting the pairs into chunks...')
