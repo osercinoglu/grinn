@@ -350,7 +350,7 @@ def calcEnergiesSingleCoreNAMD(args):
 				sys.exit(0)
 
 			if error:
-				logger.exception('Error while calling NAMD executable:\n'+error).
+				logger.exception('Error while calling NAMD executable:\n'+error)
 				error = error.decode().split('\n')
 				fatalErrorLine = None
 
