@@ -264,8 +264,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
-		logger):
+		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile):
 
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
@@ -396,7 +395,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	for pairsFilteredChunk in pairsFilteredChunksSingleCore:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile)
 		except (SystemExit):
 			#logger.exception('Fatal error while calling NAMD executable.
 			return 'SystemExit'
@@ -490,8 +489,8 @@ def calcEnergiesNAMD(params):
 	#	zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
 
 	# Instead, the following line.
-	results = pool.map_async(calcEnergiesSingleCoreNAMD,
-		zip(params.pairsFilteredChunks,itertools.repeat(params))).get()
+	results = pool.map(calcEnergiesSingleCoreNAMD,
+		zip(params.pairsFilteredChunks,itertools.repeat(params)))
 	
 	params.logger = logger
 	
@@ -530,10 +529,10 @@ def calcEnergiesNAMD(params):
 	#		itertools.repeat(params.logFile))).get(9999999)
 
 	# Instead, the following line.
-	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
+	parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
 			params.outFolder,'system.pdb')),
-			itertools.repeat(params.logFile))).get()
+			itertools.repeat(params.logFile)))
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
