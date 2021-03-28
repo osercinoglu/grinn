@@ -4,8 +4,8 @@ import numpy as np
 # The following two lines is required to stop multiprocessing pool childs
 # from freezing/stalling (this happens sometimes when they try to use
 # logging library. more info: https://pythonspeed.com/articles/python-multiprocessing/)
-from multiprocessing import set_start_method
-set_start_method("spawn")
+#from multiprocessing import set_start_method
+#set_start_method("spawn")
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
