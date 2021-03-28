@@ -13,7 +13,7 @@ def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 
 	# Load interaction energy pickle files
 	# First, load the first dictionary (there must be at least one).
-	intEn = open(intEnPicklePaths[0],'rb')
+	intEn = pickle.load(open(intEnPicklePaths[0],'rb'))
 	numFrames = len(intEn[list(intEn.keys())[0]]['Total'])
 
 	# Then update its content with the rest.
@@ -876,7 +876,7 @@ def collectResults(params):
 	# Split the dictionary into 10 chunks, this is for managing very large file sizes.
 	# The dictionaries containing energies should be merged upon reading for analysis.
 	enDicts = list()
-	for enDict in chunks(params.parsedEnergies, 1000):
+	for enDict in chunks(params.parsedEnergies, 100):
 		enDicts.append(enDict)
 
 	# Pickle the chunks.
