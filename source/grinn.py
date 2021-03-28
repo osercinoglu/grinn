@@ -178,6 +178,13 @@ if __name__ == '__main__':
                 from PyQt5 import QtCore
                 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
                 import resultsGUI, calcGUI, grinnGUI_design, calc, corr, common
+
+                # The following two lines is required to stop multiprocessing pool childs
+                # from freezing/stalling (this happens sometimes when they try to use
+                # logging library. more info: https://pythonspeed.com/articles/python-multiprocessing/)
+                #from multiprocessing import set_start_method
+                #set_start_method("spawn")
+
                 import sys, time, os, argparse, multiprocessing, subprocess
 
                 multiprocessing.freeze_support()  # Required for Windows compatibility, harmless for Unix.
