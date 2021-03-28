@@ -787,6 +787,7 @@ def filterPairs(params):
 		initialFilter = np.vstack(initialFilter)
 
 	pool.close()
+	pool.join()
 
 	initialFilter = list(initialFilter)
 	initialFilter = [pair for pair in initialFilter if pair is not None]
@@ -823,6 +824,7 @@ def filterPairs(params):
 		print(contactMaps)
 
 	pool.close()
+	pool.join()
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
