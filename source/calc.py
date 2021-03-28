@@ -411,7 +411,6 @@ def calcEnergiesSingleCoreNAMD(args):
 		print('Completed calculation percentage: %s' % percent)
 
 	#logger.info('Completed a pairwise energy calculation thread.')
-
 	# Necessary to proceed in parent method?
 	return None
 
@@ -480,7 +479,7 @@ def calcEnergiesNAMD(params):
 
 	signal.signal(signal.SIGINT, sigint_handler)
 
-	global pool
+	#global pool
 	pool = multiprocessing.Pool(params.numCores)
 	logger = params.logger
 
@@ -495,6 +494,7 @@ def calcEnergiesNAMD(params):
 	# Cancelling the following for map_async, it was intended for python 2.7
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
 		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+	print('I got past map_async call.')
 
 	# Instead, the following line.
 	#results = pool.map(calcEnergiesSingleCoreNAMD,
