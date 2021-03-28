@@ -251,7 +251,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	#loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
 	#logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	#	datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
 	#logger = logging.getLogger(__name__)
 
 	# Also print messages to the terminal
