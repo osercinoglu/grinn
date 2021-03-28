@@ -1,6 +1,11 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 from prody import *
 import numpy as np
+# The following two lines is required to stop multiprocessing pool childs
+# from freezing/stalling (this happens sometimes when they try to use
+# logging library. more info: https://pythonspeed.com/articles/python-multiprocessing/)
+from multiprocessing import set_start_method
+set_start_method("spawn")
 import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
@@ -876,7 +881,7 @@ def collectResults(params):
 	# Split the dictionary into 10 chunks, this is for managing very large file sizes.
 	# The dictionaries containing energies should be merged upon reading for analysis.
 	enDicts = list()
-	for enDict in chunks(params.parsedEnergies, 100):
+	for enDict in chunks(params.parsedEnergies, 1000):
 		enDicts.append(enDict)
 
 	# Pickle the chunks.
