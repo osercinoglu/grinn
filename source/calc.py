@@ -247,20 +247,20 @@ def calcEnergiesSingleCoreNAMD(args):
 	namd2exe = params.exe
 	# paramFile is a list by default, so we should map to get abspath
 	paramFile = params.parameterFile
-	logFile = os.path.abspath(params.logFile)
+	#logFile = os.path.abspath(params.logFile)
 
-	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
-	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
-	logger = logging.getLogger(__name__)
+	#loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
+	#logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+	#	datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	#logger = logging.getLogger(__name__)
 
 	# Also print messages to the terminal
-	console = logging.StreamHandler()
-	console.setLevel(logging.INFO)
-	console.setFormatter(logging.Formatter(loggingFormat))
-	logger.addHandler(console)
+	#console = logging.StreamHandler()
+	#console.setLevel(logging.INFO)
+	#console.setFormatter(logging.Formatter(loggingFormat))
+	#logger.addHandler(console)
 
-	logger.info('Started an energy calculation thread.')
+	#logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
@@ -406,9 +406,9 @@ def calcEnergiesSingleCoreNAMD(args):
 
 		progBar.update()
 		percent = percent + 100/float(numChunks)
-		logger.info('Completed calculation percentage: %s' % percent)
+		#logger.info('Completed calculation percentage: %s' % percent)
 
-	logger.info('Completed a pairwise energy calculation thread.')
+	#logger.info('Completed a pairwise energy calculation thread.')
 
 def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
