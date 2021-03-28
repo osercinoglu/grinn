@@ -247,24 +247,25 @@ def calcEnergiesSingleCoreNAMD(args):
 	namd2exe = params.exe
 	# paramFile is a list by default, so we should map to get abspath
 	paramFile = params.parameterFile
-	#logFile = os.path.abspath(params.logFile)
+	logFile = os.path.abspath(params.logFile)
 
-	#loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
-	#logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
-	#	datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
-	#logger = logging.getLogger(__name__)
+	loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
+	logging.basicConfig(format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+		datefmt='%d-%m-%Y:%H:%M:%S',level=logging.DEBUG,filename=logFile)
+	logger = logging.getLogger(__name__)
 
 	# Also print messages to the terminal
-	#console = logging.StreamHandler()
-	#console.setLevel(logging.INFO)
-	#console.setFormatter(logging.Formatter(loggingFormat))
-	#logger.addHandler(console)
+	console = logging.StreamHandler()
+	console.setLevel(logging.INFO)
+	console.setFormatter(logging.Formatter(loggingFormat))
+	logger.addHandler(console)
 
-	#logger.info('Started an energy calculation thread.')
+	logger.info('Started an energy calculation thread.')
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile):
+		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
+		outputFolder,namd2exe,paramFile,logger):
 
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
@@ -349,7 +350,7 @@ def calcEnergiesSingleCoreNAMD(args):
 				sys.exit(0)
 
 			if error:
-				#logger.exception('Error while calling NAMD executable:\n'+error).
+				logger.exception('Error while calling NAMD executable:\n'+error).
 				error = error.decode().split('\n')
 				fatalErrorLine = None
 
@@ -363,7 +364,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
 			pid_namd2.wait()
 
-			#logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
+			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
 			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
 				return "gRINN was supposed to generate %i_%i_energies.log but apparently it failed." % (pair[0],pair[1])
 
@@ -395,9 +396,10 @@ def calcEnergiesSingleCoreNAMD(args):
 	for pairsFilteredChunk in pairsFilteredChunksSingleCore:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile)
+				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
+				outputFolder,namd2exe,paramFile,logger)
 		except (SystemExit):
-			#logger.exception('Fatal error while calling NAMD executable.
+			logger.exception('Fatal error while calling NAMD executable.')
 			return 'SystemExit'
 
 		if errorMessage:
@@ -405,9 +407,9 @@ def calcEnergiesSingleCoreNAMD(args):
 
 		progBar.update()
 		percent = percent + 100/float(numChunks)
-		#logger.info('Completed calculation percentage: %s' % percent)
+		logger.info('Completed calculation percentage: %s' % percent)
 
-	#logger.info('Completed a pairwise energy calculation thread.')
+	logger.info('Completed a pairwise energy calculation thread.')
 
 def calcEnergiesNAMD(params):
 	# Start energy calculation in chunks
