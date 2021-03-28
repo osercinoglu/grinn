@@ -489,12 +489,12 @@ def calcEnergiesNAMD(params):
 	params.logger = None
 
 	# Cancelling the following for map_async, it was intended for python 2.7
-	#results = pool.map_async(calcEnergiesSingleCoreNAMD,
-	#	zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+	results = pool.map_async(calcEnergiesSingleCoreNAMD,
+		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
 
 	# Instead, the following line.
-	results = pool.map(calcEnergiesSingleCoreNAMD,
-		zip(params.pairsFilteredChunks,itertools.repeat(params)))
+	#results = pool.map(calcEnergiesSingleCoreNAMD,
+	#	zip(params.pairsFilteredChunks,itertools.repeat(params)))
 
 	pool.close()
 	pool.join()
@@ -532,16 +532,16 @@ def calcEnergiesNAMD(params):
 	pool = multiprocessing.Pool(params.numCores)
 
 	# Cancelling the following for map_async, it was intended for python 2.7
-	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
-	#	zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-	#		params.outFolder,'system.pdb')),
-	#		itertools.repeat(params.logFile))).get(9999999)
-
-	# Instead, the following line.
-	parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
+	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
 			params.outFolder,'system.pdb')),
-			itertools.repeat(params.logFile)))
+			itertools.repeat(params.logFile))).get(9999999)
+
+	# Instead, the following line.
+	#parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
+	#	zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+	#		params.outFolder,'system.pdb')),
+	#		itertools.repeat(params.logFile)))
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
