@@ -483,15 +483,16 @@ def calcEnergiesNAMD(params):
 	params.logger.info('Splitting the pairs into chunks...')
 	arrPairsFiltered = np.asarray(params.pairsFiltered)
 
-	# Split pairs list into chunks corresponding to 5 pairs per numCores
+	# Split pairs list into chunks corresponding to just 2 pairs per numCores
 	params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
-		int(len(arrPairsFiltered)/(5*params.numCores)))
+		int(len(arrPairsFiltered)/(2*params.numCores)))
 
 	# Run pool.map for each chunk over a for loop.
 	progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
 	for chunk in params.pairsFilteredChunks:
 		chunk = np.array_split(chunk,params.numCores)
 		# Strip logger away from params temporarily to be able to map.
+		logger = params.logger
 		params.logger = None
 		pool = multiprocessing.Pool(params.numCores)
 		results = pool.map(calcEnergiesSingleCoreNAMD,
