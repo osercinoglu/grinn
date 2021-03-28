@@ -490,6 +490,7 @@ def calcEnergiesNAMD(params):
 	# Run pool.map for each chunk over a for loop.
 	progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
 	for chunk in params.pairsFilteredChunks:
+		chunk = np.array_split(chunk,params.numCores)
 		# Strip logger away from params temporarily to be able to map.
 		params.logger = None
 		pool = multiprocessing.Pool(params.numCores)
