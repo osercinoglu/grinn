@@ -415,10 +415,6 @@ def calcEnergiesSingleCoreNAMD(args):
 	return None
 
 def calcEnergiesNAMD(params):
-	# Start energy calculation in chunks
-	params.logger.info('Splitting the pairs into chunks...')
-	params.pairsFilteredChunks = np.array_split(
-		np.asarray(params.pairsFiltered),params.numCores)
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -479,49 +475,52 @@ def calcEnergiesNAMD(params):
 
 	signal.signal(signal.SIGINT, sigint_handler)
 
-	#global pool
-	pool = multiprocessing.Pool(params.numCores)
-	logger = params.logger
+	global pool
 
-	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
-	# energy calculation threads.
-	# get(9999999) below is necessary to let the map respond without blocking the spawned threads.
-	# This is a python bug in 2.7
 	params.logger.info('Starting threads for interaction energy calculation...')
-	# Strip logger away from params temporarily to be able to map.
-	params.logger = None
 
-	# Cancelling the following for map_async, it was intended for python 2.7
-	#results = pool.map_async(calcEnergiesSingleCoreNAMD,
-	#	zip(params.pairsFilteredChunks,itertools.repeat(params))).get(99999)
-	
+	# Start energy calculation in chunks
+	params.logger.info('Splitting the pairs into chunks...')
+	arrPairsFiltered = np.asarray(params.pairsFiltered)
 
-	# Instead, the following line.
-	results = pool.map(calcEnergiesSingleCoreNAMD,
-		zip(params.pairsFilteredChunks,itertools.repeat(params)))
+	# Split pairs list into chunks corresponding to 5 pairs per numCores
+	params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
+		int(len(arrPairsFiltered)/(5*params.numCores)))
 
-	print('I got past map_async call.')
-	pool.close()
-	pool.join()
+	# Run pool.map for each chunk over a for loop.
+	progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
+	for chunk in params.pairsFilteredChunks:
+		# Strip logger away from params temporarily to be able to map.
+		params.logger = None
+		pool = multiprocessing.Pool(params.numCores)
+		results = pool.map(calcEnergiesSingleCoreNAMD,
+			zip(chunk,itertools.repeat(params)))
+
+		print('I got past a map call.')
+		pool.close()
+		pool.join()
+		
+		params.logger = logger
 	
-	params.logger = logger
-	
-	# If the pool return at least one 'SystemExit' string
-	# Abort
-	# see the calcEnergiesSingleCoreNAMD method)
-	
-	if 'SystemExit' in results:
-		removeOutput = False if sys.stdin.isatty() else False
-		errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
-			'Error could not be identified in detail. Please inspect your input data carefully.\n'
-			'If the error persists, contact us. Aborting now.',
-			removeOutput=removeOutput)
-	elif results[0] is not None:
-		if 'FATAL ERROR: ' in results[0]:
+		# If the pool return at least one 'SystemExit' string
+		# Abort
+		# see the calcEnergiesSingleCoreNAMD method)
+		
+		if 'SystemExit' in results:
 			removeOutput = False if sys.stdin.isatty() else False
-			errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
-			errorSuicide(params,'Fatal error from NAMD: '+
-				errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
+			errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
+				'Error could not be identified in detail. Please inspect your input data carefully.\n'
+				'If the error persists, contact us. Aborting now.',
+				removeOutput=removeOutput)
+		elif results[0] is not None:
+			if 'FATAL ERROR: ' in results[0]:
+				removeOutput = False if sys.stdin.isatty() else False
+				errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
+				errorSuicide(params,'Fatal error from NAMD: '+
+					errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
+
+		params.logger.info('A chunk of pairs processed.')
+		progbar.update()
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
