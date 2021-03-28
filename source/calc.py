@@ -494,6 +494,7 @@ def calcEnergiesNAMD(params):
 	# Cancelling the following for map_async, it was intended for python 2.7
 	results = pool.map_async(calcEnergiesSingleCoreNAMD,
 		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
+	results.wait()
 	print('I got past map_async call.')
 
 	# Instead, the following line.
@@ -540,6 +541,7 @@ def calcEnergiesNAMD(params):
 		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
 			params.outFolder,'system.pdb')),
 			itertools.repeat(params.logFile))).get(9999999)
+	results.wait()
 
 	# Instead, the following line.
 	#parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
