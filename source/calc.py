@@ -265,7 +265,7 @@ def calcEnergiesSingleCoreNAMD(args):
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
-		outputFolder,namd2exe,paramFile,logger):
+		outputFolder,namd2exe,paramFile):
 
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
@@ -397,7 +397,7 @@ def calcEnergiesSingleCoreNAMD(args):
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
 				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
-				outputFolder,namd2exe,paramFile,logger)
+				outputFolder,namd2exe,paramFile)
 		except (SystemExit):
 			#logger.exception('Fatal error while calling NAMD executable.')
 			return 'SystemExit'
