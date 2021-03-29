@@ -838,6 +838,7 @@ def filterPairs(params):
 		if len(contactMapsChunk) > 1:
 			contactMapsChunk = sum(contactMapsChunk)
 		params.logger.info('Filtering a chunk... Done.')
+		contactMaps.append(contactMapsChunk)
 		progbar.update()
 
 	contactMaps = sum(contactMaps)
