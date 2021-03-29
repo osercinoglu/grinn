@@ -822,7 +822,7 @@ def filterPairs(params):
 	params.logger.info('Performing filtering now... This may take a while...')
 
 	# Split initialFilter list into chunks, corresponding to 10 pairs per numCores
-	params.logger.info('Splitting initialFilter into chunks...')
+	params.logger.info('Splitting initialFilter into pair chunks...')
 	initialFilterChunks = np.array_split(initialFilter,
 		int(len(initialFilter)/(10*params.numCores)))
 
@@ -830,13 +830,17 @@ def filterPairs(params):
 	progbar = pyprind.ProgBar(len(initialFilterChunks))
 	contactMaps = list()
 	for chunk in initialFilterChunks:
-		params.logger.info('Filtering a chunk...')
-		chunk = np.array_split(chunk,params.numCores)
-		contactMapsChunk = pool.map(
-			filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
-			chunk[i]] for i in range(0,params.numCores)])
-		if len(contactMapsChunk) > 1:
-			contactMapsChunk = sum(contactMapsChunk)
+		print(chunk)
+		params.logger.info('Filtering a pair chunk...')
+		#chunk = np.array_split(chunk,params.numCores)
+		# For each traj portion split above
+		for i in range(0,len(frameRanges)):
+			params.logger.info('Filtering a traj chunk for a pair chunk...')
+			contactMapsTrajChunk = pool.map(
+				filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+				chunk for i in range(0,params.numCores)]])
+			if len(contactMapsChunk) > 1:
+				contactMapsChunk = sum(contactMapsChunk)
 		params.logger.info('Filtering a chunk... Done.')
 		contactMaps.append(contactMapsChunk)
 		progbar.update()
