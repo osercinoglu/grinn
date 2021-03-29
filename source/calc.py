@@ -834,7 +834,7 @@ def filterPairs(params):
 		chunk = np.array_split(chunk,params.numCores)
 		contactMapsChunk = pool.map(
 			filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
-			chunk] for i in range(0,params.numCores)])
+			chunk[i]] for i in range(0,params.numCores)])
 		if len(contactMapsChunk) > 1:
 			contactMapsChunk = sum(contactMapsChunk)
 		params.logger.info('Filtering a chunk... Done.')
