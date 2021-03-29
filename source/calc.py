@@ -841,7 +841,11 @@ def filterPairs(params):
 		contactMaps.append(contactMapsChunk)
 		progbar.update()
 
-	contactMaps = sum(contactMaps)
+	if len(contactMaps) > 1:
+		contactMaps = sum(contactMaps)
+
+	print('contact maps:')
+	print(contactMaps)
 
 	pool.close()
 	pool.join()
