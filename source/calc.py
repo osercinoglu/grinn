@@ -850,6 +850,8 @@ def filterPairs(params):
 	pool.close()
 	pool.join()
 
+	raise SystemExit(0)
+
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
 	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
