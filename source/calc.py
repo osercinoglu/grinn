@@ -816,18 +816,31 @@ def filterPairs(params):
 
 	params.logger.info('Splitting trajectory into chunks... Done.')
 
-	params.logger.info('Parallelizing filtering calculation...')
-
 	# Start a multiprocessing pool, and perform filtering.
 	pool = multiprocessing.Pool(params.numCores)
 
 	params.logger.info('Performing filtering now... This may take a while...')
-	contactMaps = pool.map(
-		filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
-		initialFilter] for i in range(0,params.numCores)])
-	if len(contactMaps) > 1:
-		contactMaps = sum(contactMaps)
-		print(contactMaps)
+
+	# Split initialFilter list into chunks, corresponding to 10 pairs per numCores
+	params.logger.info('Splitting initialFilter into chunks...')
+	initialFilterChunks = np.array_split(initialFilter,
+		int(len(initialFilter)/(10*params.numCores)))
+
+	# Run pool.map for each chunk over a for loop.
+	progbar = pyprind.ProgBar(len(initialFilterChunks))
+	contactMaps = list()
+	for chunk in initialFilterChunks:
+		params.logger.info('Filtering a chunk...')
+		chunk = np.array_split(chunk,params.numCores)
+		contactMapsChunk = pool.map(
+			filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+			chunk] for i in range(0,params.numCores)])
+		if len(contactMapsChunk) > 1:
+			contactMapsChunk = sum(contactMapsChunk)
+		params.logger.info('Filtering a chunk... Done.')
+		progbar.update()
+
+	contactMaps = sum(contactMaps)
 
 	pool.close()
 	pool.join()
