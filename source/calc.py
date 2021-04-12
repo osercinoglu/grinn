@@ -11,6 +11,7 @@ re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platfo
 traceback, click, copy
 from shutil import copyfile, rmtree
 from itertools import islice
+from concurrent import futures
 from common import *
 import corr
 
@@ -64,23 +65,23 @@ def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 			keyString = str(resindices_source[i])+'-'+str(resindices_target[j])
 			if keyString in intEn:
 				intEnDict['Elec'][i+1,j+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Elec'][j+1,i+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				#intEnDict['Elec'][j+1,i+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
 				totalMeanEn = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
 				intEnDict['Total'][i+1,j+1] = totalMeanEn
-				intEnDict['Total'][j+1,i+1] = totalMeanEn
+				#intEnDict['Total'][j+1,i+1] = totalMeanEn
 				intEnDict['VdW'][i+1,j+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
-				intEnDict['VdW'][j+1,i+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				#intEnDict['VdW'][j+1,i+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 
 				if not totalMeanEn:
 					filteredButNoInt.append(keyString)
 
 			else:
 				intEnDict['Elec'][i+1,j+1] = int(0)
-				intEnDict['Elec'][j+1,i+1] = int(0)
+				#intEnDict['Elec'][j+1,i+1] = int(0)
 				intEnDict['Total'][i+1,j+1] = int(0)
-				intEnDict['Total'][j+1,i+1] = int(0)
+				#intEnDict['Total'][j+1,i+1] = int(0)
 				intEnDict['VdW'][i+1,j+1] = int(0)
-				intEnDict['VdW'][j+1,i+1] = int(0)
+				#intEnDict['VdW'][j+1,i+1] = int(0)
 
 			progbar.update()
 
@@ -494,14 +495,18 @@ def calcEnergiesNAMD(params):
 		# Strip logger away from params temporarily to be able to map.
 		logger = params.logger
 		params.logger = None
-		pool = multiprocessing.Pool(params.numCores)
-		results = pool.map(calcEnergiesSingleCoreNAMD,
-			zip(chunk,itertools.repeat(params)))
 
-		print('I got past a map call.')
-		pool.close()
-		pool.join()
-		
+		# Start a concurrent.futures pool.
+		with futures.ProcessPoolExecutor(params.numCores) as pool:
+			try:
+				results = pool.map(calcEnergiesSingleCoreNAMD,
+					zip(chunk,itertools.repeat(params)))
+				results = list(results)
+
+				print('I got past a map call.')
+			finally:
+				pool.shutdown()
+
 		params.logger = logger
 	
 		# If the pool return at least one 'SystemExit' string
@@ -535,7 +540,8 @@ def calcEnergiesNAMD(params):
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
 		params.numCores)
 
-	pool = multiprocessing.Pool(params.numCores)
+	with futures.ProcessPoolExecutor(params.numCores) as pool:
+		pool = multiprocessing.Pool(params.numCores)
 
 	# Cancelling the following for map_async, it was intended for python 2.7
 	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
@@ -543,18 +549,16 @@ def calcEnergiesNAMD(params):
 	#		params.outFolder,'system.pdb')),
 	#		itertools.repeat(params.logFile))).get(9999999)
 	
-	# Instead, the following line.
-	parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
-		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-			params.outFolder,'system.pdb')),
-			itertools.repeat(params.logFile)))
+		# Instead, the following line.
+		parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
+			zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+				params.outFolder,'system.pdb')),
+				itertools.repeat(params.logFile)))
+		parsedEnergiesResults = list(parsedEnergiesResults)
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
 		parsedEnergies.update(parsedEnergiesResult)
-
-	pool.close()
-	pool.join()
 
 	params.parsedEnergies = parsedEnergies
 	return params
@@ -721,7 +725,9 @@ def filterPairsSingleCore(args):
 		monitor = monitor + 1
 		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
 		if calculatedPercentage > 100: calculatedPercentage = 100
-		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+		#params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+
+	del traj
 
 	return contactMat
 
@@ -778,9 +784,6 @@ def filterPairs(params):
 	# Initial filtering of pairs
 	params.logger.info('Starting initial filtering step...')
 
-	# Start a multiprocessing pool, and perform initial filtering.
-	pool = multiprocessing.Pool(params.numCores)
-
 	params.logger.info('Parallelizing initial filtering calculation...')
 
 	# Split the pair set list into chunks according to number of cores
@@ -788,19 +791,22 @@ def filterPairs(params):
 
 	# Perform initial filtering on each of these chunks.
 	params.logger.info('Performing initial filtering now... This may take a while...')
-	initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i]] for i in range(0,params.numCores)])
-	if len(initialFilter) > 1:
-		initialFilter = np.vstack(initialFilter)
 
-	pool.close()
-	pool.join()
+	# Start a concurrent futures pool, and perform initial filtering.
+	with futures.ProcessPoolExecutor(params.numCores) as pool:
+		try:
+			initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i]] for i in range(0,params.numCores)])
+			initialFilter = list(initialFilter)
+			if len(initialFilter) > 1:
+				initialFilter = np.vstack(initialFilter)
+		finally:
+			pool.shutdown()
 
 	initialFilter = list(initialFilter)
 	initialFilter = [pair for pair in initialFilter if pair is not None]
 	params.logger.info('Initial filtering... Done.')
 	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
 		len(initialFilter))
-
 
 	params.logger.info('Starting the filtering step...')
 
@@ -816,45 +822,49 @@ def filterPairs(params):
 
 	params.logger.info('Splitting trajectory into chunks... Done.')
 
-	# Start a multiprocessing pool, and perform filtering.
-	pool = multiprocessing.Pool(params.numCores)
-
 	params.logger.info('Performing filtering now... This may take a while...')
 
-	# Split initialFilter list into chunks, corresponding to 10 pairs per numCores
+	# Split initialFilter list into chunks, corresponding to 50 pairs per numCores
 	params.logger.info('Splitting initialFilter into pair chunks...')
 	initialFilterChunks = np.array_split(initialFilter,
-		int(len(initialFilter)/(10*params.numCores)))
+		int(len(initialFilter)/(50*params.numCores)))
 
 	# Run pool.map for each chunk over a for loop.
 	progbar = pyprind.ProgBar(len(initialFilterChunks))
 	contactMaps = list()
 	for chunk in initialFilterChunks:
-		print(chunk)
 		params.logger.info('Filtering a pair chunk...')
-		#chunk = np.array_split(chunk,params.numCores)
-		# For each traj portion split above
-		for i in range(0,len(frameRanges)):
-			params.logger.info('Filtering a traj chunk for a pair chunk...')
-			contactMapsTrajChunk = pool.map(
-				filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
-				chunk for i in range(0,params.numCores)]])
-			if len(contactMapsChunk) > 1:
-				contactMapsChunk = sum(contactMapsChunk)
-		params.logger.info('Filtering a chunk... Done.')
-		contactMaps.append(contactMapsChunk)
-		progbar.update()
 
+		# Start a concurrent.futures pool, and perform filtering.
+		with futures.ProcessPoolExecutor(params.numCores) as pool:
+
+			try:
+				# For each traj portion split above
+				contactMapsTrajChunk = pool.map(
+					filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+					chunk] for i in range(0,params.numCores)])
+				contactMapsTrajChunk = list(contactMapsTrajChunk)
+			
+				# In case multiple cores are selected, contactMapsTrajChun will have a size larger than
+				# one. In this case, we need to sum contact map matrices.
+				if len(contactMapsTrajChunk) > 1:
+					contactMapsTrajChunk = sum(contactMapsTrajChunk)
+
+				params.logger.info('Filtering a pair chunk... Done.')
+				contactMaps.append(contactMapsTrajChunk)
+
+				progbar.update()
+			finally:
+				pool.shutdown()
+
+	# In case multiple chunks are present, contactMaps will have a size large than one.
+	# In this case, we need to sum contact map matrices.
 	if len(contactMaps) > 1:
 		contactMaps = sum(contactMaps)
 
-	print('contact maps:')
-	print(contactMaps)
-
-	pool.close()
-	pool.join()
-
-	raise SystemExit(0)
+	# It seems pool.map returns a list in which contactMaps is present.
+	# So taking that only, as the below code fails otherwise.
+	contactMaps = contactMaps[0]
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
