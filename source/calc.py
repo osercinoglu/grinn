@@ -1,17 +1,13 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 from prody import *
 import numpy as np
-# The following two lines is required to stop multiprocessing pool childs
-# from freezing/stalling (this happens sometimes when they try to use
-# logging library. more info: https://pythonspeed.com/articles/python-multiprocessing/)
-#from multiprocessing import set_start_method
-#set_start_method("spawn")
-import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
+import mdtraj, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
 from shutil import copyfile, rmtree
 from itertools import islice
 from concurrent import futures
+from scipy.sparse import lil_matrix
 from common import *
 import corr
 
@@ -32,7 +28,9 @@ def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 		frameRange = [0,numFrames]
 
 	# Get number of residues
-	system = parsePDB(pdb)
+	with suppress_stdout():
+		system = parsePDB(pdb)
+
 	system_source = system.select(sel1)
 	system_target = system.select(sel2)
 
@@ -108,11 +106,13 @@ def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 
 def isStructureDry(pdb,psf):
 	# Load the PDB and PSF files
-	pdb = parsePDB(pdb)
+	with suppress_stdout():
+		pdb = parsePDB(pdb)
 	pdbDry = pdb.select('protein or nucleic or hetero or lipid and not water and not resname SOL and not ion')
 	pdbNonDry = pdb.select('water or resname SOL or ion')
 
-	psf = parsePSF(psf)
+	with suppress_stdout():
+		psf = parsePSF(psf)
 	psfNonDry = psf.select('water or resname SOL or ion')
 
 	if not pdbNonDry == None and not psfNonDry == None:
@@ -143,17 +143,18 @@ def prepareFilesNAMD(params):
 	copyfile(params.pdb,os.path.join(params.outFolder,'system.pdb'))
 	copyfile(params.top,os.path.join(params.outFolder,'system.psf'))
 	# Load the DCD file, get rid of non-protein sections.
-	traj = Trajectory(params.traj)
-	pdb = parsePDB(params.pdb)
-	traj.link(pdb)
-	traj.setAtoms(pdb)
-	writeDCD(os.path.join(params.outFolder,'traj.dcd'),
-		traj,step=params.stride)
-	# Load it back, superpose, save again.
-	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
-	traj.setAtoms(pdb)
-	traj.superpose()
-	writeDCD(os.path.join(params.outFolder,'traj.dcd'),traj)
+	with suppress_stdout():
+		traj = Trajectory(params.traj)
+		pdb = parsePDB(params.pdb)
+		traj.link(pdb)
+		traj.setAtoms(pdb)
+		writeDCD(os.path.join(params.outFolder,'traj.dcd'),
+			traj,step=params.stride)
+		# Load it back, superpose, save again.
+		traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+		traj.setAtoms(pdb)
+		traj.superpose()
+		writeDCD(os.path.join(params.outFolder,'traj.dcd'),traj)
 
 	# Check whether system has enough memory to handle the computation...
 	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj.dcd'))
@@ -185,9 +186,10 @@ def prepareFilesGMX(params):
 	tpr = os.path.join(params.outFolder,'system.tpr')
 
 	# Make dry PDB out of the resulting PDB.
-	pdb = parsePDB(params.pdb)
-	pdbDry = pdb.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
-	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbDry)
+	with suppress_stdout():
+		pdb = parsePDB(params.pdb)
+		pdbDry = pdb.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+		writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbDry)
 
 	# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
 	params.logger.info('Converting XTC/TRR to DCD...')
@@ -209,21 +211,22 @@ def prepareFilesGMX(params):
 		params.logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
 		return
 
-	traj.save_dcd(os.path.join(params.outFolder,'traj.dcd'))
-	# Load back this DCD and continue with it (for code compatibility with ProDy)
-	traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
-	traj.link(pdb)
-	traj.setAtoms(pdbDry)
+	with suppress_stdout():
+		traj.save_dcd(os.path.join(params.outFolder,'traj.dcd'))
+		# Load back this DCD and continue with it (for code compatibility with ProDy)
+		traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
+		traj.link(pdb)
+		traj.setAtoms(pdbDry)
 
-	# Write
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+		# Write
+		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
 
-	# Load it back and superpose, then write back.
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
-	traj.setAtoms(pdbDry)
-	traj.superpose()
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
-	
+		# Load it back and superpose, then write back.
+		traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+		traj.setAtoms(pdbDry)
+		traj.superpose()
+		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+		
 	os.remove(os.path.join(params.outFolder,'traj.dcd'))
 	params.logger.info('Converting to XTC/TRR to DCD... Done.')
 
@@ -270,16 +273,17 @@ def calcEnergiesSingleCoreNAMD(args):
 
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
-			system = parsePDB(pdbFilePath)
-			sel1 = system.select(str('resindex %i' % int(pair[0])))
-			sel2 = system.select(str('resindex %i' % int(pair[1])))
-			# Changing the values of B-factor columns so that they can be recognized by
-			# pairInteractionGroup1 parameter in NAMD configuration file.
-			sel1.setBetas([1]*sel1.numAtoms())
-			sel2.setBetas([2]*sel2.numAtoms())
-			pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
-			pairIntPDB = os.path.abspath(pairIntPDB)
-			writePDB(pairIntPDB,system)
+			with suppress_stdout():
+				system = parsePDB(pdbFilePath)
+				sel1 = system.select(str('resindex %i' % int(pair[0])))
+				sel2 = system.select(str('resindex %i' % int(pair[1])))
+				# Changing the values of B-factor columns so that they can be recognized by
+				# pairInteractionGroup1 parameter in NAMD configuration file.
+				sel1.setBetas([1]*sel1.numAtoms())
+				sel2.setBetas([2]*sel2.numAtoms())
+				pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
+				pairIntPDB = os.path.abspath(pairIntPDB)
+				writePDB(pairIntPDB,system)
 
 			# SAVING ON THE TWO RESIDUE PAIR TO DO LATER ON(NEEDS TESTING)
 			#traj = Trajectory(dcdFilePath)
@@ -541,7 +545,6 @@ def calcEnergiesNAMD(params):
 		params.numCores)
 
 	with futures.ProcessPoolExecutor(params.numCores) as pool:
-		pool = multiprocessing.Pool(params.numCores)
 
 	# Cancelling the following for map_async, it was intended for python 2.7
 	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
@@ -640,7 +643,8 @@ def filterInitialPairsSingleCore(args):
 
 	outFolder = args[0]
 	pairs = args[1]
-	system = parsePDB(os.path.join(outFolder,'system.pdb'))
+	with suppress_stdout():
+		system = parsePDB(os.path.join(outFolder,'system.pdb'))
 
 	# Define a method for initial filtering of a single pair.
 	def filterInitialPair(outFolder,pair):
@@ -674,12 +678,14 @@ def filterPairsSingleCore(args):
 	targetResids = args[2][3]
 	initialFilter = args[3]
 
-	traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
-	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+	with suppress_stdout():
+		traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
+		system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
 
 	coordSets = traj.getCoordsets()
 	# Start a contact matrix based on center of masses
-	contactMat = np.zeros((numSource,numTarget))
+	contactMat = lil_matrix((numSource,numTarget))
+	#contactMat = np.zeros((numSource,numTarget))
 
 	# Accumulate contact matrix as the sim progresses
 	calculatedPercentage = 0
@@ -709,7 +715,8 @@ def filterPairsSingleCore(args):
 			return None
 
 	for i in range(0,len(coordSets),1):
-		contactMatFrame = np.zeros((numSource,numTarget))
+		contactMatFrame = lil_matrix((numSource,numTarget))
+		#contactMatFrame = np.zeros((numSource,numTarget))
 		traj.setAtoms(system)
 		traj.setCoords(traj.getCoordsets()[i])
 		filteredPairIndices = list(map(filterSinglePair,initialFilter,
@@ -734,7 +741,8 @@ def filterPairsSingleCore(args):
 # A method for filtering of pairs.
 def filterPairs(params):
 	
-	system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+	with suppress_stdout():
+		system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
 
 	try:
 		source = system.select(str(params.sel1))
@@ -808,32 +816,42 @@ def filterPairs(params):
 	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
 		len(initialFilter))
 
+
+	### TEMP BLOCK ###
+	with open("initialFilter.pkl","wb") as f:
+		pickle.dump(initialFilter,f)
+
+	raise SystemExit(0)
+	### TEMP BLOCK ###
+
 	params.logger.info('Starting the filtering step...')
 
 	# Split the trajectory into chunks according to number of cores.
-	params.logger.info('Splitting trajectory into chunks...')
-	traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
-	frameRanges = np.array_split(list(range(len(traj))),params.numCores)
-	for i in range(0,len(frameRanges)):
-		frameRange = frameRanges[i]
-		traj_i = traj[frameRange[0]:frameRange[-1]]
-		writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
-		del traj_i
+	params.logger.info('Chunkifying trajectory...')
+	with suppress_stdout():
+		traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+		frameRanges = np.array_split(list(range(len(traj))),params.numCores)
+		for i in range(0,len(frameRanges)):
+			frameRange = frameRanges[i]
+			traj_i = traj[frameRange[0]:frameRange[-1]]
+			writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
+			del traj_i
 
-	params.logger.info('Splitting trajectory into chunks... Done.')
+	params.logger.info('Chunkifying trajectory... Done.')
 
 	params.logger.info('Performing filtering now... This may take a while...')
 
-	# Split initialFilter list into chunks, corresponding to 50 pairs per numCores
-	params.logger.info('Splitting initialFilter into pair chunks...')
-	initialFilterChunks = np.array_split(initialFilter,
-		int(len(initialFilter)/(50*params.numCores)))
+	# Split initialFilter list into chunks, corresponding to 1000 pairs per numCores
+	params.logger.info('Chunkifying initial filter...')
+	chunkNum = 1 if len(initialFilter) < 500*params.numCores else len(initialFilter)/(500*params.numCores)
+	initialFilterChunks = np.array_split(initialFilter,chunkNum)
 
 	# Run pool.map for each chunk over a for loop.
 	progbar = pyprind.ProgBar(len(initialFilterChunks))
 	contactMaps = list()
-	for chunk in initialFilterChunks:
-		params.logger.info('Filtering a pair chunk...')
+	for i in range(0,len(initialFilterChunks)):
+		chunk = initialFilterChunks[i]
+		params.logger.info('Filtering a pair chunk...(%i out of %i)' % (i+1,len(initialFilterChunks)))
 
 		# Start a concurrent.futures pool, and perform filtering.
 		with futures.ProcessPoolExecutor(params.numCores) as pool:
@@ -853,9 +871,9 @@ def filterPairs(params):
 				params.logger.info('Filtering a pair chunk... Done.')
 				contactMaps.append(contactMapsTrajChunk)
 
-				progbar.update()
 			finally:
 				pool.shutdown()
+		progbar.update()
 
 	# In case multiple chunks are present, contactMaps will have a size large than one.
 	# In this case, we need to sum contact map matrices.
@@ -1201,7 +1219,8 @@ def getParams(args):
 
 	if args.pdb[0]:
 		try:
-			system = parsePDB(os.path.abspath(args.pdb[0]))
+			with suppress_stdout():
+				system = parsePDB(os.path.abspath(args.pdb[0]))
 			params.pdb = os.path.abspath(args.pdb[0])
 			params.dataType = 'namd'
 		except:

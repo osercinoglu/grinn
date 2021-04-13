@@ -3,6 +3,7 @@ import re, os, pexpect, panedr, pandas, time, sys, os, psutil
 import numpy as np
 from prody import *
 import logging
+from contextlib import contextmanager
 
 class parameters(object):
 	def __init__(self):
@@ -472,3 +473,15 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFilt
 		i += 1
 
 	return mdpFiles, pairsFilteredChunks
+
+# A method for supressing terminal output temporarily.
+# Used to silence several external packages that really like to print to the terminal.
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:  
+            yield
+        finally:
+            sys.stdout = old_stdout
