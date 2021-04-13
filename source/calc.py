@@ -1,8 +1,13 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 from prody import *
+from prody import LOGGER
+import logging
+# Directly modifying logging level for ProDy to prevent printing of noisy debug level 
+# messages on the terminal.
+LOGGER._logger.setLevel(logging.WARNING)
 import numpy as np
 import mdtraj, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
-re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
+re, pickle, types, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
 from shutil import copyfile, rmtree
 from itertools import islice
