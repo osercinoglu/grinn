@@ -648,6 +648,7 @@ def filterInitialPairsSingleCore(args):
 
 	outFolder = args[0]
 	pairs = args[1]
+	initPairFilterCutoff = args[2]
 	with suppress_stdout():
 		system = parsePDB(os.path.join(outFolder,'system.pdb'))
 
@@ -656,7 +657,7 @@ def filterInitialPairsSingleCore(args):
 		com1 = calcCenter(system.select("resindex %i" % pair[0]))
 		com2 = calcCenter(system.select("resindex %i" % pair[1]))
 		dist = calcDistance(com1,com2)
-		if dist <= 40:
+		if dist <= 30:
 			return pair
 		else:
 			return None
@@ -776,57 +777,62 @@ def filterPairs(params):
 		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
 		return
 
-	# Generate all possible unique pairwise residue-residue combinations
-	pairProduct = itertools.product(sourceResids,targetResids)
-	pairSet = set()
-	for x,y in pairProduct:
-		if x != y:
-			pairSet.add(frozenset((x,y)))
+	# # Generate all possible unique pairwise residue-residue combinations
+	# pairProduct = itertools.product(sourceResids,targetResids)
+	# pairSet = set()
+	# for x,y in pairProduct:
+	# 	if x != y:
+	# 		pairSet.add(frozenset((x,y)))
 
-	params.logger.info('Starting filtering operations...')
+	# params.logger.info('Starting filtering operations...')
 
-	# Prepare a pairSet list.
-	params.logger.info('Preparing a list of pairs...')
-	pairSet = [list(pair) for pair in list(pairSet)]
-	params.logger.info('Preparing a list of pairs... Done.')
+	# # Prepare a pairSet list.
+	# params.logger.info('Preparing a list of pairs...')
+	# pairSet = [list(pair) for pair in list(pairSet)]
+	# params.logger.info('Preparing a list of pairs... Done.')
 
-	# Get a list of pairs within a certain distance from each other, 
-	# based on the initial structure.
-	initialFilter = list()
+	# # Get a list of pairs within a certain distance from each other, 
+	# # based on the initial structure.
+	# initialFilter = list()
 
-	# Initial filtering of pairs
-	params.logger.info('Starting initial filtering step...')
+	# # Initial filtering of pairs
+	# params.logger.info('Starting initial filtering step...')
 
-	params.logger.info('Parallelizing initial filtering calculation...')
+	# params.logger.info('Parallelizing initial filtering calculation...')
 
-	# Split the pair set list into chunks according to number of cores
-	pairChunks = np.array_split(list(pairSet),params.numCores)
+	# # Split the pair set list into chunks according to number of cores
+	# pairChunks = np.array_split(list(pairSet),params.numCores)
 
-	# Perform initial filtering on each of these chunks.
-	params.logger.info('Performing initial filtering now... This may take a while...')
+	# # Perform initial filtering on each of these chunks.
+	# params.logger.info('Performing initial filtering now... This may take a while...')
 
-	# Start a concurrent futures pool, and perform initial filtering.
-	with futures.ProcessPoolExecutor(params.numCores) as pool:
-		try:
-			initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i]] for i in range(0,params.numCores)])
-			initialFilter = list(initialFilter)
-			if len(initialFilter) > 1:
-				initialFilter = np.vstack(initialFilter)
-		finally:
-			pool.shutdown()
+	# # Start a concurrent futures pool, and perform initial filtering.
+	# with futures.ProcessPoolExecutor(params.numCores) as pool:
+	# 	try:
+	# 		initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i],params.initPairFilterCutoff] for i in range(0,params.numCores)])
+	# 		initialFilter = list(initialFilter)
+	# 		if len(initialFilter) > 1:
+	# 			initialFilter = np.vstack(initialFilter)
+	# 	finally:
+	# 		pool.shutdown()
 
-	initialFilter = list(initialFilter)
-	initialFilter = [pair for pair in initialFilter if pair is not None]
-	params.logger.info('Initial filtering... Done.')
-	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
-		len(initialFilter))
+	# initialFilter = list(initialFilter)
+	# initialFilter = [pair for pair in initialFilter if pair is not None]
+	# params.logger.info('Initial filtering... Done.')
+	# params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
+	# 	len(initialFilter))
 
+
+	# ### TEMP BLOCK ###
+	# with open("initialFilter.pkl","wb") as f:
+	# 	pickle.dump(initialFilter,f)
+
+	# raise SystemExit(0)
+	# ### TEMP BLOCK ###
 
 	### TEMP BLOCK ###
-	with open("initialFilter.pkl","wb") as f:
-		pickle.dump(initialFilter,f)
-
-	raise SystemExit(0)
+	with open("initialFilter.pkl","rb") as f:
+		initialFilter = pickle.load(f)
 	### TEMP BLOCK ###
 
 	params.logger.info('Starting the filtering step...')
@@ -887,12 +893,18 @@ def filterPairs(params):
 
 	# It seems pool.map returns a list in which contactMaps is present.
 	# So taking that only, as the below code fails otherwise.
-	contactMaps = contactMaps[0]
+	print('shape contact maps 1: ',np.shape(contactMaps))
+	#contactMaps = contactMaps[0]
+	print('shape contact maps 2: ',np.shape(contactMaps))
+	contactMaps = contactMaps.todense()
+	print('shape contact maps 3: ',np.shape(contactMaps))
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
 	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
+	###################################################
+	### BELOW BLOCK SHOULD BE ACCELERATED (A LOT)! ####
 	pairsFiltered = list()
 	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
 	for sourceResid in sourceResids:
@@ -907,6 +919,9 @@ def filterPairs(params):
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+
+	### END OF BLOCK TO BE ACCELERATED ###
+	######################################
 	
 	# file = open('pairsFiltered.txt','w')
 	# for pair in pairsFiltered:
@@ -919,6 +934,12 @@ def filterPairs(params):
 		return
 
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
+
+	### TEMP BLOCK ###
+	with open('pairsFiltered.pkl','wb') as f:
+		pickle.dump(pairsFiltered,f)
+	raise SystemExit(0)
+	### TEMP BLOCK ###
 
 	params.pairsFiltered = pairsFiltered
 
@@ -1179,6 +1200,12 @@ def getParams(args):
 	params.stride = args.stride[0]
 
 	params.dielectric = args.dielectric[0]
+
+	params.initPairFilterCutoff = args.initpairfiltercutoff[0]
+
+	if params.initPairFilterCutoff < 15:
+		message = 'Initial filtering distance cutoff value can not be smaller than 15. Aborting now.'
+		return params, False, message
 
 	params.pairFilterCutoff = args.pairfiltercutoff[0]
 

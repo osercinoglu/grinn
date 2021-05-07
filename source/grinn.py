@@ -72,6 +72,14 @@ if __name__ == '__main__':
                         help='A ProDy atom selection string which determines the second group of selected '
                              'residues.')
 
+    
+    parser.add_argument('--initpairfiltercutoff', type=float, default=[30], nargs=1,
+                        help='Cutoff distance (angstroms) for initial filtering of residues to be included in '
+                        'the subsequent filtering step for interaction energy calculations. '
+                        'If not specified, it defaults to 30 Angstroms. '
+                        'Only those residues whose centers of mass are within the INITPAIRFILTERCUTOFF distance of each other '
+                        'in the supplied PBD/TPR will be included in the subsequent filtering step.')
+
     parser.add_argument('--pairfiltercutoff', type=float, default=[15], nargs=1,
                         help='Cutoff distance (angstroms) for pairwise interaction energy calculations. '
                              'If not specified, it defaults to 15 Angstroms. '
