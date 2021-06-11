@@ -25,7 +25,7 @@ def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
 
 	# Then update its content with the rest.
 	for fpath in intEnPicklePaths[1:]:
-		intEnFile = open(intEnPickle,'rb')
+		intEnFile = open(fpath,'rb')
 		intEn2update = pickle.load(intEnFile)
 		intEn.update(intEn2update)
 		
@@ -377,6 +377,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
 			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
 				return "gRINN was supposed to generate %i_%i_energies.log but apparently it failed." % (pair[0],pair[1])
+
+			# Clean up already at this point to avoid disk-space devouring behaviour for very large systems/long trajs.
+			temp_fns = '%s_%s-temp.*' % (pair[0],pair[1])
+			for item in glob.glob(os.path.join(params.outFolder,temp_fns)):
+				os.remove(item)
 
 		return None
 
@@ -822,8 +827,8 @@ def filterPairs(params):
 	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
 		len(initialFilter))
 
-	params.initialFilterPickle = os.path.join(os.path.abspath(outFolder),"initialFilter.pkl")
-	with open(params.initialFilterPickle) as f:
+	params.initialFilterPickle = os.path.join(os.path.abspath(params.outFolder),"initialFilter.pkl")
+	with open(params.initialFilterPickle,'wb') as f:
 		pickle.dump(initialFilter,f)
 
 	params.logger.info('Starting the filtering step...')
@@ -918,8 +923,8 @@ def filterPairs(params):
 
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
 
-	params.pairsFilteredPickle = os.path.join(os.path.abspath(outFolder),"pairsFiltered.pkl")
-	with open(params.pairsFilteredPickle) as f:
+	params.pairsFilteredPickle = os.path.join(os.path.abspath(params.outFolder),"pairsFiltered.pkl")
+	with open(params.pairsFilteredPickle,'wb') as f:
 		pickle.dump(pairsFiltered,f)
 
 	params.pairsFiltered = pairsFiltered
