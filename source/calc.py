@@ -2,9 +2,9 @@
 from prody import *
 from prody import LOGGER
 import logging
-# Directly modifying logging level for ProDy to prevent printing of noisy debug level 
-# messages on the terminal.
-LOGGER._logger.setLevel(logging.WARNING)
+# Directly modifying logging level for ProDy to prevent printing of noisy debug/warning
+# level messages on the terminal.
+LOGGER._logger.setLevel(logging.FATAL)
 import numpy as np
 import mdtraj, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
 re, pickle, types, datetime, psutil, signal, time, pandas, glob, platform, \
@@ -498,9 +498,14 @@ def calcEnergiesNAMD(params):
 	params.logger.info('Splitting the pairs into chunks...')
 	arrPairsFiltered = np.asarray(params.pairsFiltered)
 
-	# Split pairs list into chunks corresponding to just 2 pairs per numCores
+	# Split pairs list into chunks adjusting number of pairs per core.
+	numPairsFiltered = len(arrPairsFiltered)
+	numPairsPerCore = int(numPairsFiltered/params.numCores)
+	if numPairsPerCore>= 50:
+		numPairsPerCore = 50
+	
 	params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
-		int(len(arrPairsFiltered)/(2*params.numCores)))
+		int(len(arrPairsFiltered)/(numPairsPerCore*params.numCores)))
 
 	# Run pool.map for each chunk over a for loop.
 	progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
@@ -517,7 +522,6 @@ def calcEnergiesNAMD(params):
 					zip(chunk,itertools.repeat(params)))
 				results = list(results)
 
-				print('I got past a map call.')
 			finally:
 				pool.shutdown()
 
@@ -886,6 +890,9 @@ def filterPairs(params):
 	# In this case, we need to sum contact map matrices.
 	if len(contactMaps) > 1:
 		contactMaps = sum(contactMaps)
+	# else, if the contactMaps has a size of 1, the first member of this list is taken.
+	elif len(contactMaps) == 1:
+		contactMaps = contactMaps[0]
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
 	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
@@ -922,6 +929,13 @@ def filterPairs(params):
 		return
 
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
+
+	# In some edge cases, the number of interactions pairs selected at this stage may really be so slow that it is lower than the numCores specified.
+	# For these cases we'll just reduce the number of cores used, and make note of this in the log file.
+	if len(pairsFiltered) < params.numCores:
+		params.numCores = len(pairsFiltered)
+		logger.info('The number of interaction pairs selected after filtering step is lower than the number of cores requested for calculation. '
+		'Reducing number of cores to %i.' % len(pairsFiltered))
 
 	params.pairsFilteredPickle = os.path.join(os.path.abspath(params.outFolder),"pairsFiltered.pkl")
 	with open(params.pairsFilteredPickle,'wb') as f:
@@ -1461,6 +1475,6 @@ def getResIntEn(args):
 if __name__ == '__main__':
 	print('Please do not call this script directly. Use python grinn.py -calc <arguments> '
 		'instead.')
-	sys.exit(0)
+	#sys.exit(0)
 
 

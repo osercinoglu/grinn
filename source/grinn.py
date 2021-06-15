@@ -146,11 +146,6 @@ if __name__ == '__main__':
     # Parse arguments.
     args = parser.parse_args()
 
-    ### TEMP
-    #print(common.resource_path(
-    #    os.path.join('resources', 'clover.ico')))
-    ### TEMP
-
     calcMode = args.calc
     corrMode = args.corr
     resultsMode = args.results
