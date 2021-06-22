@@ -298,6 +298,10 @@ def calcEnergiesSingleCoreNAMD(args):
                 pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
                 pairIntPDB = os.path.abspath(pairIntPDB)
                 writePDB(pairIntPDB,system)
+                # Delete system, sel1, and sel2 to release pressure on RAM.
+                del system
+                del sel1
+                del sel2
 
             # SAVING ON THE TWO RESIDUE PAIR TO DO LATER ON(NEEDS TESTING)
             #traj = Trajectory(dcdFilePath)
@@ -359,7 +363,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
             # Run namd2 to compute the energies
             try:
-                pid_namd2 = subprocess.Popen([namd2exe,namdConf],
+                pid_namd2 = subprocess.Popen([namd2exe,'+p2',namdConf],
                     stdout=open(
                         os.path.join(outputFolder,'%i_%i_energies.log' % 
                             (pair[0],pair[1])),'w'),stderr=subprocess.PIPE)
@@ -403,9 +407,9 @@ def calcEnergiesSingleCoreNAMD(args):
         # Done.
 
     # Split the pairsFiltered into chunks to print the progress on the screen.
-    if len(pairsFilteredSingleCore) >= 100:
-        numChunks = 100
-    elif len(pairsFilteredSingleCore) < 10:
+    if len(pairsFilteredSingleCore) >= 500:
+        numChunks = 500
+    elif len(pairsFilteredSingleCore) < 50:
         numChunks = 1
     else:
         numChunks = 10
@@ -510,15 +514,21 @@ def calcEnergiesNAMD(params):
     # Split pairs list into chunks adjusting number of pairs per core.
     numPairsFiltered = len(arrPairsFiltered)
     numPairsPerCore = math.floor(numPairsFiltered/params.numCores)
-    print('numPairsPerCore',numPairsPerCore)
+
     if numPairsPerCore>= 50:
         numPairsPerCore = 50
     
     params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
         int(len(arrPairsFiltered)/(numPairsPerCore*params.numCores)))
 
+    ## Experimental: reduce params.numCores by half and call namd2 with +p2 later on
+    # This is to reduce RAM usage which sometimes chokes gRINN.
+    origNumCores = params.numCores
+    params.numCores = math.floor(params.numCores/2)
+
     # Run pool.map for each chunk over a for loop.
     progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
+
     for chunk in params.pairsFilteredChunks:
         chunk = np.array_split(chunk,params.numCores)
         # Strip logger away from params temporarily to be able to map.
@@ -527,13 +537,8 @@ def calcEnergiesNAMD(params):
 
         # Start a concurrent.futures pool.
         with futures.ProcessPoolExecutor(params.numCores) as pool:
-            try:
-                results = pool.map(calcEnergiesSingleCoreNAMD,
-                    zip(chunk,itertools.repeat(params)))
-                results = list(results)
-
-            finally:
-                pool.shutdown()
+            results = pool.map(calcEnergiesSingleCoreNAMD,zip(chunk,itertools.repeat(params)))
+            results = list(results)
 
         #params.logger = logger
     
@@ -559,6 +564,9 @@ def calcEnergiesNAMD(params):
 
     # Parse the specified outFolder after energy calculation is done.
     outFolderFileList = os.listdir(params.outFolder)
+
+    # Reset params.numCores
+    params.numCores = origNumCores
 
     energiesFilePaths = list()
     for fileName in outFolderFileList:
@@ -692,6 +700,88 @@ def filterInitialPairsSingleCore(args):
 
     return filterList
 
+# A method for initial filtering.
+def filterInitialPairs(params):
+    
+    with suppress_stdout():
+        params.system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+
+    try:
+        params.source = params.system.select(str(params.sel1))
+    except:
+        params.logger.exception('Could not select Selection 1 residue group. Aborting now.')
+        return
+
+    #NEEDS CAREFUL TWEAKING ALL BELOW
+    params.numResidues = params.system.numResidues()
+    params.sourceResids = np.unique(params.source.getResindices())
+    params.sourceResnums = [params.source.select('resindex %i' % i).getResnums()[0] for i in params.sourceResids]
+    params.sourceSegnames = [params.source.select('resindex %i' % i).getSegnames()[0] for i in params.sourceResids]
+
+    params.numSource = len(params.sourceResids)
+
+    # By default, targetResids are all residues.
+    params.targetResids = np.arange(params.numResidues)
+    params.numTarget = len(params.targetResids)
+    
+    # Get target selection residues
+    try:
+        params.target = params.system.select(str(params.sel2))
+        params.targetResids = np.unique(params.target.getResindices())
+        params.numTarget = len(params.targetResids)
+    except:
+        params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
+        return
+
+    # Generate all possible unique pairwise residue-residue combinations
+    pairProduct = itertools.product(params.sourceResids,params.targetResids)
+    pairSet = set()
+    for x,y in pairProduct:
+        if x != y:
+            pairSet.add(frozenset((x,y)))
+
+    params.logger.info('Starting filtering operations...')
+
+    # Prepare a pairSet list.
+    params.logger.info('Preparing a list of pairs...')
+    pairSet = [list(pair) for pair in list(pairSet)]
+    params.logger.info('Preparing a list of pairs... Done.')
+
+    # Get a list of pairs within a certain distance from each other, 
+    # based on the initial structure.
+    params.initialFilter = list()
+
+    # Initial filtering of pairs
+    params.logger.info('Starting initial filtering step...')
+
+    params.logger.info('Parallelizing initial filtering calculation...')
+
+    # Split the pair set list into chunks according to number of cores
+    pairChunks = np.array_split(list(pairSet),params.numCores)
+
+    # Perform initial filtering on each of these chunks.
+    params.logger.info('Performing initial filtering now... This may take a while...')
+
+    # Start a concurrent futures pool, and perform initial filtering.
+    with futures.ProcessPoolExecutor(params.numCores) as pool:
+        params.initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i],params.initPairFilterCutoff] for i in range(0,params.numCores)])
+        params.initialFilter = list(params.initialFilter)
+        if len(params.initialFilter) > 1:
+            params.initialFilter = np.vstack(params.initialFilter)
+
+    params.initialFilter = list(params.initialFilter)
+    params.initialFilter = [pair for pair in params.initialFilter if pair is not None]
+    params.logger.info('Initial filtering... Done.')
+    params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
+        len(params.initialFilter))
+
+    params.initialFilterDone = True
+
+    with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
+        pickle.dump(params,f)
+
+    return params
+
 # A method for filtering using a single core.
 def filterPairsSingleCore(args):
     
@@ -765,98 +855,31 @@ def filterPairsSingleCore(args):
 
 # A method for filtering of pairs.
 def filterPairs(params):
-    
-    with suppress_stdout():
-        system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
-
-    try:
-        source = system.select(str(params.sel1))
-    except:
-        params.logger.exception('Could not select Selection 1 residue group. Aborting now.')
-        return
-
-    #NEEDS CAREFUL TWEAKING ALL BELOW
-    numResidues = system.numResidues()
-    sourceResids = np.unique(source.getResindices())
-    sourceResnums = [source.select('resindex %i' % i).getResnums()[0] for i in sourceResids]
-    sourceSegnames = [source.select('resindex %i' % i).getSegnames()[0] for i in sourceResids]
-
-    numSource = len(sourceResids)
-
-    # By default, targetResids are all residues.
-    targetResids = np.arange(numResidues)
-    numTarget = len(targetResids)
-    
-    # Get target selection residues
-    try:
-        target = system.select(str(params.sel2))
-        targetResids = np.unique(target.getResindices())
-        numTarget = len(targetResids)
-    except:
-        params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
-        return
-
-    # Generate all possible unique pairwise residue-residue combinations
-    pairProduct = itertools.product(sourceResids,targetResids)
-    pairSet = set()
-    for x,y in pairProduct:
-        if x != y:
-            pairSet.add(frozenset((x,y)))
-
-    params.logger.info('Starting filtering operations...')
-
-    # Prepare a pairSet list.
-    params.logger.info('Preparing a list of pairs...')
-    pairSet = [list(pair) for pair in list(pairSet)]
-    params.logger.info('Preparing a list of pairs... Done.')
-
-    # Get a list of pairs within a certain distance from each other, 
-    # based on the initial structure.
-    initialFilter = list()
-
-    # Initial filtering of pairs
-    params.logger.info('Starting initial filtering step...')
-
-    params.logger.info('Parallelizing initial filtering calculation...')
-
-    # Split the pair set list into chunks according to number of cores
-    pairChunks = np.array_split(list(pairSet),params.numCores)
-
-    # Perform initial filtering on each of these chunks.
-    params.logger.info('Performing initial filtering now... This may take a while...')
-
-    # Start a concurrent futures pool, and perform initial filtering.
-    with futures.ProcessPoolExecutor(params.numCores) as pool:
-        try:
-            initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i],params.initPairFilterCutoff] for i in range(0,params.numCores)])
-            initialFilter = list(initialFilter)
-            if len(initialFilter) > 1:
-                initialFilter = np.vstack(initialFilter)
-        finally:
-            pool.shutdown()
-
-    initialFilter = list(initialFilter)
-    initialFilter = [pair for pair in initialFilter if pair is not None]
-    params.logger.info('Initial filtering... Done.')
-    params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
-        len(initialFilter))
-
-    params.initialFilterPickle = os.path.join(os.path.abspath(params.outFolder),"initialFilter.pkl")
-    with open(params.initialFilterPickle,'wb') as f:
-        pickle.dump(initialFilter,f)
 
     params.logger.info('Starting the filtering step...')
 
     # Split the trajectory into chunks according to number of cores.
     params.logger.info('Chunkifying trajectory...')
-    with suppress_stdout():
-        traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
-        frameRanges = np.array_split(list(range(len(traj))),params.numCores)
-        for i in range(0,len(frameRanges)):
-            frameRange = frameRanges[i]
-            traj_i = traj[frameRange[0]:frameRange[-1]]
-            writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
-            del traj_i
+    traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+
+    if len(traj) < params.numCores:
+    	frameRanges = np.array_split(list(range(len(traj))),len(traj))
+    else:
+    	frameRanges = np.array_split(list(range(len(traj))),params.numCores)
+
+    for i in range(0,len(frameRanges)):
+        frameRange = frameRanges[i]
+        if len(frameRange) == 1:
+        	conf_i = traj[frameRange[0]]
+        	traj_i = Ensemble()
+        	traj_i.addCoordset(conf_i)
+        elif len(frameRange) > 1:
+        	traj_i = traj[frameRange[0]:frameRange[-1]]
+        else:
+        	continue
+
+        writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
+        del traj_i
 
     params.logger.info('Chunkifying trajectory... Done.')
 
@@ -864,12 +887,13 @@ def filterPairs(params):
 
     # Split initialFilter list into chunks, corresponding to 1000 pairs per numCores
     params.logger.info('Chunkifying initial filter...')
-    chunkNum = 1 if len(initialFilter) < 500*params.numCores else len(initialFilter)/(500*params.numCores)
-    initialFilterChunks = np.array_split(initialFilter,chunkNum)
+    chunkNum = 1 if len(params.initialFilter) < 500*params.numCores else len(params.initialFilter)/(500*params.numCores)
+    initialFilterChunks = np.array_split(params.initialFilter,chunkNum)
 
     # Run pool.map for each chunk over a for loop.
     progbar = pyprind.ProgBar(len(initialFilterChunks))
     contactMaps = list()
+
     for i in range(0,len(initialFilterChunks)):
         chunk = initialFilterChunks[i]
         params.logger.info('Filtering a pair chunk...(%i out of %i)' % (i+1,len(initialFilterChunks)))
@@ -879,8 +903,9 @@ def filterPairs(params):
 
             try:
                 # For each traj portion split above
+                ### POTENTIAL IMPROVEMENT BELOW: PASS ONLY PARAMS INSTEAD OF numSource etc. (assuming they've been moved under params.)
                 contactMapsTrajChunk = pool.map(
-                    filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+                    filterPairsSingleCore,[[params,i,[params.numSource,params.numTarget,params.sourceResids,params.targetResids],
                     chunk] for i in range(0,params.numCores)])
                 contactMapsTrajChunk = list(contactMapsTrajChunk)
             
@@ -910,21 +935,28 @@ def filterPairs(params):
 
     ###################################################
     ### BELOW BLOCK SHOULD BE ACCELERATED (A LOT)! ####
-    pairsFiltered = list()
+    params.pairsFiltered = list()
     #concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
-    for sourceResid in sourceResids:
-        for targetResid in targetResids:
+    progbar = pyprind.ProgBar(len(params.sourceResids))
+    params.logger.info('Collecting filtered pairs now...')
+
+    for sourceResid in params.sourceResids:
+        for targetResid in params.targetResids:
             if sourceResid == targetResid:
                 continue
-            source_index = list(sourceResids).index(sourceResid)
-            target_index = list(targetResids).index(targetResid)
+            source_index = list(params.sourceResids).index(sourceResid)
+            target_index = list(params.targetResids).index(targetResid)
 
             if pairsFilteredFlag[source_index,target_index] > 0:
-                pairsFiltered.append(sorted([sourceResid,targetResid]))
+                params.pairsFiltered.append(sorted([sourceResid,targetResid]))
 
-    pairsFiltered = sorted(pairsFiltered)
-    pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+        progbar.update()
 
+    params.logger.info('Collecting filtered pairs now... Done.')
+    params.logger.info('Sorting filtered pairs now...')
+    params.pairsFiltered = sorted(params.pairsFiltered)
+    params.pairsFiltered = [list(x) for x in set(tuple(x) for x in params.pairsFiltered)]
+    params.logger.info('Sorting filtered pairs now... Done.')
     ### END OF BLOCK TO BE ACCELERATED ###
     ######################################
     
@@ -933,25 +965,24 @@ def filterPairs(params):
     #   file.write('%.2f-%i-%i\n' % (pairsInclusionFraction[pair[0],pair[1]],pair[0],pair[1]))
     # file.close()
 
-    if not pairsFiltered:
+    if not params.pairsFiltered:
         params.logger.exception('Filtering step did not yield any pairs. '
             'Either your cutoff value is too small or the percentage value is too high.')
         return
 
-    params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
+    params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(params.pairsFiltered))
 
     # In some edge cases, the number of interactions pairs selected at this stage may really be so slow that it is lower than the numCores specified.
     # For these cases we'll just reduce the number of cores used, and make note of this in the log file.
-    if len(pairsFiltered) < params.numCores:
-        params.numCores = len(pairsFiltered)
+    if len(params.pairsFiltered) < params.numCores:
+        params.numCores = len(params.pairsFiltered)
         params.logger.info('The number of interaction pairs selected after filtering step is lower than the number of cores requested for calculation. '
-        'Reducing number of cores to %i.' % len(pairsFiltered))
+        'Reducing number of cores to %i.' % len(params.pairsFiltered))
 
-    params.pairsFilteredPickle = os.path.join(os.path.abspath(params.outFolder),"pairsFiltered.pkl")
-    with open(params.pairsFilteredPickle,'wb') as f:
-        pickle.dump(pairsFiltered,f)
+    params.filterDone = True
 
-    params.pairsFiltered = pairsFiltered
+    with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
+        pickle.dump(params,f)
 
     return params
 
@@ -1046,11 +1077,22 @@ def errorSuicide(params,message,removeOutput=False):
     os._exit(0)
 
 def calcNAMD(params):
-    # Prepare input files for NAMD energy calculation.
-    prepareFilesNAMD(params) 
+    
+    if params.resume == True:
+        if params.initialFilterDone == False:
+            params = filterInitialPairs(params)
 
-    # Filter pairs.
-    params = filterPairs(params)
+        if params.filterDone == False:
+            params = filterPairs(params)
+
+    else:
+        # Prepare input files for NAMD energy calculation.
+        prepareFilesNAMD(params) 
+
+        # Filter pairs.
+        params = filterInitialPairs(params)
+        params = filterPairs(params)
+    
     pairsFiltered = copy.deepcopy(params.pairsFiltered)
 
     # Calculate interaction energies.
@@ -1169,22 +1211,40 @@ def getParams(args):
     # Make a new parameters object.
     params = parameters()
 
-    # Check whether the output folder exists. If it exists, abort.
+    params.resume = args.resume
+    print('params.resume',params.resume)
+    # Check whether the output folder exists. 
     outFolder = os.path.abspath(args.outfolder[0])
     currentFolder = os.getcwd()
     if outFolder != currentFolder:
-        if os.path.exists(outFolder):
+
+        # If outFolder exists and resume is not requested:
+        if os.path.exists(outFolder) and params.resume==False:
             print("The output folder exists. Please delete this folder or "
                 " specify a folder path that does not exist. Aborting now.")
             sys.exit(1)
+        # If outFolder exists and resume is requested:
+        elif os.path.exists(outFolder) and params.resume == True:
+            if not os.path.exists(os.path.join(os.path.abspath(outFolder),'params.pkl')):
+                print("params.pkl is not present in the output folder. This file is needed to resume calculation. "
+                    "Aborting now. ")
+                sys.exit(1)
+
+            with open(os.path.join(os.path.abspath(outFolder),'params.pkl'),'rb') as f:
+                params = pickle.load(f)
+                params.resume = True # This may have been False in the saved params.pkl.
+                return params, True, 'Success' # Return params already.
+
         elif not os.access(os.path.abspath(
             os.path.dirname(outFolder)), os.W_OK):
             print("Can't write to the output folder path. Do you have write access?")
             return
         else:
+            params.resume = False # If outfolder does not exist, resume can't be applied.
             params.outFolder = outFolder
             params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
+    print('params.resume 2',params.resume)
     # Check whether any input file paths include space character.
     files = [args.pdb,args.tpr,args.top,args.traj]
     files = [filename[0] for filename in files if not filename[0] == None]
@@ -1347,7 +1407,6 @@ def getParams(args):
             return params, False, message
 
         # Check whether stride is higher than the number of frames in trajectory:
-        print(trajectory.numFrames())
         if params.stride > trajectory.numFrames():
             message = 'Stride value is higher than the number of frames in the trajectory. '\
             'Please use a lower stride value.'
@@ -1426,16 +1485,18 @@ def getResIntEn(args):
     print('Checking input arguments...')
     params, isArgsValid, message = getParams(args)
 
-    # Create the output folder now so that we can start logging.
-    # Creating this file right now is important because the calcGUI 
-    # will monitor this file as well.
-    try:
-        os.makedirs(params.outFolder)
-        f = open(params.logFile,'w')
-        f.close()
-    except:
-        print('Failed to create the output directory. Do you have write access?')
-        sys.exit(0)
+    print('params.resume',params.resume)
+    if params.resume == False:
+        # Create the output folder now so that we can start logging.
+        # Creating this file right now is important because the calcGUI 
+        # will monitor this file as well.
+        try:
+            os.makedirs(params.outFolder)
+            f = open(params.logFile,'w')
+            f.close()
+        except:
+            print('Failed to create the output directory. Do you have write access?')
+            sys.exit(0)
 
     # Start logging.
     loggingFormat = '%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s'
@@ -1614,6 +1675,11 @@ if __name__ == '__main__':
                              'grinn_output will be created in the current working folder. Applies only to grinn '
                              '-calc <arguments> calls.')
 
+    parser.add_argument('--resume', action='store_true', default=False, 
+                        help='When this flag is given, gRINN will look for params.pkl in the specified OUTFOLDER. '
+                            'If params.pkl is present, calculation will resume from either after initial filtering or the filtering step. '
+                            'If params.pkl is not present in output folder, this flag is ignored.')
+
     parser.add_argument('--version', action='store_true', default=False,
                         help='Prints the version number.')
 
@@ -1626,10 +1692,11 @@ if __name__ == '__main__':
 
     # Check which mode is requested. Either one is selected or none is selected to
     # enter GUI mode.
+    print('calcMode,corrMode,resultsMode',calcMode,corrMode,resultsMode)
     if [calcMode, corrMode, resultsMode].count(True) > 1:
         print('You should specify either -calc or -corr or specify none of them '
               'to enter the GUI mode.')
-        sys.exit(0)
+        #sys.exit(0)
     elif [calcMode, corrMode].count(True) == 1:
         if calcMode:
             # User requested command-line calculation of interaction energies.
