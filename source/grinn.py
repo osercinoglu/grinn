@@ -16,6 +16,7 @@ from concurrent import futures
 from scipy.sparse import lil_matrix
 from common import *
 import corr
+from memory_profiler import profile
 
 def convert_arg_line_to_args(arg_line):
     # To override the same method of the ArgumentParser (to read options from a file)
@@ -363,7 +364,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
             # Run namd2 to compute the energies
             try:
-                pid_namd2 = subprocess.Popen([namd2exe,'+p2',namdConf],
+                pid_namd2 = subprocess.Popen([namd2exe,'+p%i' % params.namd2NumCores,namdConf],
                     stdout=open(
                         os.path.join(outputFolder,'%i_%i_energies.log' % 
                             (pair[0],pair[1])),'w'),stderr=subprocess.PIPE)
@@ -373,7 +374,8 @@ def calcEnergiesSingleCoreNAMD(args):
                 sys.exit(0)
 
             if error:
-                logger.exception('Error while calling NAMD executable:\n'+error)
+                print(error)
+                logger.exception('Error while calling NAMD executable:\n'+str(error))
                 error = error.decode().split('\n')
                 fatalErrorLine = None
 
@@ -407,9 +409,9 @@ def calcEnergiesSingleCoreNAMD(args):
         # Done.
 
     # Split the pairsFiltered into chunks to print the progress on the screen.
-    if len(pairsFilteredSingleCore) >= 500:
-        numChunks = 500
-    elif len(pairsFilteredSingleCore) < 50:
+    if len(pairsFilteredSingleCore) >= 100:
+        numChunks = 100
+    elif len(pairsFilteredSingleCore) < 10:
         numChunks = 1
     else:
         numChunks = 10
@@ -437,6 +439,19 @@ def calcEnergiesSingleCoreNAMD(args):
         percent = percent + 100/float(numChunks)
         logger.info('Completed calculation percentage: %s' % percent)
         #print('Completed calculation percentage: %s' % percent)
+
+        #################
+        ### DEBUGGING: Printing list of local variables' sizes to find out what's devouring RAM here.
+        # local_vars = list(locals().items())
+        # for name, size in sorted(((name, sys.getsizeof(value)) for name, value in local_vars),
+        # 	key= lambda x: -x[1])[:10]:
+        # 	print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+        # global_vars = list(globals().items())
+        # for name, size in sorted(((name, sys.getsizeof(value)) for name, value in global_vars),
+        # 	key= lambda x: -x[1])[:10]:
+        # 	print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+        ### DEBUGGING END ---------------------------------------------------------------------------
+        #################
 
     logger.info('Completed a pairwise energy calculation thread.')
     # Necessary to proceed in parent method?
@@ -511,25 +526,27 @@ def calcEnergiesNAMD(params):
     params.logger.info('Splitting the pairs into chunks...')
     arrPairsFiltered = np.asarray(params.pairsFiltered)
 
+    ## Experimental: reduce params.numCores by half and call namd2 with +pNAMD2NUMCORES later on
+    # This is to reduce RAM usage which sometimes chokes gRINN.
+    origNumCores = params.numCores
+    params.numCores = math.floor(params.numCores/params.namd2NumCores)
+
     # Split pairs list into chunks adjusting number of pairs per core.
     numPairsFiltered = len(arrPairsFiltered)
     numPairsPerCore = math.floor(numPairsFiltered/params.numCores)
 
-    if numPairsPerCore>= 50:
-        numPairsPerCore = 50
+    if numPairsPerCore>= 5:
+        numPairsPerCore = 5
     
     params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
         int(len(arrPairsFiltered)/(numPairsPerCore*params.numCores)))
 
-    ## Experimental: reduce params.numCores by half and call namd2 with +p2 later on
-    # This is to reduce RAM usage which sometimes chokes gRINN.
-    origNumCores = params.numCores
-    params.numCores = math.floor(params.numCores/2)
-
     # Run pool.map for each chunk over a for loop.
     progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
 
+    #for chunk in [params.pairsFilteredChunks[0]]:
     for chunk in params.pairsFilteredChunks:
+        params.logger.info('A chunk of pairs is being processed... Size of chunk: %i pairs.' % len(chunk))
         chunk = np.array_split(chunk,params.numCores)
         # Strip logger away from params temporarily to be able to map.
         logger = params.logger
@@ -1065,8 +1082,9 @@ def cleanUp(params):
     for item in glob.glob(os.path.join(params.outFolder,'*.trr')):
         os.remove(item)
 
-    if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
-        os.remove(os.path.join(params.outFolder,'traj.dcd'))
+    # Cancelled trajectory deleting from the folder as this is needed in case of resume.
+    #if os.path.exists(os.path.join(params.outFolder,'traj.dcd')):
+    #    os.remove(os.path.join(params.outFolder,'traj.dcd'))
 
 def errorSuicide(params,message,removeOutput=False):
     params.logger.exception(message)
@@ -1212,7 +1230,7 @@ def getParams(args):
     params = parameters()
 
     params.resume = args.resume
-    print('params.resume',params.resume)
+
     # Check whether the output folder exists. 
     outFolder = os.path.abspath(args.outfolder[0])
     currentFolder = os.getcwd()
@@ -1244,7 +1262,6 @@ def getParams(args):
             params.outFolder = outFolder
             params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
-    print('params.resume 2',params.resume)
     # Check whether any input file paths include space character.
     files = [args.pdb,args.tpr,args.top,args.traj]
     files = [filename[0] for filename in files if not filename[0] == None]
@@ -1256,6 +1273,7 @@ def getParams(args):
             return params, False, message
 
     params.numCores = args.numcores[0]
+    params.namd2NumCores = args.namd2numcores[0]
     frameRange = args.framerange
 
     if len(frameRange) > 1:
@@ -1481,7 +1499,7 @@ def getParams(args):
 def getResIntEn(args):
     
     # Check whether input arguments are valid and get parameters!
-    global params
+    #global params // Might want to avoid declaring global here as params is passed around to subprocesses quite frequently.
     print('Checking input arguments...')
     params, isArgsValid, message = getParams(args)
 
@@ -1585,9 +1603,14 @@ if __name__ == '__main__':
 
     parser.add_argument('--numcores', default=[multiprocessing.cpu_count()],
                         type=int, nargs=1,
-                        help='Number of CPU cores to be employed for energy calculation. '
+                        help='Number of CPU cores to be employed by gRINN. '
                              'If not specified, it defaults to the number of cpu cores present '
                              'in your computer.')
+
+    parser.add_argument('--namd2numcores', default=[1], type=int, nargs=1,
+                        help='Number of CPU cores to be employed for interaction energy calculation '
+                             'by NAMD2 executable in a single subprocess. If not specified, it defaults to 1, '
+                             'and NUMCORES subprocesses are used.')
 
     parser.add_argument('--dielectric', default=[1], type=int, nargs=1,
                         help='Solute dielectric constant to be used in electrostatic interaction energy '

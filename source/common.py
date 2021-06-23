@@ -16,6 +16,7 @@ class parameters(object):
 		self.top = None
 		self.traj = None
 		self.numCores = None
+		self.namd2NumCores = None
 		self.dielectric = None
 		self.sel1 = None
 		self.sel2 = None
@@ -37,6 +38,17 @@ class parameters(object):
 		self.calcState = 'Idle'
 		self.initialFilterDone = False
 		self.filterDone = False
+
+
+# A method to calculate and print the size of current workspace variables.
+# Credit (jan-glx): https://stackoverflow.com/questions/24455615/python-how-to-display-size-of-all-variables
+def sizeof_fmt(num, suffix='B'):
+    ''' by Fred Cirera,  https://stackoverflow.com/a/1094933/1870254, modified'''
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
 
 # A method to get the path to the resource for pyinstaller onefile executables.
 def resource_path(relative_path):
