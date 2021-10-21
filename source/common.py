@@ -104,16 +104,23 @@ def isMemoryEnough(params,traj):
 	else:
 		return True, "Success"
 
-# A method to get a string containing chain ID, residue name and residue number
+# A method to get a string containing chain or seg ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index
 def getChainResnameResnum(pdb,resIndex):
 	# Get a string for chain+resid+resnum when supplied the residue index.
 	selection = pdb.select('resindex %i' % resIndex)
 	chain = selection.getChids()[0]
+	chain = chain.strip(' ')
+	segid = selection.getSegnames()[0]
+	segid = segid.strip(' ')
+
 	resName = selection.getResnames()[0]
 	resNum = selection.getResnums()[0]
-	string = chain+resName+str(resNum)
-	return string
+	if chain:
+		string = ''.join([chain,str(resName),str(resNum)])
+	elif segid:
+		string = ''.join([segid,str(resName),str(resNum)])
+	return [chain,segid,resName,resNum,string]
 
 # A reverse of the above method
 def getResindex(pdb,chainResnameResnum):
@@ -124,6 +131,8 @@ def getResindex(pdb,chainResnameResnum):
 		resName = matches.groups()[1]
 		resNum = int(matches.groups()[2])
 		selection = pdb.select('chain %s and resnum %i' % (chain,resNum))
+		if not selection: # It may be that we have the segname instead of the chain.
+			selection = pdb.select('segment %s and resnum %i' % (chain,resNum))
 		resIndex = selection.getResindices()[0]
 		return resIndex
 

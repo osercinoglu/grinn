@@ -12,6 +12,7 @@ import pandas
 import numpy as np
 import seaborn
 import os
+import pickle
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -29,6 +30,7 @@ import math
 class viewResultsParams(object):
     def __init__(self):
         self.system = None
+        self.system_sels = None
         self.traj = None
         self.numFrames = None
         self.currentFrame = None
@@ -96,9 +98,9 @@ class MyStaticMplCanvas(MyMplCanvas):
         selectedTargetRes = viewResultsParams.selectedTargetRes
 
         selSource_string = getChainResnameResnum(viewResultsParams.system, selectedSourceRes
-        if selectedSourceRes else 0)
+        if selectedSourceRes else 0)[-1]
         selTarget_string = getChainResnameResnum(viewResultsParams.system, selectedTargetRes
-        if selectedTargetRes else 0)
+        if selectedTargetRes else 0)[-1]
         # Rather complicated to select the correct dict key, but it should work.
         key1 = selSource_string + '-' + selTarget_string
         key2 = selTarget_string + '-' + selSource_string
@@ -117,7 +119,7 @@ class MyStaticMplCanvas(MyMplCanvas):
 
         self.axes.clear()
 
-        currentFrame = mainWindow.viewResultsParams.currentFrame
+        currentFrame = mainWindow.viewResultsParams.currentFrame 
 
         if type == 'time-series':
             self.axes.plot(t, s, 'b', label=key if key else '')
@@ -175,8 +177,9 @@ class MyStaticMplCanvas(MyMplCanvas):
             hm.set_yticklabels(hm.get_yticklabels(), rotation=0)
             hm.invert_yaxis()
 
-            xticks = np.arange(0, viewResultsParams.system.numResidues(), 15)
-            xticklabels = [getChainResnameResnum(viewResultsParams.system, xtick) for xtick in xticks]
+            numResidues_sels = len(np.unique(viewResultsParams.system_sels.getResindices()))
+            xticks = np.arange(0, numResidues_sels, 15)
+            xticklabels = [getChainResnameResnum(viewResultsParams.system, np.unique(viewResultsParams.system_sels.getResindices())[xtick])[-1] for xtick in xticks]
             self.axes.set_xticks(xticks)
             self.axes.set_xticklabels(xticklabels, fontsize=10)
             self.axes.set_yticks(xticks)
@@ -448,8 +451,13 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
 
             self.lineEdit_selectOutputFolder.setText(name)
             self.viewResultsParams.outputFolder = name
+            paramsFile = open(os.path.join(self.viewResultsParams.outputFolder,'params.pkl'),'rb')
+            self.viewResultsParams.params = pickle.load(paramsFile)
+            paramsFile.close()
             self.viewResultsParams.system = parsePDB(os.path.join(
                 self.viewResultsParams.outputFolder, 'system.pdb'))
+            self.viewResultsParams.system_sels = self.viewResultsParams.system.select(
+                self.viewResultsParams.params.sel1 + ' or ' + self.viewResultsParams.params.sel2)
             self.viewResultsParams.intEnMeanTotal = np.loadtxt(os.path.join(
                 self.viewResultsParams.outputFolder, 'energies_intEnMeanTotal.dat'))
             self.viewResultsParams.intEnTotal = pandas.read_csv(os.path.join(
@@ -563,10 +571,10 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
         for i in range(0, numResidues):
             self.tableWidget_sourceTargetResEnergies.setItem(
                 i, 0, QtWidgets.QTableWidgetItem(getChainResnameResnum(
-                    self.viewResultsParams.system, i)))
+                    self.viewResultsParams.system, i)[-1]))
             self.tableWidget_sourceTargetResEnergies.setItem(
                 i, 1, QtWidgets.QTableWidgetItem(getChainResnameResnum(
-                    self.viewResultsParams.system, i)))
+                    self.viewResultsParams.system, i)[-1]))
 
         self.updatePairwiseEnergiesTable(0, 0)
 
@@ -603,7 +611,7 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
 
         self.comboBox_SourceResidue.clear()
         self.comboBox_TargetResidue.clear()
-        chainResnameResnums = [getChainResnameResnum(self.viewResultsParams.system, i) for i in range(0, numResidues)]
+        chainResnameResnums = [getChainResnameResnum(self.viewResultsParams.system, i)[-1] for i in range(0, numResidues)]
         self.comboBox_SourceResidue.addItems(chainResnameResnums)
         self.comboBox_TargetResidue.addItems(chainResnameResnums)
 
@@ -762,22 +770,23 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
     def colorProtein(self, pal_array, value_array):
         # Color protein according to the input palette.
         chain_resnums = list()
-        system = self.viewResultsParams.system
-        resindices = np.unique(system.getResindices())
-        for index in resindices:
-            res = system.select('resindex %i' % index)
-            chain = res.getChids()[0]
-            resnum = res.getResnums()[0]
-            chain_resnums.append([chain, resnum])
+        system_sels = self.viewResultsParams.system_sels
+        resindices = np.unique(system_sels.getResindices())
+        #for index in resindices:
+        #    res = system.select('resindex %i' % index)
+        #    chain = res.getChids()[0]
+        #    resnum = res.getResnums()[0]
+        #    chain_resnums.append([chain, resnum])
 
         self.ProteinView._pymol.cmd.show_as('cartoon', 'all')
         self.ProteinView._pymol.cmd.set('cartoon_transparency', '0')
-        for i in range(0, len(chain_resnums)):
+        #for i in range(0, len(chain_resnums)):
+        for i in range(0, len(resindices)):
             value = value_array[i]
             self.ProteinView._pymol.cmd.set_color('mycolor%i' % i, '[%f,%f,%f]\n' % (
                 pal_array[value][0], pal_array[value][1], pal_array[value][2]))
             self.ProteinView._pymol.cmd.color('mycolor%i' % i,
-                                              'resi ' + str(chain_resnums[i][1]) + ' and chain ' + chain_resnums[i][0])
+                                              'resi ' + str(resindices[i]))
         self.ProteinView._pymolProcess()
 
     def updateProteinResiduePairs(self):
@@ -785,8 +794,8 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
         # Get selected two residues.
         selectedSourceRes = self.viewResultsParams.selectedSourceRes
         selectedTargetRes = self.viewResultsParams.selectedTargetRes
-        source_string = getChainResnameResnum(self.viewResultsParams.system, selectedSourceRes)
-        target_string = getChainResnameResnum(self.viewResultsParams.system, selectedTargetRes)
+        source_info = getChainResnameResnum(self.viewResultsParams.system, selectedSourceRes)
+        target_info = getChainResnameResnum(self.viewResultsParams.system, selectedTargetRes)
 
         if not hasattr(self, "ProteinView"):
             return
@@ -796,21 +805,35 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
         # self.ProteinView._pymol.cmd.color('green','all')
         self.ProteinView._pymol.cmd.label('all', '')
         self.ProteinView._pymol.cmd.set('cartoon_transparency', '0')
-        self.ProteinView._pymol.cmd.show_as(
-            'sticks', 'resi ' + source_string[4:] + ' and chain ' + source_string[0])
-        self.ProteinView._pymol.cmd.show_as(
-            'sticks', 'resi ' + target_string[4:] + ' and chain ' + target_string[0])
-        self.ProteinView._pymol.cmd.color(
-            'red', 'resi ' + source_string[4:] + ' and chain ' + source_string[0])
-        self.ProteinView._pymol.cmd.color(
-            'red', 'resi ' + target_string[4:] + ' and chain ' + target_string[0])
-        self.ProteinView._pymol.cmd.set('label_size', '-2')
-        self.ProteinView._pymol.cmd.label(
-            'resi ' + source_string[4:] + ' and chain ' + source_string[0] + ' and name CA',
-            '"%s%s%s" % (chain,resn,resi)')
-        self.ProteinView._pymol.cmd.label(
-            'resi ' + target_string[4:] + ' and chain ' + target_string[0] + ' and name CA',
-            '"%s%s%s" % (chain,resn,resi)')
+        if source_info[0]: # i.e. if chain information is present.
+            self.ProteinView._pymol.cmd.show_as(
+                'sticks', 'resi ' + str(source_info[3]) + ' and chain ' + source_info[0])
+            self.ProteinView._pymol.cmd.color(
+                'red', 'resi ' + str(source_info[2]) + ' and chain ' + source_info[0])
+        elif source_info[1]: # i.e. if segid is present instead of chain.
+            self.ProteinView._pymol.cmd.show_as(
+                'sticks', 'resi ' + str(source_info[3]) + ' and segid ' + source_info[1])
+            self.ProteinView._pymol.cmd.color(
+                'red', 'resi ' + str(source_info[2]) + ' and segid ' + source_info[1])
+
+        if target_info[0]: # i.e. if chain information is present.
+            self.ProteinView._pymol.cmd.show_as(
+                'sticks', 'resi ' + str(target_info[3]) + ' and chain ' + target_info[0])
+            self.ProteinView._pymol.cmd.color(
+                'red', 'resi ' + str(target_info[2]) + ' and chain ' + target_info[0])
+        elif target_info[1]: # i.e. if segid is present instead of chain.
+            self.ProteinView._pymol.cmd.show_as(
+                'sticks', 'resi ' + str(target_info[3]) + ' and segid ' + target_info[1])
+            self.ProteinView._pymol.cmd.color(
+                'red', 'resi ' + str(target_info[2]) + ' and segid ' + target_info[1])
+
+        #self.ProteinView._pymol.cmd.set('label_size', '-2')
+        #self.ProteinView._pymol.cmd.label(
+        #    'resi ' + source_string[4:] + ' and chain ' + source_string[0] + ' and name CA',
+        #    '"%s%s%s" % (chain,resn,resi)')
+        #self.ProteinView._pymol.cmd.label(
+        #    'resi ' + target_string[4:] + ' and chain ' + target_string[0] + ' and name CA',
+        #    '"%s%s%s" % (chain,resn,resi)')
 
         self.ProteinView._pymolProcess()
 
@@ -864,18 +887,24 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
 
         if not hasattr(self, "ProteinView"):
             return
-        res_string = getChainResnameResnum(self.viewResultsParams.system, resIndex)
+        res_info = getChainResnameResnum(self.viewResultsParams.system, resIndex)
         self.ProteinView._pymol.cmd.show_as('cartoon', 'all')
         self.colorBy()
         # self.ProteinView._pymol.cmd.color('white','all')
         # self.ProteinView._pymol.cmd.set('cartoon_transparency','0.6')
         self.ProteinView._pymol.cmd.set('sphere_transparency', '0')
         self.ProteinView._pymol.cmd.label('all', '')
-        self.ProteinView._pymol.cmd.show_as('spheres', 'resi ' + res_string[4:] + ' and chain ' + res_string[0])
-        self.ProteinView._pymol.cmd.color('red', 'resi ' + res_string[4:] + ' and chain ' + res_string[0])
+
+        if res_info[0]: # If chain ID is present.
+            self.ProteinView._pymol.cmd.show_as('spheres', 'resi ' + str(res_info[3]) + ' and chain ' + res_info[0])
+            self.ProteinView._pymol.cmd.color('red', 'resi ' + str(res_info[3]) + ' and chain ' + res_info[0])
+        elif res_info[1]: # If seg ID is present, instead.
+            self.ProteinView._pymol.cmd.show_as('spheres', 'resi ' + str(res_info[3]) + ' and segid ' + res_info[1])
+            self.ProteinView._pymol.cmd.color('red', 'resi ' + str(res_info[3]) + ' and segid ' + res_info[1])
+        
         self.ProteinView._pymol.cmd.set('label_size', '-2')
-        self.ProteinView._pymol.cmd.label(
-            'resi ' + res_string[4:] + ' and chain ' + res_string[0] + ' and name CA', '"%s%s%s" % (chain,resn,resi)')
+        #self.ProteinView._pymol.cmd.label(
+        #    'resi ' + res_string[4:] + ' and chain ' + res_string[0] + ' and name CA', '"%s%s%s" % (chain,resn,resi)')
         self.ProteinView._pymolProcess()
 
     def updateProteinShortestPaths(self, path):
@@ -1033,9 +1062,8 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
                 #	self.viewResultsParams.networkRO,path[0],path[-1],'distance')
                 # print('shortest dijkstra path length: ',dijkstra_pathlen)
                 allpaths_string = [[getChainResnameResnum(self.viewResultsParams.system,
-                                                          int(index) - 1) for index in path] for path in allpaths]
+                                                          int(index) - 1)[-1] for index in path] for path in allpaths]
                 self.tableWidget_ShortestPaths.setRowCount(len(allpaths_string))
-                print('start')
                 for i in range(0, len(allpaths_string)):
                     path_string = allpaths_string[i]
                     print(path_string)
@@ -1044,7 +1072,6 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
                     pathlen = allpathslen[i]
                     self.tableWidget_ShortestPaths.setItem(
                         i, 1, QtWidgets.QTableWidgetItem(str(pathlen)))
-                print('stop')
 
     def updateShortestPathsTable(self, row, column):
         selectedPath = str(self.tableWidget_ShortestPaths.item(row, 0).text())
