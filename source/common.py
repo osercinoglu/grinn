@@ -34,10 +34,13 @@ class parameters(object):
 		self.logFile = None
 		self.logger = None
 		self.pairsFiltered = None
+		self.pairsProcessed = np.array([])
+		self.parsedEnergies = dict()
 		self.pool = None
 		self.calcState = 'Idle'
 		self.initialFilterDone = False
 		self.filterDone = False
+		self.calcDone = False
 
 
 # A method to calculate and print the size of current workspace variables.

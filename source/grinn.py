@@ -457,6 +457,43 @@ def calcEnergiesSingleCoreNAMD(args):
     # Necessary to proceed in parent method?
     return None
 
+def parseEnergiesNAMD(params):
+    
+    # Parse the specified outFolder after energy calculation is done.
+    outFolderFileList = os.listdir(params.outFolder)
+    energiesFilePaths = list()
+    
+    for fileName in outFolderFileList:
+        if fileName.endswith('energies.log'):
+            energiesFilePaths.append(os.path.join(params.outFolder,fileName))
+
+    energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
+        params.numCores)
+
+    with futures.ProcessPoolExecutor(params.numCores) as pool:
+
+        # Cancelling the following for map_async, it was intended for python 2.7
+        #parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
+        #   zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+        #       params.outFolder,'system.pdb')),
+        #       itertools.repeat(params.logFile))).get(9999999)
+        
+        # Instead, the following line.
+        parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
+            zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+                params.outFolder,'system.pdb')),
+                itertools.repeat(params.logFile)))
+        parsedEnergiesResults = list(parsedEnergiesResults)
+
+    parsedEnergies = dict()
+    for parsedEnergiesResult in parsedEnergiesResults:
+        parsedEnergies.update(parsedEnergiesResult)
+
+    # Update parsedEnergies dict in the main params object.
+    params.parsedEnergies.update(parsedEnergies)
+
+    return params
+
 def calcEnergiesNAMD(params):
 
     # Define a worker initializer for graceful exit upon ctrl+c
@@ -522,14 +559,21 @@ def calcEnergiesNAMD(params):
 
     params.logger.info('Starting threads for interaction energy calculation...')
 
+    # Get possible pairs for which IE calculation has already been complete.
+    if params.pairsProcessed.size > 0: # Then we have previously processed IE pairs.
+        pairs2process = [pair for pair in params.pairsFiltered if pair not in params.pairsProcessed]
+    else: # Then we're starting anew.
+        pairs2process = params.pairsFiltered
+
     # Start energy calculation in chunks
     params.logger.info('Splitting the pairs into chunks...')
-    arrPairsFiltered = np.asarray(params.pairsFiltered)
+    arrPairsFiltered = np.asarray(pairs2process)
 
     ## Experimental: reduce params.numCores by half and call namd2 with +pNAMD2NUMCORES later on
     # This is to reduce RAM usage which sometimes chokes gRINN.
     origNumCores = params.numCores
-    params.numCores = math.floor(params.numCores/params.namd2NumCores)
+    newNumCores = math.floor(params.numCores/params.namd2NumCores)
+    params.numCores = newNumCores
 
     # Split pairs list into chunks adjusting number of pairs per core.
     numPairsFiltered = len(arrPairsFiltered)
@@ -547,14 +591,17 @@ def calcEnergiesNAMD(params):
     #for chunk in [params.pairsFilteredChunks[0]]:
     for chunk in params.pairsFilteredChunks:
         params.logger.info('A chunk of pairs is being processed... Size of chunk: %i pairs.' % len(chunk))
-        chunk = np.array_split(chunk,params.numCores)
+        chunkSplitted = np.array_split(chunk,params.numCores)
         # Strip logger away from params temporarily to be able to map.
         logger = params.logger
         #params.logger = None
 
+        # Reset numCores to the calculated value above (it is reset before params.pkl saving -below- to allow resuming later on).
+        params.numCores = newNumCores
+
         # Start a concurrent.futures pool.
         with futures.ProcessPoolExecutor(params.numCores) as pool:
-            results = pool.map(calcEnergiesSingleCoreNAMD,zip(chunk,itertools.repeat(params)))
+            results = pool.map(calcEnergiesSingleCoreNAMD,zip(chunkSplitted,itertools.repeat(params)))
             results = list(results)
 
         #params.logger = logger
@@ -576,43 +623,27 @@ def calcEnergiesNAMD(params):
                 errorSuicide(params,'Fatal error from NAMD: '+
                     errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
 
+        ## Collect results here, and update params.pkl in the output folder as well!
+        params = parseEnergiesNAMD(params)
+
+        # Update processed pairs at this point.
+        params.pairsProcessed = np.vstack((params.pairsProcessed,chunk)) if params.pairsProcessed.size > 0 else chunk
+
+        # Also save the params object so that it might be loaded later on after this run is interrupted to resume calculation.
+        params.logger.info('Updating the params.pkl...')
+        params.numCores = origNumCores
+        with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
+            pickle.dump(params,f)
+        params.logger.info('Updating the params.pkl... Done.')
+
+        cleanUp(params)
+
         params.logger.info('A chunk of pairs processed.')
         progbar.update()
-
-    # Parse the specified outFolder after energy calculation is done.
-    outFolderFileList = os.listdir(params.outFolder)
 
     # Reset params.numCores
     params.numCores = origNumCores
 
-    energiesFilePaths = list()
-    for fileName in outFolderFileList:
-        if fileName.endswith('energies.log'):
-            energiesFilePaths.append(os.path.join(params.outFolder,fileName))
-
-    energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
-        params.numCores)
-
-    with futures.ProcessPoolExecutor(params.numCores) as pool:
-
-    # Cancelling the following for map_async, it was intended for python 2.7
-    #parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
-    #   zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-    #       params.outFolder,'system.pdb')),
-    #       itertools.repeat(params.logFile))).get(9999999)
-    
-        # Instead, the following line.
-        parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
-            zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-                params.outFolder,'system.pdb')),
-                itertools.repeat(params.logFile)))
-        parsedEnergiesResults = list(parsedEnergiesResults)
-
-    parsedEnergies = dict()
-    for parsedEnergiesResult in parsedEnergiesResults:
-        parsedEnergies.update(parsedEnergiesResult)
-
-    params.parsedEnergies = parsedEnergies
     return params
 
 def calcEnergiesGMX(params):
@@ -1101,7 +1132,14 @@ def calcNAMD(params):
             params = filterInitialPairs(params)
 
         if params.filterDone == False:
+            params.logger.info('Resuming from the filtering step now...')
             params = filterPairs(params)
+
+        if params.calcDone == True:
+            # Give message to the user that the calculations seems to be complete, 
+            # nothing else to do. Then, abort.
+            params.logger.error('gRINN seems to have finished the calculation already. Resuming calculation not possible. Aborting now.')
+            sys.exit(0)
 
     else:
         # Prepare input files for NAMD energy calculation.
@@ -1250,7 +1288,7 @@ def getParams(args):
 
             with open(os.path.join(os.path.abspath(outFolder),'params.pkl'),'rb') as f:
                 params = pickle.load(f)
-                params.resume = True # This may have been False in the saved params.pkl.
+                params.resume = True # This may have been False in the saved params.pkl, if this is the first resume of calc.
                 return params, True, 'Success' # Return params already.
 
         elif not os.access(os.path.abspath(
@@ -1557,6 +1595,11 @@ def getResIntEn(args):
         args.corrinfile = [os.path.join(params.outFolder,'energies_intEnTotal.csv')]
         args.pdb = [params.pdb]
         corr.getResIntCorr(args,logFile=None,logger=params.logger)
+
+    # Finalizing
+    params.calcDone = True
+    with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
+        pickle.dump(params,f)
 
     params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
     return
