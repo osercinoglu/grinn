@@ -623,7 +623,7 @@ def calcEnergiesNAMD(params):
                 errorSuicide(params,'Fatal error from NAMD: '+
                     errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
 
-        ## Collect results here, and update params.pkl in the output folder as well!
+        ## Parse energies here, and update params.pkl in the output folder as well!
         params = parseEnergiesNAMD(params)
 
         # Update processed pairs at this point.
