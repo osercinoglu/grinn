@@ -418,10 +418,7 @@ def calcEnergiesSingleCoreNAMD(args):
 
     pairsFilteredChunksSingleCore = np.array_split(pairsFilteredSingleCore,numChunks)
 
-    progBar = pyprind.ProgBar(numChunks)
-
     # Perform the calculations in chunks
-    percent = 0
 
     for pairsFilteredChunk in pairsFilteredChunksSingleCore:
         try:
@@ -435,9 +432,6 @@ def calcEnergiesSingleCoreNAMD(args):
         if errorMessage:
             return errorMessage
 
-        progBar.update()
-        percent = percent + 100/float(numChunks)
-        logger.info('Completed calculation percentage: %s' % percent)
         #print('Completed calculation percentage: %s' % percent)
 
         #################
@@ -586,7 +580,9 @@ def calcEnergiesNAMD(params):
         int(len(arrPairsFiltered)/(numPairsPerCore*params.numCores)))
 
     # Run pool.map for each chunk over a for loop.
-    progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
+    numChunks = len(params.pairsFilteredChunks)
+    progbar = pyprind.ProgBar(numChunks)
+    percent = 0
 
     #for chunk in [params.pairsFilteredChunks[0]]:
     for chunk in params.pairsFilteredChunks:
@@ -639,6 +635,8 @@ def calcEnergiesNAMD(params):
         cleanUp(params)
 
         params.logger.info('A chunk of pairs processed.')
+        percent = percent + 100/float(numChunks)
+        logger.info('Completed calculation percentage: %s' % percent)
         progbar.update()
 
     # Reset params.numCores
@@ -1042,9 +1040,13 @@ def collectResults(params):
     df_elec = pandas.DataFrame()
     df_vdw = pandas.DataFrame()
     for key,value in list(params.parsedEnergies.items()):
-        df_total[key] = value['Total']
-        df_elec[key] = value['Elec']
-        df_vdw[key] = value['VdW']
+        # Try-check block to allow collecting even when parse of pair IE fails.
+        try:
+            df_total[key] = value['Total']
+            df_elec[key] = value['Elec']
+            df_vdw[key] = value['VdW']
+        except:
+            params.logger.warning('Failed to parse interaction data for pair '+str(key))
 
     params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnTotal.csv'))
     df_total.to_csv(os.path.join(params.outFolder,'energies_intEnTotal.csv'))
@@ -1466,6 +1468,12 @@ def getParams(args):
         if params.stride > trajectory.numFrames():
             message = 'Stride value is higher than the number of frames in the trajectory. '\
             'Please use a lower stride value.'
+            return params, False, message
+
+        # Check whether numCores is higher than the numbre of frames in trajectory:
+        if params.numCores > trajectory.numFrames():
+            message = 'Number of cores requested in higher than the number of frames in the trajectory. '\
+            'Please request lower number of cores.'
             return params, False, message
 
         # Check whether a parameter file is supplied.
