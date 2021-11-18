@@ -1331,8 +1331,8 @@ def getParams(args):
 
     params.initPairFilterCutoff = args.initpairfiltercutoff[0]
 
-    if params.initPairFilterCutoff < 15:
-        message = 'Initial filtering distance cutoff value can not be smaller than 15. Aborting now.'
+    if params.initPairFilterCutoff < 10:
+        message = 'Initial filtering distance cutoff value can not be smaller than 10. Aborting now.'
         return params, False, message
 
     params.pairFilterCutoff = args.pairfiltercutoff[0]
