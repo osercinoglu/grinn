@@ -99,7 +99,7 @@ def isMemoryEnough(params,traj):
 	size = trajStats.st_size
 
 	memory = psutil.virtual_memory()
-	if size*int(params.numCores/params.namd2numcores) > memory.available*1.1:
+	if size*int(params.numCores/params.namd2NumCores) > memory.available*1.1:
 		message = 'System does not have enough memory to handle the computation. '
 		'Please either decrease the number of processors (numCores) or increase '
 		'the trajectory stride parameter. Aborting now.'
