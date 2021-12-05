@@ -587,6 +587,10 @@ def calcEnergiesNAMD(params):
 
     # Split pairs list into chunks adjusting number of pairs per core.
     numPairsFiltered = len(arrPairsFiltered)
+    if numPairsFiltered < params.numCores:
+        params.numCores = numPairsFiltered
+        params.logger.info('Reducing number of cores to %s due to too few number of pairs.' % str(numPairsFiltered))
+
     numPairsPerCore = math.floor(numPairsFiltered/params.numCores)
 
     if numPairsPerCore>= 5:
