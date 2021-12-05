@@ -247,6 +247,7 @@ def prepareFilesGMX(params):
     return params
 
 def calcEnergiesSingleCoreNAMD(args):
+
     # Input arguments
     pairsFilteredSingleCore = args[0]
     params = args[1]
@@ -260,6 +261,9 @@ def calcEnergiesSingleCoreNAMD(args):
     environment = 'vacuum'
     soluteDielectric = params.dielectric
     solventDielectric = 80
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     outputFolder = os.path.abspath(params.outFolder)
     namd2exe = params.exe
@@ -398,6 +402,9 @@ def calcEnergiesSingleCoreNAMD(args):
             for item in glob.glob(os.path.join(params.outFolder,temp_fns)):
                 os.remove(item)
 
+        free_memory = getFreeMemory()
+        params.logger.info('Free memory: ' + free_memory)
+
         return None
 
             #subprocess.call('rm %s' % namdConf,shell=True)
@@ -420,6 +427,9 @@ def calcEnergiesSingleCoreNAMD(args):
 
     # Perform the calculations in chunks
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     for pairsFilteredChunk in pairsFilteredChunksSingleCore:
         try:
             errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
@@ -446,6 +456,9 @@ def calcEnergiesSingleCoreNAMD(args):
         # 	print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
         ### DEBUGGING END ---------------------------------------------------------------------------
         #################
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     logger.info('Completed a pairwise energy calculation thread.')
     # Necessary to proceed in parent method?
@@ -490,6 +503,9 @@ def parseEnergiesNAMD(params):
 
 def calcEnergiesNAMD(params):
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     # Define a worker initializer for graceful exit upon ctrl+c
     parent_id = os.getpid()
     def worker_init():
@@ -584,6 +600,9 @@ def calcEnergiesNAMD(params):
     progbar = pyprind.ProgBar(numChunks)
     percent = 0
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     #for chunk in [params.pairsFilteredChunks[0]]:
     for chunk in params.pairsFilteredChunks:
         params.logger.info('A chunk of pairs is being processed... Size of chunk: %i pairs.' % len(chunk))
@@ -594,6 +613,9 @@ def calcEnergiesNAMD(params):
 
         # Reset numCores to the calculated value above (it is reset before params.pkl saving -below- to allow resuming later on).
         params.numCores = newNumCores
+
+        free_memory = getFreeMemory()
+        params.logger.info('Free memory: ' + free_memory)
 
         # Start a concurrent.futures pool.
         with futures.ProcessPoolExecutor(params.numCores) as pool:
@@ -633,6 +655,9 @@ def calcEnergiesNAMD(params):
         params.logger.info('Updating the params.pkl... Done.')
 
         cleanUp(params)
+
+        free_memory = getFreeMemory()
+        params.logger.info('Free memory: ' + free_memory)
 
         params.logger.info('A chunk of pairs processed.')
         percent = percent + 100/float(numChunks)
@@ -809,14 +834,21 @@ def filterInitialPairs(params):
     params.logger.info('Performing initial filtering now... This may take a while...')
 
     # Start a concurrent futures pool, and perform initial filtering.
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
     with futures.ProcessPoolExecutor(params.numCores) as pool:
         params.initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i],params.initPairFilterCutoff] for i in range(0,params.numCores)])
         params.initialFilter = list(params.initialFilter)
         if len(params.initialFilter) > 1:
             params.initialFilter = np.vstack(params.initialFilter)
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+
     params.initialFilter = list(params.initialFilter)
     params.initialFilter = [pair for pair in params.initialFilter if pair is not None]
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
     params.logger.info('Initial filtering... Done.')
     params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
         len(params.initialFilter))
@@ -838,6 +870,9 @@ def filterPairsSingleCore(args):
     sourceResids = args[2][2]
     targetResids = args[2][3]
     initialFilter = args[3]
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     with suppress_stdout():
         traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
@@ -895,12 +930,21 @@ def filterPairsSingleCore(args):
         if calculatedPercentage > 100: calculatedPercentage = 100
         #params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+
     del traj
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     return contactMat
 
 # A method for filtering of pairs.
 def filterPairs(params):
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     params.logger.info('Starting the filtering step...')
 
@@ -924,8 +968,14 @@ def filterPairs(params):
         else:
         	continue
 
+        free_memory = getFreeMemory()
+        params.logger.info('Free memory: ' + free_memory)
+
         writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
         del traj_i
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     params.logger.info('Chunkifying trajectory... Done.')
 
@@ -940,6 +990,9 @@ def filterPairs(params):
     progbar = pyprind.ProgBar(len(initialFilterChunks))
     contactMaps = list()
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     for i in range(0,len(initialFilterChunks)):
         chunk = initialFilterChunks[i]
         params.logger.info('Filtering a pair chunk...(%i out of %i)' % (i+1,len(initialFilterChunks)))
@@ -979,6 +1032,9 @@ def filterPairs(params):
     pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
     pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+
     ###################################################
     ### BELOW BLOCK SHOULD BE ACCELERATED (A LOT)! ####
     params.pairsFiltered = list()
@@ -998,6 +1054,9 @@ def filterPairs(params):
 
         progbar.update()
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     params.logger.info('Collecting filtered pairs now... Done.')
     params.logger.info('Sorting filtered pairs now...')
     params.pairsFiltered = sorted(params.pairsFiltered)
@@ -1029,6 +1088,9 @@ def filterPairs(params):
 
     with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
         pickle.dump(params,f)
+
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
 
     return params
 
@@ -1609,6 +1671,9 @@ def getResIntEn(args):
     with open(os.path.join(os.path.abspath(params.outFolder),'params.pkl'),'wb') as f:
         pickle.dump(params,f)
 
+    free_memory = getFreeMemory()
+    params.logger.info('Free memory: ' + free_memory)
+    
     params.logger.info('FINAL: Computation sucessfully completed. Thank you for using gRINN.')
     return
 

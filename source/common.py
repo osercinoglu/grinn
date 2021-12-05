@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys, os, psutil
+import re, os, pexpect, panedr, pandas, time, sys, os, psutil, subprocess
 import numpy as np
 from prody import *
 import logging
@@ -106,6 +106,12 @@ def isMemoryEnough(params,traj):
 		return False, message
 	else:
 		return True, "Success"
+
+def getFreeMemory():
+	result = subprocess.check_output(['bash','-c', 'free -m'])
+	free_memory = result.split(b'\n')[1].split()[3]
+	free_memory = free_memory.decode('utf-8')
+	return free_memory
 
 # A method to get a string containing chain or seg ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index
