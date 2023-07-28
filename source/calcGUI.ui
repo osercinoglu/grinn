@@ -725,7 +725,7 @@
      <string/>
     </property>
     <property name="pixmap">
-     <pixmap>clover.ico</pixmap>
+     <pixmap>resources/clover.ico</pixmap>
     </property>
     <property name="scaledContents">
      <bool>true</bool>

@@ -1,7 +1,4 @@
-<<<<<<< HEAD
-=======
 #!/usr/bin/env /home/onur/anaconda3/bin/python
->>>>>>> origin/mergecalc
 import matplotlib
 
 matplotlib.use("Qt5Agg")
@@ -22,14 +19,11 @@ import pandas
 import numpy as np
 import seaborn
 import os
-<<<<<<< HEAD
-=======
 import pickle
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5 import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
->>>>>>> origin/mergecalc
 from common import getResindex
 from common import getChainResnameResnum
 import common
@@ -67,21 +61,18 @@ class viewResultsParams(object):
 
 
 class MyMplCanvas(FigureCanvas):
-<<<<<<< HEAD
 	def __init__(self, parent=None, width=6, height=4, dpi=100,toolbar=False):
 		fig = matplotlib.figure.Figure(figsize=(width, height), dpi=dpi)
 		self.fig = fig
 		self.axes = fig.add_subplot(111)
 		self.axes.clear()
 		# We want the axes cleared every time plot() is called
-=======
     def __init__(self, parent=None, width=6, height=4, dpi=100, toolbar=False):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.fig = fig
         self.axes = fig.add_subplot(111)
         self.axes.clear()
         # We want the axes cleared every time plot() is called
->>>>>>> origin/mergecalc
 
         # self.compute_initial_figure()
 
@@ -110,7 +101,6 @@ class MyStaticMplCanvas(MyMplCanvas):
         s = np.sin(2 * np.pi * t)
         self.axes.plot(t, s)
 
-<<<<<<< HEAD
     def update_figure(self,mainWindow,type='time-series'):
 
 		# Update the figure with new parameters
@@ -988,7 +978,6 @@ class DesignInteractResults(QtWidgets.QMainWindow,resultsGUI_design.Ui_MainWindo
 
 			# Save to a CSV file.
 			df.to_csv(fileName)
-=======
     def update_figure(self, mainWindow, type='time-series', cmap=None, norm=None):
 
         # Update the figure with new parameters
@@ -2054,7 +2043,6 @@ class DesignInteractResults(QtWidgets.QMainWindow, resultsGUI_design.Ui_MainWind
             # Save to a CSV file.
             df.to_csv(fileName)
 
->>>>>>> origin/mergecalc
 
 def main():
     sys_argv = sys.argv

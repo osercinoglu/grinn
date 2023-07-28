@@ -1,6 +1,5 @@
 #!/usr/bin/env /home/onur/anaconda3/bin/python
 # -*- coding: utf-8 -*-
-<<<<<<< HEAD
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox
@@ -135,7 +134,6 @@ def main():
 	form.label.setPixmap(pixmap)
 	form.show()
 	app.exec_()
-=======
 from prody import *
 from prody import LOGGER
 import logging
@@ -153,7 +151,6 @@ from scipy.sparse import lil_matrix
 from common import *
 import corr
 from memory_profiler import profile
->>>>>>> origin/mergecalc
 
 def convert_arg_line_to_args(arg_line):
     # To override the same method of the ArgumentParser (to read options from a file)
