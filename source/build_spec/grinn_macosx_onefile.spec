@@ -8,30 +8,36 @@ block_cipher = None
 # Icons and other stuff that I discover to be necessary by trial-and-error
 datas = [('../resources/clover.ico','resources'),
 ('../VERSION','.'),
-('../samples','samples'),
-('/Users/onur/anaconda2/lib/python2.7/'
+('/Users/onursercinoglu/Dropbox/gRINN_dist/samples','samples'),
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7/'
   'site-packages/mdtraj/formats/pdb/data',
   'mdtraj/formats/pdb/data'),
 ('../data','data'),
-('/Users/onur/anaconda2/lib/python2.7/'
-  'site-packages/panedr','panedr')]
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7/'
+  'site-packages/panedr','panedr'),
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7/'
+  'site-packages/prody','prody')]
 
-#python_bins = glob.glob('/Users/onur/anaconda2/lib/*.dylib')
+#python_bins = glob.glob('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/*.dylib')
 #binaries = [(binary,binary.split('/')[-1]) for binary in python_bins]
 
-binaries = [('/Users/onur/anaconda2/lib/libpython2.7.dylib','.'),
-('/Users/onur/anaconda2/lib/libGLEW.1.13.dylib','.'),
-('/Users/onur/anaconda2/lib/libGLEW.1.13.0.dylib','.')]
+binaries = [('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libpython2.7.dylib','.'),
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.1.13.dylib','.'),
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.1.13.0.dylib','.'),
+('/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/libGLEW.dylib','.'),
+('/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib','.')]
 
 a = Analysis(['../grinn.py'],
-             pathex=['/Users/onur/repos/gRINN/source',
-                      '/Users/onur/anaconda2/lib',
-                      '/Users/onur/anaconda2/lib/python2.7',
-                      '/Users/onur/anaconda2/lib/python2.7/site-packages'],
+             pathex=['/Users/onursercinoglu/PycharmProjects/grinn/source',
+                      '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib'
+                      '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7',
+                      '/Users/onursercinoglu/anaconda3/envs/grinn_py27/lib/python2.7/site-packages'],
              binaries=binaries,
              datas=datas,
              hiddenimports=['pymol.povray','pymol.opengl','pymol.parser','pymol','pymol.contrib',
-             'pymol.bonds','pymol2','pandas._libs.tslibs.timedeltas','scipy._lib.messagestream'],
+             'pymol.bonds','pymol2','pandas._libs.tslibs.timedeltas','pandas._libs.skiplist','scipy._lib.messagestream',
+             'packaging','packaging.version','packaging.utils','packaging.specifiers','packaging.requirements','six.moves.html_parser',
+             'OpenGL','OpenGL.platform','OpenGL.GLU','OpenGL.platform.baseplatform','OpenGL.platform.ctypesloader'],
              hookspath=[],
              runtime_hooks=[],
              excludes=[],
@@ -45,6 +51,7 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
+          exclude_binaries=False,
           name='grinn',
           debug=True,
           strip=False,

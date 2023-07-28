@@ -67,7 +67,7 @@
      <bool>true</bool>
     </property>
     <property name="text">
-     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;gRINN&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:24pt;&quot;&gt;get Residue Interaction eNergies and Networks&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+     <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;gRINN v1.2.0&lt;/p&gt;&lt;p&gt;&lt;span style=&quot; font-size:24pt;&quot;&gt;get Residue Interaction eNergies and Networks&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
     </property>
     <property name="textFormat">
      <enum>Qt::RichText</enum>
@@ -188,7 +188,7 @@
      <x>0</x>
      <y>0</y>
      <width>659</width>
-     <height>22</height>
+     <height>20</height>
     </rect>
    </property>
   </widget>

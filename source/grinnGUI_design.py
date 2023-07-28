@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'grinnGUI.ui'
 #
-# Created by: PyQt5 UI code generator 5.6
+# Created by: PyQt5 UI code generator 5.9.2
 #
 # WARNING! All changes made in this file will be lost!
 
@@ -69,7 +69,7 @@ class Ui_gRINN(object):
         self.label_6.setObjectName("label_6")
         gRINN.setCentralWidget(self.centralWidget)
         self.menuBar = QtWidgets.QMenuBar(gRINN)
-        self.menuBar.setGeometry(QtCore.QRect(0, 0, 659, 22))
+        self.menuBar.setGeometry(QtCore.QRect(0, 0, 659, 20))
         self.menuBar.setObjectName("menuBar")
         gRINN.setMenuBar(self.menuBar)
         self.mainToolBar = QtWidgets.QToolBar(gRINN)
@@ -85,13 +85,13 @@ class Ui_gRINN(object):
     def retranslateUi(self, gRINN):
         _translate = QtCore.QCoreApplication.translate
         gRINN.setWindowTitle(_translate("gRINN", "gRINN"))
-        self.label_2.setText(_translate("gRINN", "<html><head/><body><p>gRINN</p><p><span style=\" font-size:24pt;\">get Residue Interaction eNergies and Networks</span></p></body></html>"))
+        self.label_2.setText(_translate("gRINN", "<html><head/><body><p>gRINN v1.2.0</p><p><span style=\" font-size:24pt;\">get Residue Interaction eNergies and Networks</span></p></body></html>"))
         self.pushButton.setText(_translate("gRINN", "New\n"
 " Calculation"))
         self.pushButton_2.setText(_translate("gRINN", "View\n"
 " Results"))
-        self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/tutorial.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
-        self.label_4.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/credits.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
-        self.label_5.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/contact.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
-        self.label_6.setText(_translate("gRINN", "<html><head/><body><p><a href=\"http://grinn.readthedocs.io/en/latest/faq.html\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
+        self.label_3.setText(_translate("gRINN", "<html><head/><body><p><a href=\"https://www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Tutorial</span></a></p></body></html>"))
+        self.label_4.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Credits</span></a></p></body></html>"))
+        self.label_5.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">Contact</span></a></p></body></html>"))
+        self.label_6.setText(_translate("gRINN", "<html><head/><body><p><a href=\"www.onursercinoglu.com\"><span style=\" font-size:20pt; text-decoration: underline; color:#0000ff;\">FAQ</span></a></p></body></html>"))
 

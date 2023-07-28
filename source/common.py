@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-import re, os, pexpect, panedr, pandas, time, sys, os, psutil
+import re, os, pexpect, panedr, pandas, time, sys, os, psutil, subprocess
 import numpy as np
 from prody import *
 import logging
+from contextlib import contextmanager
 
 class parameters(object):
 	def __init__(self):
@@ -15,6 +16,7 @@ class parameters(object):
 		self.top = None
 		self.traj = None
 		self.numCores = None
+		self.namd2NumCores = None
 		self.dielectric = None
 		self.sel1 = None
 		self.sel2 = None
@@ -32,8 +34,24 @@ class parameters(object):
 		self.logFile = None
 		self.logger = None
 		self.pairsFiltered = None
+		self.pairsProcessed = np.array([])
+		self.parsedEnergies = dict()
 		self.pool = None
 		self.calcState = 'Idle'
+		self.initialFilterDone = False
+		self.filterDone = False
+		self.calcDone = False
+
+
+# A method to calculate and print the size of current workspace variables.
+# Credit (jan-glx): https://stackoverflow.com/questions/24455615/python-how-to-display-size-of-all-variables
+def sizeof_fmt(num, suffix='B'):
+    ''' by Fred Cirera,  https://stackoverflow.com/a/1094933/1870254, modified'''
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
 
 # A method to get the path to the resource for pyinstaller onefile executables.
 def resource_path(relative_path):
@@ -81,7 +99,7 @@ def isMemoryEnough(params,traj):
 	size = trajStats.st_size
 
 	memory = psutil.virtual_memory()
-	if size*params.numCores > memory.available*1.1:
+	if size*int(params.numCores/params.namd2NumCores) > memory.available*1.1:
 		message = 'System does not have enough memory to handle the computation. '
 		'Please either decrease the number of processors (numCores) or increase '
 		'the trajectory stride parameter. Aborting now.'
@@ -89,16 +107,29 @@ def isMemoryEnough(params,traj):
 	else:
 		return True, "Success"
 
-# A method to get a string containing chain ID, residue name and residue number
+def getFreeMemory():
+	result = subprocess.check_output(['bash','-c', 'free -m'])
+	free_memory = result.split(b'\n')[1].split()[3]
+	free_memory = free_memory.decode('utf-8')
+	return free_memory
+
+# A method to get a string containing chain or seg ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index
 def getChainResnameResnum(pdb,resIndex):
 	# Get a string for chain+resid+resnum when supplied the residue index.
 	selection = pdb.select('resindex %i' % resIndex)
 	chain = selection.getChids()[0]
+	chain = chain.strip(' ')
+	segid = selection.getSegnames()[0]
+	segid = segid.strip(' ')
+
 	resName = selection.getResnames()[0]
 	resNum = selection.getResnums()[0]
-	string = chain+resName+str(resNum)
-	return string
+	if chain:
+		string = ''.join([chain,str(resName),str(resNum)])
+	elif segid:
+		string = ''.join([segid,str(resName),str(resNum)])
+	return [chain,segid,resName,resNum,string]
 
 # A reverse of the above method
 def getResindex(pdb,chainResnameResnum):
@@ -109,6 +140,8 @@ def getResindex(pdb,chainResnameResnum):
 		resName = matches.groups()[1]
 		resNum = int(matches.groups()[2])
 		selection = pdb.select('chain %s and resnum %i' % (chain,resNum))
+		if not selection: # It may be that we have the segname instead of the chain.
+			selection = pdb.select('segment %s and resnum %i' % (chain,resNum))
 		resIndex = selection.getResindices()[0]
 		return resIndex
 
@@ -136,9 +169,6 @@ def parseEnergiesSingleCoreNAMD(args):
 		res2 = int(matches.groups()[1])
 
 		system = parsePDB(pdb)
-		# Get chain-resname-resnum strings
-		res1_string = getChainResnameResnum(system,res1)
-		res2_string = getChainResnameResnum(system,res2)
 
 		# Read in the first line (header) output file and count number of total lines.
 		f = open(filePath,'r')
@@ -161,9 +191,9 @@ def parseEnergiesSingleCoreNAMD(args):
 			energyOutput[headers[i]] = [line[headerColumns[i]] for line in lines]
 
 		# Puts this energyOutput dict into energies dict with keys as residue ids
-		energiesDict[res1_string+'-'+res2_string] = energyOutput
-		# Also store it as res2,res2 (it is the same thing after all)
-		energiesDict[res2_string+'-'+res1_string] = energyOutput
+		energiesDict[str(res1)+'-'+str(res2)] = energyOutput
+		# Also store it as res2,res1 (it is the same thing after all)
+		energiesDict[str(res2)+'-'+str(res1)] = energyOutput
 
 	return energiesDict
 
@@ -171,7 +201,7 @@ def parseEnergiesSingleCoreNAMD(args):
 def parseEnergiesGMX(gmxExe,pdb,outputFolder,pairsFilteredChunks,edrFiles,logger):
 
 	system = parsePDB(pdb)
-	system_dry = system.select('protein or nucleic')
+	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
 	system_dry = system_dry.select('not resname SOL')
 	#gmxExe = '/usr/local/gromacs/bin/gmx' # TEMPORARY!
 	# Parse the resulting interact.edr file from the output directory
@@ -329,7 +359,7 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFilt
 	# Modify atom serial numbers to account for possible PDB files with more than 99999 atoms
 	system.setSerials(np.arange(1,system.numAtoms()+1))
 	
-	system_dry = system.select('protein or nucleic')
+	system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
 	system_dry = system_dry.select('not resname SOL')
 
 	if not pairsFiltered and sourceSel and targetSel: # For use outside of getResIntEn
@@ -475,3 +505,15 @@ def makeNDXMDPforGMX(gmxExe='gmx',pdb=None,tpr=None,soluteDielectric=1,pairsFilt
 		i += 1
 
 	return mdpFiles, pairsFilteredChunks
+
+# A method for supressing terminal output temporarily.
+# Used to silence several external packages that really like to print to the terminal.
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:  
+            yield
+        finally:
+            sys.stdout = old_stdout

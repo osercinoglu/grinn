@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env /home/onur/anaconda3/bin/python
 from PyQt5 import QtGui
 from PyQt5 import QtCore
 from PyQt5 import QtWidgets
@@ -41,6 +41,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.pushButton_BrowseParameterFile.clicked.connect(self.updateParameterFilePath)
 		self.pushButton_Stop.clicked.connect(self.stopCalculation)
 		self.pushButton_viewResults.clicked.connect(self.viewResultsStart)
+		self.checkBox_switching.clicked.connect(self.updateSwitching)
 		self.checkBox_interactionCorrelation.clicked.connect(self.updateInteractionCorrelation)
 
 		# Sample data loading (temporary for NAR review)
@@ -69,11 +70,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 
 		self.lineEdit_namd2.setText('gmx')
 		self.lineEdit_pdb.setText(common.resource_path(
-			os.path.join('samples','1eey_md_0_50.tpr')))
+			os.path.join('samples','1eey_md_0_50_dry.tpr')))
 		self.lineEdit_psf.setText(common.resource_path(
-			os.path.join('samples','1eey_md_0_50_topol.top')))
+			os.path.join('samples','1eey_md_0_50_topol_dry.top')))
 		self.lineEdit_dcd.setText(common.resource_path(
-			os.path.join('samples','1eey_md_25_50ns_str25_nojump.xtc')))
+			os.path.join('samples','1eey_md_25_50ns_str25_nojump_dry.xtc')))
 
 		self.checkBox_interactionCorrelation.setCheckState(2)
 		self.doubleSpinBox_AverageIntEnCutoff.setEnabled(True)
@@ -152,6 +153,13 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		name,__ = QtWidgets.QFileDialog.getOpenFileNames(self,'Select',os.getcwd())
 		paramFiles = ' '.join(name)
 		self.lineEdit_parameterFile.setText(paramFiles)
+
+	def updateSwitching(self):
+		state = self.checkBox_switching.checkState()
+		if state == 2:
+			self.doubleSpinBox_switchingDist.setEnabled(True)
+		elif state == 0:
+			self.doubleSpinBox_switchingDist.setEnabled(False)
 
 	def updateInteractionCorrelation(self):
 		state = self.checkBox_interactionCorrelation.checkState()
@@ -307,6 +315,7 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		args.traj = [calcParams.traj]
 		args.numcores = [calcParams.numCores]
 		args.dielectric = [calcParams.dielectric]
+		args.switchdist = [calcParams.switchdist]
 		args.sel1 = [calcParams.sel1]
 		args.sel2 = [calcParams.sel2]
 		args.pairfiltercutoff = [calcParams.pairFilterCutoff]
@@ -334,6 +343,11 @@ class DesignInteractCalculate(QtWidgets.QMainWindow,calcGUI_design.Ui_MainWindow
 		self.calcParams.sel1 = str(self.lineEdit_residueGroup1.text())
 		self.calcParams.sel2 = str(self.lineEdit_residueGroup2.text())
 		self.calcParams.dielectric = float(self.doubleSpinBox_soluteDielectric.value())
+		state = self.checkBox_switching.checkState()
+		if state == 2:
+			self.calcParams.switchdist = float(self.doubleSpinBox_switchingDist.value())
+		elif state == 0:
+			self.calcParams.switchdist = False
 		self.calcParams.pairFilterPercentage = float(self.doubleSpinBox_filteringPercent.value())
 		self.calcParams.pairFilterCutoff = float(self.doubleSpinBox_filteringCutoff.value())
 		self.calcParams.cutoff = float(self.doubleSpinBox_nonbondedCutoff.value())

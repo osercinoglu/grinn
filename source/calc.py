@@ -1,64 +1,95 @@
-#!/usr/bin/env python
+#!/usr/bin/env /home/onur/anaconda3/bin/python
 from prody import *
+from prody import LOGGER
+import logging
+# Directly modifying logging level for ProDy to prevent printing of noisy debug/warning
+# level messages on the terminal.
+LOGGER._logger.setLevel(logging.FATAL)
 import numpy as np
-import mdtraj, multiprocessing, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
-re, pickle, types, logging, datetime, psutil, signal, time, pandas, glob, platform, \
+import mdtraj, pexpect, sys, itertools, argparse, os, pyprind, subprocess, \
+re, pickle, types, datetime, psutil, signal, time, pandas, glob, platform, \
 traceback, click, copy
 from shutil import copyfile, rmtree
+from itertools import islice
+from concurrent import futures
+from scipy.sparse import lil_matrix
 from common import *
 import corr
 
+<<<<<<< HEAD
 # Method for calculating mean interaction energies.
 def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
+=======
+def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
+>>>>>>> origin/mergecalc
 
-	# Load interaction energy pickle file
-	intEnFile = open(intEnPickle,'rb')
-	intEn = pickle.load(intEnFile)
+	# Load interaction energy pickle files
+	# First, load the first dictionary (there must be at least one).
+	intEn = pickle.load(open(intEnPicklePaths[0],'rb'))
 	numFrames = len(intEn[list(intEn.keys())[0]]['Total'])
 
+	# Then update its content with the rest.
+	for fpath in intEnPicklePaths[1:]:
+		intEnFile = open(fpath,'rb')
+		intEn2update = pickle.load(intEnFile)
+		intEn.update(intEn2update)
+		
 	if not frameRange:
 		frameRange = [0,numFrames]
 
 	# Get number of residues
-	system = parsePDB(pdb)
-	system_dry = system.select('protein or nucleic')
-	system_dry = system_dry.select('not resname SOL')
-	numResidues = len(np.unique(system_dry.getResindices()))
+	with suppress_stdout():
+		system = parsePDB(pdb)
+
+	system_source = system.select(sel1)
+	system_target = system.select(sel2)
+
+	resindices_source = np.unique(system_source.getResindices())
+	numSource = len(resindices_source)
+
+	resindices_target = np.unique(system_target.getResindices())
+	numTarget = len(resindices_target)
 
 	# Start interaction energy variables
 	intEnDict = dict()
-	intEnDict['Elec'] = np.zeros((numResidues,numResidues))
-	intEnDict['Frame'] = np.zeros((numResidues,numResidues))
-	intEnDict['Total'] = np.zeros((numResidues,numResidues))
-	intEnDict['VdW'] = np.zeros((numResidues,numResidues))
 
-	progbar = pyprind.ProgBar(numResidues*numResidues)
+	# Each dict key here will hold a matrix for different IE types.
+	# It's a good idea to save residue indices in first row and column here!
+	# So that in results gui we can detect interacting pairs easily.
+	# For this, matrix sizes are adjusted (+1) below.
+	template_mat = np.zeros((numSource+1,numTarget+1))
+	template_mat[:,0] = np.hstack([0,resindices_source])
+	template_mat[0,:] = np.hstack([0,resindices_target])
+	intEnDict['Elec'] = template_mat
+	intEnDict['Frame'] = template_mat
+	intEnDict['Total'] = template_mat
+	intEnDict['VdW'] = template_mat
+
+	progbar = pyprind.ProgBar(numSource*numTarget)
 
 	filteredButNoInt = list() # Accumulate interactions that were included in calculation but resulted in zero interaction energy.
-	for i in range(numResidues):
-		i_chainResnameResnum = getChainResnameResnum(system_dry,i)
-		for j in range(numResidues):
-			j_chainResnameResnum = getChainResnameResnum(system_dry,j)
-			keyString = i_chainResnameResnum+'-'+j_chainResnameResnum
+	for i in range(numSource):
+		for j in range(numTarget):
+			keyString = str(resindices_source[i])+'-'+str(resindices_target[j])
 			if keyString in intEn:
-				intEnDict['Elec'][i,j] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
-				intEnDict['Elec'][j,i] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				intEnDict['Elec'][i+1,j+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
+				#intEnDict['Elec'][j+1,i+1] = np.mean(intEn[keyString]['Elec'][frameRange[0]:frameRange[1]])
 				totalMeanEn = np.mean(intEn[keyString]['Total'][frameRange[0]:frameRange[1]])
-				intEnDict['Total'][i,j] = totalMeanEn
-				intEnDict['Total'][j,i] = totalMeanEn
-				intEnDict['VdW'][i,j] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
-				intEnDict['VdW'][j,i] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				intEnDict['Total'][i+1,j+1] = totalMeanEn
+				#intEnDict['Total'][j+1,i+1] = totalMeanEn
+				intEnDict['VdW'][i+1,j+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
+				#intEnDict['VdW'][j+1,i+1] = np.mean(intEn[keyString]['VdW'][frameRange[0]:frameRange[1]])
 
 				if not totalMeanEn:
 					filteredButNoInt.append(keyString)
 
 			else:
-				intEnDict['Elec'][i,j] = int(0)
-				intEnDict['Elec'][j,i] = int(0)
-				intEnDict['Total'][i,j] = int(0)
-				intEnDict['Total'][j,i] = int(0)
-				intEnDict['VdW'][i,j] = int(0)
-				intEnDict['VdW'][j,i] = int(0)
+				intEnDict['Elec'][i+1,j+1] = int(0)
+				#intEnDict['Elec'][j+1,i+1] = int(0)
+				intEnDict['Total'][i+1,j+1] = int(0)
+				#intEnDict['Total'][j+1,i+1] = int(0)
+				intEnDict['VdW'][i+1,j+1] = int(0)
+				#intEnDict['VdW'][j+1,i+1] = int(0)
 
 			progbar.update()
 
@@ -69,11 +100,15 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 
 	# Save in column format as well (only Totals for now)
 	f = open('%s_intEnMeanTotal' % prefix+'List.dat','w')
-	for i in range(0,len(intEnDict['Total'])):
-		for j in range(0,len(intEnDict['Total'][i])):
+
+	# Below we start the ranges from 1 because the first row and column were spared for residue indices.
+	for i in range(1,len(intEnDict['Total'])):
+		for j in range(1,len(intEnDict['Total'][i])):
 			value = intEnDict['Total'][i,j]
 			if value: # i.e. if it's not equal to zero (included in filtering step or included but was zero)
-				f.write('%s\t%s\t%s\n' % (getChainResnameResnum(system_dry,i),getChainResnameResnum(system_dry,j),str(value)))
+				source_index = intEnDict['Total'][i][0]
+				target_index = intEnDict['Total'][0][j]
+				f.write('%s\t%s\t%s\n' % (str(source_index),str(target_index),str(value)))
 
 	f.close()
 	
@@ -82,14 +117,16 @@ def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
 # Method for checking whether structure is dry (NAMD-type input)
 def isStructureDry(pdb,psf):
 	# Load the PDB and PSF files
-	pdb = parsePDB(pdb)
-	pdbProtein = pdb.select('protein')
-	pdbNonProtein = pdb.select('not protein')
+	with suppress_stdout():
+		pdb = parsePDB(pdb)
+	pdbDry = pdb.select('protein or nucleic or hetero or lipid and not water and not resname SOL and not ion')
+	pdbNonDry = pdb.select('water or resname SOL or ion')
 
-	psf = parsePSF(psf)
-	psfNonProtein = psf.select('not protein')
+	with suppress_stdout():
+		psf = parsePSF(psf)
+	psfNonDry = psf.select('water or resname SOL or ion')
 
-	if not pdbNonProtein == None and not psfNonProtein == None:
+	if not pdbNonDry == None and not psfNonDry == None:
 		return False
 	else:
 		return True
@@ -98,37 +135,41 @@ def isStructureDry(pdb,psf):
 def prepareFilesNAMD(params):
 	# Detect whether there are non-protein components in the system.
 	params.logger.info('Checking whether the structure has non-protein atoms...')
-	dryStructure = isStructureDry(params.pdb,params.top)
 
-	if not dryStructure:
-		params.logger.info('Non-protein atoms detected in structure...')
-		params.logger.info('There are non-protein elements in your input files. Please '
-			'consider generating PSF/PDB/DCD files containing only the protein in your '
-			'structure.') # Maybe add here a link where the user can check his/her options.
+	#### TEMP MODIFICATION: CANCELING DRY STRUCTURE CHECK NOW.
+	# dryStructure = isStructureDry(params.pdb,params.top)
 
-		if sys.stdin.isatty():
-			if not click.confirm('Do you want to continue?', default=True):
-				errorSuicide(params,'User requested abort. Aborting now.',removeOutput=False)
+	# if not dryStructure:
+	# 	params.logger.info('Non-protein atoms detected in structure...')
+	# 	params.logger.info('There are non-protein elements in your input files. Please '
+	# 		'consider generating PSF/PDB/DCD files containing only the protein in your '
+	# 		'structure.') # Maybe add here a link where the user can check his/her options.
+	#### TEMP MODIFICATION
+
+	if sys.stdin.isatty():
+		if not click.confirm('Do you want to continue?', default=True):
+			errorSuicide(params,'User requested abort. Aborting now.',removeOutput=False)
 
 	# Proceeding.
 	# Just copy psf and pdb files and the trajectory with stride to output folder.
-	copyfile(params.pdb,os.path.join(params.outFolder,'system_dry.pdb'))
-	copyfile(params.top,os.path.join(params.outFolder,'system_dry.psf'))
+	copyfile(params.pdb,os.path.join(params.outFolder,'system.pdb'))
+	copyfile(params.top,os.path.join(params.outFolder,'system.psf'))
 	# Load the DCD file, get rid of non-protein sections.
-	traj = Trajectory(params.traj)
-	pdb = parsePDB(params.pdb)
-	traj.link(pdb)
-	traj.setAtoms(pdb)
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),
-		traj,step=params.stride)
-	# Load it back, superpose, save again.
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
-	traj.setAtoms(pdb)
-	traj.superpose()
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+	with suppress_stdout():
+		traj = Trajectory(params.traj)
+		pdb = parsePDB(params.pdb)
+		traj.link(pdb)
+		traj.setAtoms(pdb)
+		writeDCD(os.path.join(params.outFolder,'traj.dcd'),
+			traj,step=params.stride)
+		# Load it back, superpose, save again.
+		traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+		traj.setAtoms(pdb)
+		traj.superpose()
+		writeDCD(os.path.join(params.outFolder,'traj.dcd'),traj)
 
 	# Check whether system has enough memory to handle the computation...
-	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj_dry.dcd'))
+	proceed, message = isMemoryEnough(params,os.path.join(params.outFolder,'traj.dcd'))
 	if not proceed:
 		errorSuicide(params,message,removeOutput=False)
 
@@ -152,26 +193,27 @@ def prepareFilesGMX(params):
 
 	params.pdb = os.path.join(params.outFolder,'system.pdb')
 
-	params.logger.info('Converting TPR to PDB... Done.')
+	params.logger.info('Converting TPR to PDB/GRO... Done.')
 	pdb = os.path.join(params.outFolder,'system.pdb')
 	copyfile(params.tpr,os.path.join(params.outFolder,'system.tpr'))
 	tpr = os.path.join(params.outFolder,'system.tpr')
 
 	# Make dry PDB out of the resulting PDB.
-	pdb = parsePDB(params.pdb)
-	pdbProtein = pdb.select('protein')
-	writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbProtein)
+	with suppress_stdout():
+		pdb = parsePDB(params.pdb)
+		pdbDry = pdb.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+		writePDB(os.path.join(params.outFolder,'system_dry.pdb'),pdbDry)
 
 	# Convert XTC/TRR trajectories to DCD for ProDy compatible analysis...
 	params.logger.info('Converting XTC/TRR to DCD...')
 	try:
 		if params.traj.endswith('.xtc'):
 			traj = mdtraj.load_xtc(params.traj,
-				top=os.path.join(params.outFolder,'system.pdb'),
+				top=os.path.join(params.outFolder,'system.gro'),
 				stride=params.stride)
 		elif params.traj.endswith('.trr'):
 			traj = mdtraj.load_trr(params.traj,
-				top=os.path.join(params.outFolder,'system.pdb'),
+				top=os.path.join(params.outFolder,'system.gro'),
 				stride=params.stride)
 
 		traj.save_trr(os.path.join(params.outFolder,'traj.trr'))
@@ -182,21 +224,22 @@ def prepareFilesGMX(params):
 		params.logger.exception('Could not load the trajectory file provided. Please check your trajectory.')
 		return
 
-	traj.save_dcd(os.path.join(params.outFolder,'traj.dcd'))
-	# Load back this DCD and continue with it (for code compatibility with ProDy)
-	traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
-	traj.link(pdb)
-	traj.setAtoms(pdbProtein)
+	with suppress_stdout():
+		traj.save_dcd(os.path.join(params.outFolder,'traj.dcd'))
+		# Load back this DCD and continue with it (for code compatibility with ProDy)
+		traj = Trajectory(os.path.join(str(params.outFolder),'traj.dcd'))
+		traj.link(pdb)
+		traj.setAtoms(pdbDry)
 
-	# Write
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+		# Write
+		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
 
-	# Load it back and superpose, then write back.
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
-	traj.setAtoms(pdbProtein)
-	traj.superpose()
-	writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
-	
+		# Load it back and superpose, then write back.
+		traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+		traj.setAtoms(pdbDry)
+		traj.superpose()
+		writeDCD(os.path.join(params.outFolder,'traj_dry.dcd'),traj)
+		
 	os.remove(os.path.join(params.outFolder,'traj.dcd'))
 	params.logger.info('Converting to XTC/TRR to DCD... Done.')
 
@@ -208,12 +251,13 @@ def calcEnergiesSingleCoreNAMD(args):
 	# Input arguments
 	pairsFilteredSingleCore = args[0]
 	params = args[1]
-	psfFilePath = os.path.join(params.outFolder,'system_dry.psf')
-	pdbFilePath = os.path.join(params.outFolder,'system_dry.pdb')
-	dcdFilePath = os.path.join(params.outFolder,'traj_dry.dcd')
+	psfFilePath = os.path.join(params.outFolder,'system.psf')
+	pdbFilePath = os.path.join(params.outFolder,'system.pdb')
+	dcdFilePath = os.path.join(params.outFolder,'traj.dcd')
 	skip = 1 # We implemented this stride (skip) in the DCD file already.
 	pairFilterCutoff = params.pairFilterCutoff
 	cutoff = params.cutoff
+	switchdist = params.switchdist
 	environment = 'vacuum'
 	soluteDielectric = params.dielectric
 	solventDielectric = 80
@@ -239,21 +283,22 @@ def calcEnergiesSingleCoreNAMD(args):
 
 	# Defining a method to calculate energies in chunks (to show the progress on the screen).
 	def calcEnergiesSingleChunk(pairsFilteredSingleChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-		pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,
-		logger):
+		pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
+		outputFolder,namd2exe,paramFile,logger):
 
 		for pair in pairsFilteredSingleChunk:
 			# Write PDB files for pairInteractionGroup specification
-			system = parsePDB(pdbFilePath)
-			sel1 = system.select(str('resindex %i' % int(pair[0])))
-			sel2 = system.select(str('resindex %i' % int(pair[1])))
-			# Changing the values of B-factor columns so that they can be recognized by
-			# pairInteractionGroup1 parameter in NAMD configuration file.
-			sel1.setBetas([1]*sel1.numAtoms())
-			sel2.setBetas([2]*sel2.numAtoms())
-			pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
-			pairIntPDB = os.path.abspath(pairIntPDB)
-			writePDB(pairIntPDB,system)
+			with suppress_stdout():
+				system = parsePDB(pdbFilePath)
+				sel1 = system.select(str('resindex %i' % int(pair[0])))
+				sel2 = system.select(str('resindex %i' % int(pair[1])))
+				# Changing the values of B-factor columns so that they can be recognized by
+				# pairInteractionGroup1 parameter in NAMD configuration file.
+				sel1.setBetas([1]*sel1.numAtoms())
+				sel2.setBetas([2]*sel2.numAtoms())
+				pairIntPDB = '%s/%i_%i-temp.pdb' % (outputFolder,pair[0],pair[1])
+				pairIntPDB = os.path.abspath(pairIntPDB)
+				writePDB(pairIntPDB,system)
 
 			# SAVING ON THE TWO RESIDUE PAIR TO DO LATER ON(NEEDS TESTING)
 			#traj = Trajectory(dcdFilePath)
@@ -274,12 +319,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			else:
 				f.write('parameters %s\n' % (sys.path[0]+'/par_all27_prot_lipid_na.inp'))
 			f.write('numsteps 1\n')
-			f.write('switching off\n')
 			f.write('exclude scaled1-4\n')
 			f.write('outputname %i_%i-temp\n' % (pair[0],pair[1]))
 			f.write('temperature 0\n')
 			f.write('COMmotion yes\n')
-			f.write('cutoff %d\n' % cutoff)
+			f.write('cutoff %f\n' % cutoff)
 			
 			if environment == 'implicit-solvent':
 				f.write('GBIS on\n')
@@ -292,7 +336,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			else:
 				f.write('#environment is %s\n' % str(environment))
 
-			f.write('switchdist 10.0\n')
+			if switchdist:
+				f.write('switching on\n')
+				f.write('switchdist %f\n' % switchdist)
+			else:
+				f.write('switching off\n')
 			f.write('pairInteraction on\n')
 			f.write('pairInteractionGroup1 1\n')
 			f.write('pairInteractionFile %s\n' % pairIntPDB)
@@ -322,8 +370,8 @@ def calcEnergiesSingleCoreNAMD(args):
 				sys.exit(0)
 
 			if error:
-				#logger.exception('Error while calling NAMD executable:\n'+error).
-				error = error.split('\n')
+				logger.exception('Error while calling NAMD executable:\n'+error)
+				error = error.decode().split('\n')
 				fatalErrorLine = None
 
 				for i in range(0,len(error)):
@@ -339,6 +387,11 @@ def calcEnergiesSingleCoreNAMD(args):
 			logger.info('Energies saved to %i_%i_energies.log' % (pair[0],pair[1]))
 			if not os.path.exists(os.path.join(params.outFolder,'%i_%i_energies.log' % (pair[0],pair[1]))):
 				return "gRINN was supposed to generate %i_%i_energies.log but apparently it failed." % (pair[0],pair[1])
+
+			# Clean up already at this point to avoid disk-space devouring behaviour for very large systems/long trajs.
+			temp_fns = '%s_%s-temp.*' % (pair[0],pair[1])
+			for item in glob.glob(os.path.join(params.outFolder,temp_fns)):
+				os.remove(item)
 
 		return None
 
@@ -368,9 +421,10 @@ def calcEnergiesSingleCoreNAMD(args):
 	for pairsFilteredChunk in pairsFilteredChunksSingleCore:
 		try:
 			errorMessage = calcEnergiesSingleChunk(pairsFilteredChunk,psfFilePath,pdbFilePath,dcdFilePath,skip,
-				pairFilterCutoff,cutoff,environment,soluteDielectric,solventDielectric,outputFolder,namd2exe,paramFile,logger)
+				pairFilterCutoff,cutoff,switchdist,environment,soluteDielectric,solventDielectric,
+				outputFolder,namd2exe,paramFile,logger)
 		except (SystemExit):
-			#logger.exception('Fatal error while calling NAMD executable.
+			#logger.exception('Fatal error while calling NAMD executable.')
 			return 'SystemExit'
 
 		if errorMessage:
@@ -379,14 +433,14 @@ def calcEnergiesSingleCoreNAMD(args):
 		progBar.update()
 		percent = percent + 100/float(numChunks)
 		logger.info('Completed calculation percentage: %s' % percent)
+		#print('Completed calculation percentage: %s' % percent)
 
 	logger.info('Completed a pairwise energy calculation thread.')
+	# Necessary to proceed in parent method?
+	return None
 
 # Main method performing interaction energy calculations on NAMD-type data.
 def calcEnergiesNAMD(params):
-	# Start energy calculation in chunks
-	params.logger.info('Splitting the pairs into chunks...')
-	params.pairsFilteredChunks = np.array_split(np.asarray(params.pairsFiltered),params.numCores)
 
 	# Define a worker initializer for graceful exit upon ctrl+c
 	parent_id = os.getpid()
@@ -444,39 +498,65 @@ def calcEnergiesNAMD(params):
 		#print("suicide: %s" % os.getpid())
 		#psutil.Process(os.getpid()).kill()
 		os._exit(0)
+
 	signal.signal(signal.SIGINT, sigint_handler)
 
 	global pool
-	pool = multiprocessing.Pool(params.numCores)
- 	logger = params.logger
 
-	# Use map_aysnc on the previously created multiprocessing pool to spawn multiple singe core
-	# energy calculation threads.
-	# get(9999999) below is necessary to let the map respond without blocking the spawned threads.
-	# This is a python bug in 2.7
 	params.logger.info('Starting threads for interaction energy calculation...')
-	# Strip logger away from params temporarily to be able to map.
-	params.logger = None
-	results = pool.map_async(calcEnergiesSingleCoreNAMD,
-		zip(params.pairsFilteredChunks,itertools.repeat(params))).get(9999999)
-	params.logger = logger
+
+	# Start energy calculation in chunks
+	params.logger.info('Splitting the pairs into chunks...')
+	arrPairsFiltered = np.asarray(params.pairsFiltered)
+
+	# Split pairs list into chunks adjusting number of pairs per core.
+	numPairsFiltered = len(arrPairsFiltered)
+	numPairsPerCore = int(numPairsFiltered/params.numCores)
+	if numPairsPerCore>= 50:
+		numPairsPerCore = 50
 	
-	# If the pool return at least one 'SystemExit' string
-	# Abort
-	# see the calcEnergiesSingleCoreNAMD method)
+	params.pairsFilteredChunks = np.array_split(arrPairsFiltered,
+		int(len(arrPairsFiltered)/(numPairsPerCore*params.numCores)))
+
+	# Run pool.map for each chunk over a for loop.
+	progbar = pyprind.ProgBar(len(params.pairsFilteredChunks))
+	for chunk in params.pairsFilteredChunks:
+		chunk = np.array_split(chunk,params.numCores)
+		# Strip logger away from params temporarily to be able to map.
+		logger = params.logger
+		params.logger = None
+
+		# Start a concurrent.futures pool.
+		with futures.ProcessPoolExecutor(params.numCores) as pool:
+			try:
+				results = pool.map(calcEnergiesSingleCoreNAMD,
+					zip(chunk,itertools.repeat(params)))
+				results = list(results)
+
+			finally:
+				pool.shutdown()
+
+		params.logger = logger
 	
-	if 'SystemExit' in results:
-		removeOutput = False if sys.stdin.isatty() else False
-		errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
-			'Error could not be identified in detail. Please inspect your input data carefully.\n'
-			'If the error persists, contact us. Aborting now.',
-			removeOutput=removeOutput)
-	elif results[0] is not None:
-		if 'FATAL ERROR: ' in results[0]:
+		# If the pool return at least one 'SystemExit' string
+		# Abort
+		# see the calcEnergiesSingleCoreNAMD method)
+		
+		if 'SystemExit' in results:
 			removeOutput = False if sys.stdin.isatty() else False
-			errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
-			errorSuicide(params,'Fatal error from NAMD: '+
-				errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
+			errorSuicide(params,'Critical error while calling NAMD executable. \n\n'
+				'Error could not be identified in detail. Please inspect your input data carefully.\n'
+				'If the error persists, contact us. Aborting now.',
+				removeOutput=removeOutput)
+		elif results[0] is not None:
+			if 'FATAL ERROR: ' in results[0]:
+				removeOutput = False if sys.stdin.isatty() else False
+				errorMessage = results[0] # Cause with multiple CPUs multiple outputs are possible.
+				errorSuicide(params,'Fatal error from NAMD: '+
+					errorMessage.lstrip('FATAL ERROR:'),removeOutput=removeOutput)
+
+		params.logger.info('A chunk of pairs processed.')
+		progbar.update()
 
 	# Parse the specified outFolder after energy calculation is done.
 	outFolderFileList = os.listdir(params.outFolder)
@@ -489,17 +569,24 @@ def calcEnergiesNAMD(params):
 	energiesFilePathsChunks = np.array_split(list(energiesFilePaths),
 		params.numCores)
 
-	parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
-		zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
-			params.outFolder,'system_dry.pdb')),
-			itertools.repeat(params.logFile))).get(9999999)
+	with futures.ProcessPoolExecutor(params.numCores) as pool:
+
+	# Cancelling the following for map_async, it was intended for python 2.7
+	#parsedEnergiesResults = pool.map_async(parseEnergiesSingleCoreNAMD,
+	#	zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+	#		params.outFolder,'system.pdb')),
+	#		itertools.repeat(params.logFile))).get(9999999)
+	
+		# Instead, the following line.
+		parsedEnergiesResults = pool.map(parseEnergiesSingleCoreNAMD,
+			zip(energiesFilePathsChunks,itertools.repeat(os.path.join(
+				params.outFolder,'system.pdb')),
+				itertools.repeat(params.logFile)))
+		parsedEnergiesResults = list(parsedEnergiesResults)
 
 	parsedEnergies = dict()
 	for parsedEnergiesResult in parsedEnergiesResults:
 		parsedEnergies.update(parsedEnergiesResult)
-
-	pool.close()
-	pool.join()
 
 	params.parsedEnergies = parsedEnergies
 	return params
@@ -551,7 +638,7 @@ def calcEnergiesGMX(params):
 
 		error = proc.communicate()[1]
 		if error:
-			error = error.split('\n') # Splitting into lines to be able to process each line separately.
+			error = error.decode().split('\n') # Splitting into lines to be able to process each line separately.
 			fatalErrorLines = None
 
 			# Collect fatal error and subsequent lines.
@@ -577,36 +664,141 @@ def calcEnergiesGMX(params):
 
 	return edrFiles, pairsFilteredChunks
 
+<<<<<<< HEAD
 # Method for filtering pairs to include in the calculation based on pairwise distances using
 # criteria specified by the user.
+=======
+# A method for initial filtering using a single core.
+def filterInitialPairsSingleCore(args):
+
+	outFolder = args[0]
+	pairs = args[1]
+	initPairFilterCutoff = args[2]
+	with suppress_stdout():
+		system = parsePDB(os.path.join(outFolder,'system.pdb'))
+
+	# Define a method for initial filtering of a single pair.
+	def filterInitialPair(outFolder,pair):
+		com1 = calcCenter(system.select("resindex %i" % pair[0]))
+		com2 = calcCenter(system.select("resindex %i" % pair[1]))
+		dist = calcDistance(com1,com2)
+		if dist <= 30:
+			return pair
+		else:
+			return None
+
+	# Get a list of included pairs after initial filtering.
+	filterList = list()
+	progbar = pyprind.ProgBar(len(pairs))
+	for pair in pairs:
+		filtered = filterInitialPair(outFolder,pair)
+		if filtered is not None:
+			filterList.append(pair)
+		progbar.update()
+
+	return filterList
+
+# A method for filtering using a single core.
+def filterPairsSingleCore(args):
+	
+	params = args[0]
+	trajIndex = args[1]
+	numSource = args[2][0]
+	numTarget = args[2][1]
+	sourceResids = args[2][2]
+	targetResids = args[2][3]
+	initialFilter = args[3]
+
+	with suppress_stdout():
+		traj = parseDCD(os.path.join(params.outFolder,'traj_%i.dcd' % trajIndex))
+		system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
+
+	coordSets = traj.getCoordsets()
+	# Start a contact matrix based on center of masses
+	contactMat = lil_matrix((numSource,numTarget))
+	#contactMat = np.zeros((numSource,numTarget))
+
+	# Accumulate contact matrix as the sim progresses
+	calculatedPercentage = 0
+	monitor = 0
+
+	# Define a method for filtering of pairs based on pairFilterCutoff:
+	def filterSinglePair(pair,pairFilterCutoff):
+		pair1 = system.select('resindex %i' % pair[0])
+		traj.setAtoms(pair1)
+		pair1.setCoords(traj.getCoords())
+		pair2 = system.select('resindex %i' % pair[1])
+		traj.setAtoms(pair2)
+		pair2.setCoords(traj.getCoords())
+		com1 = calcCenter(pair1)
+		com2 = calcCenter(pair2)
+		dist = calcDistance(com1,com2)
+		if dist <= pairFilterCutoff:
+			if pair[0] in sourceResids and pair[1] in targetResids:
+				source_index = list(sourceResids).index(pair[0])
+				target_index = list(targetResids).index(pair[1])
+			elif pair[1] in sourceResids and pair[0] in targetResids:
+				source_index = list(sourceResids).index(pair[1])
+				target_index = list(targetResids).index(pair[0])
+
+			return [source_index,target_index]
+		else:
+			return None
+
+	for i in range(0,len(coordSets),1):
+		contactMatFrame = lil_matrix((numSource,numTarget))
+		#contactMatFrame = np.zeros((numSource,numTarget))
+		traj.setAtoms(system)
+		traj.setCoords(traj.getCoordsets()[i])
+		filteredPairIndices = list(map(filterSinglePair,initialFilter,
+			[params.pairFilterCutoff]*len(initialFilter)))
+		filteredPairIndices = [el for el in filteredPairIndices if el != None]
+		for [source_index,target_index] in filteredPairIndices:
+			contactMatFrame[source_index,target_index] = 1
+
+		### RED ALERT:
+		### The following may choke computer if the matrices are extremely large.
+		### For now we will take that the user makes a reasonable size selection for interaction energies.	
+		contactMat = contactMat + contactMatFrame
+		monitor = monitor + 1
+		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
+		if calculatedPercentage > 100: calculatedPercentage = 100
+		#params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+
+	del traj
+
+	return contactMat
+
+# A method for filtering of pairs.
+>>>>>>> origin/mergecalc
 def filterPairs(params):
 	
-	system = parsePDB(os.path.join(params.outFolder,'system_dry.pdb'))
-	traj = parseDCD(os.path.join(params.outFolder,'traj_dry.dcd'))
+	with suppress_stdout():
+		system = parsePDB(os.path.join(params.outFolder,'system.pdb'))
 
 	try:
-		sourceCA = system.select(str(params.sel1)+' and name CA')
+		source = system.select(str(params.sel1))
 	except:
 		params.logger.exception('Could not select Selection 1 residue group. Aborting now.')
 		return
 
-	numSource = len(sourceCA)
-	sourceResids = sourceCA.getResindices()
-	sourceResnums = sourceCA.getResnums()
-	sourceSegnames = sourceCA.getSegnames()
+	#NEEDS CAREFUL TWEAKING ALL BELOW
+	numResidues = system.numResidues()
+	sourceResids = np.unique(source.getResindices())
+	sourceResnums = [source.select('resindex %i' % i).getResnums()[0] for i in sourceResids]
+	sourceSegnames = [source.select('resindex %i' % i).getSegnames()[0] for i in sourceResids]
 
-	allResiduesCA = system.select('name CA')
-	numResidues = len(allResiduesCA)
-	numTarget = numResidues
+	numSource = len(sourceResids)
 
 	# By default, targetResids are all residues.
 	targetResids = np.arange(numResidues)
+	numTarget = len(targetResids)
 	
 	# Get target selection residues
 	try:
-		targetCA = system.select(str(params.sel2+' and name CA'))
-		numTarget = len(targetCA)
-		targetResids = targetCA.getResindices()
+		target = system.select(str(params.sel2))
+		targetResids = np.unique(target.getResindices())
+		numTarget = len(targetResids)
 	except:
 		params.logger.exception('Could not select Selection 2 residue group. Aborting now.')
 		return
@@ -618,47 +810,130 @@ def filterPairs(params):
 		if x != y:
 			pairSet.add(frozenset((x,y)))
 
+	params.logger.info('Starting filtering operations...')
+
+	# Prepare a pairSet list.
+	params.logger.info('Preparing a list of pairs...')
+	pairSet = [list(pair) for pair in list(pairSet)]
+	params.logger.info('Preparing a list of pairs... Done.')
+
+	# Get a list of pairs within a certain distance from each other, 
+	# based on the initial structure.
+	initialFilter = list()
+
+	# Initial filtering of pairs
+	params.logger.info('Starting initial filtering step...')
+
+	params.logger.info('Parallelizing initial filtering calculation...')
+
 	# Split the pair set list into chunks according to number of cores
 	pairChunks = np.array_split(list(pairSet),params.numCores)
 
+	# Perform initial filtering on each of these chunks.
+	params.logger.info('Performing initial filtering now... This may take a while...')
+
+	# Start a concurrent futures pool, and perform initial filtering.
+	with futures.ProcessPoolExecutor(params.numCores) as pool:
+		try:
+			initialFilter = pool.map(filterInitialPairsSingleCore,[[params.outFolder,pairChunks[i],params.initPairFilterCutoff] for i in range(0,params.numCores)])
+			initialFilter = list(initialFilter)
+			if len(initialFilter) > 1:
+				initialFilter = np.vstack(initialFilter)
+		finally:
+			pool.shutdown()
+
+	initialFilter = list(initialFilter)
+	initialFilter = [pair for pair in initialFilter if pair is not None]
+	params.logger.info('Initial filtering... Done.')
+	params.logger.info('Number of interaction pairs selected after initial filtering step: %i' %
+		len(initialFilter))
+
+	params.initialFilterPickle = os.path.join(os.path.abspath(params.outFolder),"initialFilter.pkl")
+	with open(params.initialFilterPickle,'wb') as f:
+		pickle.dump(initialFilter,f)
+
 	params.logger.info('Starting the filtering step...')
 
-	# Continue with filtering operation
-	traj.setAtoms(allResiduesCA)
-	coordSets = traj.getCoordsets()
+	# Split the trajectory into chunks according to number of cores.
+	params.logger.info('Chunkifying trajectory...')
+	with suppress_stdout():
+		traj = parseDCD(os.path.join(params.outFolder,'traj.dcd'))
+		frameRanges = np.array_split(list(range(len(traj))),params.numCores)
+		for i in range(0,len(frameRanges)):
+			frameRange = frameRanges[i]
+			traj_i = traj[frameRange[0]:frameRange[-1]]
+			writeDCD(os.path.join(params.outFolder,'traj_%i.dcd' % i),traj_i)
+			del traj_i
 
-	# Start a contact matrix (Kirchhoff matrix)
-	kh = np.zeros((numResidues,numResidues))
+	params.logger.info('Chunkifying trajectory... Done.')
 
-	# Accumulate contact matrix as the sim progresses
-	calculatedPercentage = 0
-	monitor = 0
+	params.logger.info('Performing filtering now... This may take a while...')
 
-	for i in range(0,len(coordSets),1):
-		coordSet = coordSets[i]
-		gnm = GNM('GNM')
-		gnm.buildKirchhoff(coordSet,cutoff=params.pairFilterCutoff)
-		kh = kh + gnm.getKirchhoff()
-		monitor = monitor + 1
-		calculatedPercentage = (float(monitor)/float(len(coordSets)))*100
-		if calculatedPercentage > 100: calculatedPercentage = 100
-		params.logger.info('Filtered pairs percentage: %s' % str(calculatedPercentage))
+	# Split initialFilter list into chunks, corresponding to 1000 pairs per numCores
+	params.logger.info('Chunkifying initial filter...')
+	chunkNum = 1 if len(initialFilter) < 500*params.numCores else len(initialFilter)/(500*params.numCores)
+	initialFilterChunks = np.array_split(initialFilter,chunkNum)
+
+	# Run pool.map for each chunk over a for loop.
+	progbar = pyprind.ProgBar(len(initialFilterChunks))
+	contactMaps = list()
+	for i in range(0,len(initialFilterChunks)):
+		chunk = initialFilterChunks[i]
+		params.logger.info('Filtering a pair chunk...(%i out of %i)' % (i+1,len(initialFilterChunks)))
+
+		# Start a concurrent.futures pool, and perform filtering.
+		with futures.ProcessPoolExecutor(params.numCores) as pool:
+
+			try:
+				# For each traj portion split above
+				contactMapsTrajChunk = pool.map(
+					filterPairsSingleCore,[[params,i,[numSource,numTarget,sourceResids,targetResids],
+					chunk] for i in range(0,params.numCores)])
+				contactMapsTrajChunk = list(contactMapsTrajChunk)
+			
+				# In case multiple cores are selected, contactMapsTrajChun will have a size larger than
+				# one. In this case, we need to sum contact map matrices.
+				if len(contactMapsTrajChunk) > 1:
+					contactMapsTrajChunk = sum(contactMapsTrajChunk)
+
+				params.logger.info('Filtering a pair chunk... Done.')
+				contactMaps.append(contactMapsTrajChunk)
+
+			finally:
+				pool.shutdown()
+		progbar.update()
+
+	# In case multiple chunks are present, contactMaps will have a size large than one.
+	# In this case, we need to sum contact map matrices.
+	if len(contactMaps) > 1:
+		contactMaps = sum(contactMaps)
+	# else, if the contactMaps has a size of 1, the first member of this list is taken.
+	elif len(contactMaps) == 1:
+		contactMaps = contactMaps[0]
 
 	# Get whether contacts are below cutoff for the specified percentage of simulation
-	pairsInclusionFraction = np.abs(kh)/(len(traj)/float(1))
+	pairsInclusionFraction = np.abs(contactMaps)/(len(traj)/float(1))
 	pairsFilteredFlag = pairsInclusionFraction > params.pairFilterPercentage*0.01
 
+	###################################################
+	### BELOW BLOCK SHOULD BE ACCELERATED (A LOT)! ####
 	pairsFiltered = list()
 	#concatSourceTargetResids = np.concatenate([sourceResids,targetResids])
 	for sourceResid in sourceResids:
 		for targetResid in targetResids:
 			if sourceResid == targetResid:
 				continue
-			elif pairsFilteredFlag[sourceResid,targetResid] > 0:
+			source_index = list(sourceResids).index(sourceResid)
+			target_index = list(targetResids).index(targetResid)
+
+			if pairsFilteredFlag[source_index,target_index] > 0:
 				pairsFiltered.append(sorted([sourceResid,targetResid]))
 
 	pairsFiltered = sorted(pairsFiltered)
 	pairsFiltered = [list(x) for x in set(tuple(x) for x in pairsFiltered)]
+
+	### END OF BLOCK TO BE ACCELERATED ###
+	######################################
 	
 	# file = open('pairsFiltered.txt','w')
 	# for pair in pairsFiltered:
@@ -672,7 +947,19 @@ def filterPairs(params):
 
 	params.logger.info('Number of interaction pairs selected after filtering step: %i' % len(pairsFiltered))
 
+	# In some edge cases, the number of interactions pairs selected at this stage may really be so slow that it is lower than the numCores specified.
+	# For these cases we'll just reduce the number of cores used, and make note of this in the log file.
+	if len(pairsFiltered) < params.numCores:
+		params.numCores = len(pairsFiltered)
+		logger.info('The number of interaction pairs selected after filtering step is lower than the number of cores requested for calculation. '
+		'Reducing number of cores to %i.' % len(pairsFiltered))
+
+	params.pairsFilteredPickle = os.path.join(os.path.abspath(params.outFolder),"pairsFiltered.pkl")
+	with open(params.pairsFilteredPickle,'wb') as f:
+		pickle.dump(pairsFiltered,f)
+
 	params.pairsFiltered = pairsFiltered
+
 	return params
 
 # A method for collecting results from the output directory.
@@ -695,15 +982,36 @@ def collectResults(params):
 	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies_intEnVdW.csv'))
 	df_vdw.to_csv(os.path.join(params.outFolder,'energies_intEnVdW.csv'))
 
-	params.logger.info('Saving results to '+os.path.join(params.outFolder,'energies.pickle'))
-	file = open(os.path.join(params.outFolder,'energies.pickle'),'wb')
-	pickle.dump(params.parsedEnergies,file)
-	file.close()
+	params.logger.info('Pickling results...')
+
+	# Define a method for splitting dictionary into chunks.
+	def chunks(data, SIZE=10000):
+	    it = iter(data)
+	    for i in range(0, len(data), SIZE):
+	        yield {k:data[k] for k in islice(it, SIZE)}
+
+	# Split the dictionary into 10 chunks, this is for managing very large file sizes.
+	# The dictionaries containing energies should be merged upon reading for analysis.
+	enDicts = list()
+	for enDict in chunks(params.parsedEnergies, 1000):
+		enDicts.append(enDict)
+
+	# Pickle the chunks.
+	intEnPicklePaths = list()
+	for i in range(0,len(enDicts)):
+		fpath = os.path.join(params.outFolder,'energies_%i.pickle' % i)
+		file = open(fpath,'wb')
+		params.logger.info('Pickling to energies_%i.pickle...' % i)
+		pickle.dump(enDicts[i],file)
+		file.close()
+		intEnPicklePaths.append(fpath)
+
+	params.logger.info('Pickling results... Done.')
 
 	params.logger.info('Getting mean interaction energies...')
 	# Save average interaction energies as well!
-	intEnDict, filteredButNoInt = getResIntEnMean(os.path.join(params.outFolder,'energies.pickle'),
-		os.path.join(params.outFolder,'system_dry.pdb'),
+	intEnDict, filteredButNoInt = getResIntEnMean(intEnPicklePaths,
+		os.path.join(params.outFolder,'system.pdb'),params.sel1,params.sel2,
 		prefix=os.path.join(params.outFolder,'energies'))
 
 	# Report interactions with zero mean.
@@ -744,7 +1052,7 @@ def cleanUp(params):
 def errorSuicide(params,message,removeOutput=False):
 	params.logger.exception(message)
 	if removeOutput:
-		rmtree(params.outFolder,ignore_error=True)
+		rmtree(params.outFolder)
 	#psutil.Process(os.getpid()).kill()
 	# Exit normally after printing the error to the log file.
 	os._exit(0)
@@ -801,37 +1109,40 @@ def calcGMX(params):
 
 # Method to convert TPR to PDB files.
 def tpr2pdb(params,tpr,pdb):
-	# Convert tpr to pdb, selecting just Protein.
+	# Convert tpr to pdb and gro, selecting just Protein.
 	# Apparently directly spawning gmx in the following does not work as expect in OSX
 	# Prepending bash -c to the command line prior to gmx.
-	proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
-		(params.exe,tpr,pdb),stdout=subprocess.PIPE,
-		stderr=subprocess.PIPE,shell=True)
-	_,error = proc.communicate()
-	#if error:
-	#	message = repr(error)
-	#	return False, message
 
-	proc.wait()
-	start_time = time.time()
-	time_elapsed = 0 # Seconds
-	while not os.path.exists(pdb) and time_elapsed < 30:
-		time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
-		time_elapsed = time.time() - start_time
+	filenames = [pdb,pdb.rstrip('.pdb')+'.gro']
+	for filename in filenames:
+		proc = subprocess.Popen('bash -c "%s editconf -f %s -o %s"' % 
+			(params.exe,tpr,filename),stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,shell=True)
+		_,error = proc.communicate()
+		#if error:
+		#	message = repr(error)
+		#	return False, message
 
-	if not os.path.exists(pdb):
-		message = 'Could not extract PDB out of TPR file. Aborting now.'
-		return False, message
+		proc.wait()
+		start_time = time.time()
+		time_elapsed = 0 # Seconds
+		while not os.path.exists(filename) and time_elapsed < 30:
+			time.sleep(1) # using time.sleep(X) instead, sleeping for X seconds to let the bg process complete work
+			time_elapsed = time.time() - start_time
 
-	# Check whether the file is still being written to...
-	while has_handle(pdb):
-		time.sleep(1)
+		if not os.path.exists(filename):
+			message = 'Could not extract PDB/GRO out of TPR file. Aborting now.'
+			return False, message
+
+		# Check whether the file is still being written to...
+		while has_handle(filename):
+			time.sleep(1)
 
 	# Check whether there any chain ids not assigned a valid letter.
 	noChid = False
 	system = parsePDB(pdb)
-	systemProtein = system.select('protein')
-	chids = systemProtein.getChids()
+	systemDry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+	chids = systemDry.getChids()
 	for chid in chids:
 		if not chid.strip():
 			noChid = True
@@ -844,6 +1155,29 @@ def tpr2pdb(params,tpr,pdb):
 		writePDB(pdb,system)			
 
 	return True, "Success'"
+
+# Method to write parameters to the log file.
+def params2log(params):
+
+	params.logger.info('Using the following input files and parameters:')
+	params.logger.info('PDB: %s' % str(params.pdb))
+	params.logger.info('TPR: %s' % str(params.tpr))
+	params.logger.info('TOP: %s' % str(params.top))
+	params.logger.info('Trajectory: %s' % str(params.traj))
+	params.logger.info('Number of cores: %s' % str(params.numCores))
+	params.logger.info('Solute dielectric (NAMD): %s' % str(params.dielectric))
+	params.logger.info('Switch distance (NAMD): %s' % str(params.switchdist))
+	params.logger.info('Selection 1: %s' % str(params.sel1))
+	params.logger.info('Selection 2: %s' % str(params.sel2))
+	params.logger.info('Filtering distance cutoff (Angstroms): %s' % str(params.pairFilterCutoff))
+	params.logger.info('Filtering percentage (%%): %s' % str(params.pairFilterPercentage))
+	params.logger.info('Non-bonded distance cutoff (Angstroms, NAMD): %s' % str(params.cutoff))
+	params.logger.info('Trajectory stride: %s' % str(params.stride))
+	params.logger.info('Executable: %s' % str(params.exe))
+	params.logger.info('Parameter file(s) (NAMD) %s' % str(params.parameterFile))
+	params.logger.info('Correlation: %s' % str(params.calcCorr))
+	params.logger.info('Correlation cutoff: %s' % str(params.corrIntenCutoff))
+	params.logger.info('Output folder: %s' % str(params.outFolder))
 
 # Method to check args and get params if they are valid
 def getParams(args):
@@ -867,6 +1201,16 @@ def getParams(args):
 			params.outFolder = outFolder
 			params.logFile = os.path.join(os.path.abspath(outFolder),'grinn.log')
 
+	# Check whether any input file paths include space character.
+	files = [args.pdb,args.tpr,args.top,args.traj]
+	files = [filename[0] for filename in files if not filename[0] == None]
+	files = [filename for filename in files if type(filename) == str]
+	for filename in files:
+		if ' ' in filename:
+			message = "A file path (%s) includes a space character, which is not allowed. "\
+			"Aborting now" % filename
+			return params, False, message
+
 	params.numCores = args.numcores[0]
 	frameRange = args.framerange
 
@@ -883,6 +1227,12 @@ def getParams(args):
 
 	params.dielectric = args.dielectric[0]
 
+	params.initPairFilterCutoff = args.initpairfiltercutoff[0]
+
+	if params.initPairFilterCutoff < 15:
+		message = 'Initial filtering distance cutoff value can not be smaller than 15. Aborting now.'
+		return params, False, message
+
 	params.pairFilterCutoff = args.pairfiltercutoff[0]
 
 	if params.pairFilterCutoff < 4:
@@ -892,6 +1242,8 @@ def getParams(args):
 	params.pairFilterPercentage = args.pairfilterpercentage[0]
 
 	params.cutoff = args.cutoff[0]
+
+	params.switchdist = args.switchdist[0]
 
 	if not type(args.sel1) == str:
 		if len(args.sel1) > 1:
@@ -925,8 +1277,8 @@ def getParams(args):
 
 	if args.pdb[0]:
 		try:
-			system = parsePDB(os.path.abspath(args.pdb[0]))
-			systemProtein = system.select(str('protein or nucleic'))
+			with suppress_stdout():
+				system = parsePDB(os.path.abspath(args.pdb[0]))
 			params.pdb = os.path.abspath(args.pdb[0])
 			params.dataType = 'namd'
 		except:
@@ -940,17 +1292,19 @@ def getParams(args):
 			message = 'Could not select sel1 or sel2 in the PDB file. Aborting now.'
 			return params, False, message
 
+		#### TEMP MODIFICATION: CANCELLING THIS NOW.
 		# Check whether there any chain ids not assigned a valid letter.
-		chids = systemProtein.getChids()
-		for chid in chids:
-			if not chid.strip():
-				message = 'There is at least one residue with no chain ID assigned to it. This is not '\
-				'allowed. Aborting now...'
-				return params, False, message
+		# chids = system.getChids()
+		# for chid in chids:
+		# 	if not chid.strip():
+		# 		message = 'There is at least one residue with no chain ID assigned to it. This is not '\
+		# 		'allowed. Aborting now...'
+		# 		return params, False, message
+		#### TEMP MODIFICATION: CANCELLING THIS NOW.
 
-		numResidues = len(np.unique(systemProtein.getResindices()))
-		for resindex in np.unique(systemProtein.getResindices()):
-			residue = systemProtein.select(str('resindex %i' % resindex))
+		numResidues = len(np.unique(system.getResindices()))
+		for resindex in np.unique(system.getResindices()):
+			residue = system.select(str('resindex %i' % resindex))
 			index = np.unique(residue.getResnames())
 			if len(index) > 1:
 				message = 'There are multiple residues with the same residue index in your PDB file. '\
@@ -1009,6 +1363,7 @@ def getParams(args):
 			return params, False, message
 
 		# Check whether stride is higher than the number of frames in trajectory:
+		print(trajectory.numFrames())
 		if params.stride > trajectory.numFrames():
 			message = 'Stride value is higher than the number of frames in the trajectory. '\
 			'Please use a lower stride value.'
@@ -1024,6 +1379,14 @@ def getParams(args):
 		params.parameterFile = [os.path.abspath(paramFile) for paramFile in parameterFile]
 		#print(params.parameterFile)
 		#return params, False, "what the hell?"
+
+		# Check whether switching is requested and if yes, whether it is smaller than 
+		# or equal to the non-bonded cutoff.
+		if params.switchdist:
+			if params.switchdist > params.cutoff:
+				message = 'Switch distance must be smaller than or equal to the non-bonded'\
+				' cutoff distance. Aborting now.'
+				return params, False, message
 		
 	elif params.dataType == 'gmx':
 
@@ -1047,8 +1410,10 @@ def getParams(args):
 			return params, False, message
 		else:
 			try:
+				print('parsing dummy.pdb')
 				system = parsePDB('dummy.pdb')
-				systemProtein = system.select(str('protein or nucleic'))
+				print('selecting dry system')
+				systemDry = system.select(str('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion'))
 				os.remove('dummy.pdb')
 			except:
 				os.remove('dummy.pdb')
@@ -1065,6 +1430,7 @@ def getParams(args):
 				return params, False, message
 
 	params.calcCorr = args.calccorr
+	params.corrIntenCutoff = args.corrintencutoff
 
 	return params, True, "Success"
 
@@ -1111,6 +1477,9 @@ def getResIntEn(args):
 
 	params.logger.info('Argument check completed. Proceeding...')
 
+	# Write parameters to the log file.
+	params2log(params)
+
 	params.logger.info('Started calculation.')
 
 	# Proceed with the appropriate method depending on the input data type.
@@ -1132,6 +1501,6 @@ def getResIntEn(args):
 if __name__ == '__main__':
 	print('Please do not call this script directly. Use python grinn.py -calc <arguments> '
 		'instead.')
-	sys.exit(0)
+	#sys.exit(0)
 
 

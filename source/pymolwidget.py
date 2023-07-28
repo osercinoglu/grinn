@@ -39,6 +39,8 @@ class PyMolWidget(QGLWidget):
             self._pymol.cmd.button("double_left", "None", "None")
             self._pymol.cmd.button("single_right", "None", "None")
             self._pymol.cmd.bg_color('white')
+            self._pymol.cmd.set("spec_reflect",0)
+            self._pymol.cmd.set("depth_cue",0)
 
         self.resizeGL(self.width(), self.height())
         self._pymol.reshape(self.width(), self.height())
