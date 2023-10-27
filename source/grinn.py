@@ -150,7 +150,6 @@ from concurrent import futures
 from scipy.sparse import lil_matrix
 from common import *
 import corr
-from memory_profiler import profile
 
 def convert_arg_line_to_args(arg_line):
     # To override the same method of the ArgumentParser (to read options from a file)
@@ -1884,7 +1883,6 @@ if __name__ == '__main__':
                         help='A ProDy atom selection string which determines the second group of selected '
                              'residues.')
 
-    
     parser.add_argument('--initpairfiltercutoff', type=float, default=[30], nargs=1,
                         help='Cutoff distance (angstroms) for initial filtering of residues to be included in '
                         'the subsequent filtering step for interaction energy calculations. '
@@ -1969,7 +1967,6 @@ if __name__ == '__main__':
 
     # Check which mode is requested. Either one is selected or none is selected to
     # enter GUI mode.
-    print('calcMode,corrMode,resultsMode',calcMode,corrMode,resultsMode)
     if [calcMode, corrMode, resultsMode].count(True) > 1:
         print('You should specify either -calc or -corr or specify none of them '
               'to enter the GUI mode.')

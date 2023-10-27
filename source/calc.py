@@ -16,12 +16,7 @@ from scipy.sparse import lil_matrix
 from common import *
 import corr
 
-<<<<<<< HEAD
-# Method for calculating mean interaction energies.
-def getResIntEnMean(intEnPickle,pdb,frameRange=False,prefix=''):
-=======
 def getResIntEnMean(intEnPicklePaths,pdb,sel1,sel2,frameRange=False,prefix=''):
->>>>>>> origin/mergecalc
 
 	# Load interaction energy pickle files
 	# First, load the first dictionary (there must be at least one).
@@ -664,10 +659,6 @@ def calcEnergiesGMX(params):
 
 	return edrFiles, pairsFilteredChunks
 
-<<<<<<< HEAD
-# Method for filtering pairs to include in the calculation based on pairwise distances using
-# criteria specified by the user.
-=======
 # A method for initial filtering using a single core.
 def filterInitialPairsSingleCore(args):
 
@@ -770,7 +761,6 @@ def filterPairsSingleCore(args):
 	return contactMat
 
 # A method for filtering of pairs.
->>>>>>> origin/mergecalc
 def filterPairs(params):
 	
 	with suppress_stdout():
