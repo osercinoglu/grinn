@@ -831,6 +831,13 @@ def run_grinn_workflow(pdb_file, mdp_files_folder, out_folder, ff_folder, init_p
         for include_file in include_files:
             shutil.copy(include_file, os.path.join(out_folder, os.path.basename(include_file)))
 
+    # If a force field folder is provided
+    if ff_folder:
+        logger.info('Force field folder provided. Using provided force field folder.')
+        logger.info('Copying force field folder to output folder...')
+        ff_folder_basename = os.path.basename(ff_folder)
+        shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename))
+
     # Check whether a topology file as well as toppar folder is provided
     if top:
         logger.info('Topology file provided. Using provided topology file.')
