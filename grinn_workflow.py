@@ -1,4 +1,3 @@
-# %%
 from prody import *
 from prody import LOGGER
 import numpy as np
@@ -7,12 +6,14 @@ from itertools import islice
 import concurrent.futures
 import pyprind
 import signal
+# GromacsWrapper is only import here since source_gmxrc must be run first.
+import gromacs
+import gromacs.environment
+#print("GROMACS_DIR:", gmx_env_vars.get("GROMACS_DIR"))
 from contextlib import contextmanager
 import os, sys, pickle, shutil, pexpect, time, subprocess, panedr, pandas, glob
 import logging
 from scipy.sparse import lil_matrix
-import gromacs
-import gromacs.environment
 from pdbfixer import PDBFixer
 from openmm.app import PDBFile
 import mdtraj as md
@@ -795,37 +796,12 @@ def cleanUp(outFolder, logger):
         os.remove(item)
 
     logger.info('Cleaning up... completed.')
-                      
-def source_gmxrc(gmxrc_path):
-    """
-    Sources the GMXRC script to set up GROMACS environment variables.
-    
-    Args:
-    - gmxrc_path (str): Path to the GMXRC script.
-    
-    Returns:
-    - dict: Dictionary containing the environment variables set by GMXRC.
-    """
-    # Run the command to execute the GMXRC script
-    subprocess.call(gmxrc_path,shell=True)
-    
-    # Retrieve the environment variables set by GMXRC
-    gmx_env_vars = {}
-    for line in subprocess.check_output("env", shell=True).splitlines():
-        line = line.decode("utf-8")
-        key, _, value = line.partition("=")
-        gmx_env_vars[key] = value
-    
-    return gmx_env_vars
 
 def run_grinn_workflow(pdb_file, mdp_files_folder, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
                        traj=False, nointeraction=False, solvate=False, npt=False, source_sel="all", target_sel="all", lig=False, lig_gro_file=None, 
-                       lig_itp_file=None, nt=1, gmxrc_path='/usr/local/gromacs/bin/GMXRC', noconsole_handler=False,
-                       include_files=False):
+                       lig_itp_file=None, nt=1, noconsole_handler=False, include_files=False):
 
     start_time = time.time()  # Start the timer
-    gmx_env_vars = source_gmxrc(gmxrc_path)
-    #print("GROMACS_DIR:", gmx_env_vars.get("GROMACS_DIR"))
 
     # If source_sel is None, set it to an appropriate selection
     if source_sel is None:
@@ -922,7 +898,6 @@ def parse_args():
     parser.add_argument("--npt", action="store_true", help="Run NPT equilibration")
     parser.add_argument("--source_sel", nargs="+", type=str, help="Source selection")
     parser.add_argument("--target_sel", nargs="+", type=str, help="Target selection")
-    parser.add_argument("--gmxrc_path", type=str, help="Path to the GMXRC script")
     parser.add_argument("--nt", type=int, default=1, help="Number of threads for GROMACS commands (default is 1)")
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
@@ -940,7 +915,7 @@ def main():
     args = parse_args()
     run_grinn_workflow(args.pdb_file, args.mdp_files_folder, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
                        args.nointeraction, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
-                       args.gmxrc_path, args.noconsole_handler, args.include_files)
+                       args.noconsole_handler, args.include_files)
 
 if __name__ == "__main__":
     def global_signal_handler(sig, frame):
