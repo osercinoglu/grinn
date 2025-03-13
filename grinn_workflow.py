@@ -569,6 +569,7 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     """
 
     system = parsePDB(os.path.join(outFolder, 'system_dry.pdb'))
+    system_ca = system.select('calpha')
     
     logger.info('Parsing GMX energy output... This may take a while...')
     df = panedr.edr_to_df(os.path.join(outFolder, 'interact0.edr'))
@@ -700,6 +701,33 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     df_total = df_total.transpose()
     df_elec = df_elec.transpose()
     df_vdw = df_vdw.transpose()
+
+    def supplement_df(df, system_ca):
+        # Rename the first column to 'Pair_indices'
+        df.rename(columns={df.columns[0]: 'Pair_indices'}, inplace=True)
+
+        # Extract {res1_index}-{res2_index} from 'Pair_indices', convert them to integers and store them in two separate columns
+        df['res1_index'] = df['Pair_indices'].apply(lambda x: int(x.split('-')[0]))
+        df['res2_index'] = df['Pair_indices'].apply(lambda x: int(x.split('-')[1]))
+
+        # Find chain ID, residue number, and residue one letter code for each res1 and for each res2, and assign them to new columns
+        df['res1_chain'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getChids()[0])
+        df['res2_chain'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getChids()[0])
+        df['res1_resnum'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnums()[0])
+        df['res2_resnum'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnums()[0])
+        df['res1_resname'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
+        df['res2_resname'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
+
+        # Merge res1_resname and res1_resnum into a new column, do the same for res2_resname and res2_resnum
+        df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str)
+        df['res2'] = df['res2_resname'] + df['res2_resnum'].astype(str)
+
+        return df
+    
+    # Supplement the DataFrames with additional information
+    df_total = supplement_df(df_total, system_ca)
+    df_elec = supplement_df(df_elec, system_ca)
+    df_vdw = supplement_df(df_vdw, system_ca)
 
     logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnTotal.csv'))
     df_total.to_csv(os.path.join(outFolder, 'energies_intEnTotal.csv'))
