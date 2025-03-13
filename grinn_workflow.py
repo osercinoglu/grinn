@@ -67,7 +67,7 @@ def create_logger(outFolder, noconsoleHandler=False):
 
     return logger
 
-def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt=1):
+def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt=1):
     """
     Run a GROMACS simulation workflow.
 
@@ -112,6 +112,11 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
         ff = ff_folder
     else:
         ff = "amber99sb-ildn"
+
+    if gpu:
+        gpu="gpu"
+    else:
+        gpu="cpu"
 
     # Run GROMACS commands
     try:
@@ -220,7 +225,7 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
         logger.info("grompp for minimization command completed.")
         gromacs.mdrun(deffnm="minim", v=True, c=os.path.join(out_folder, "minim.pdb"), s=os.path.join(out_folder,"minim.tpr"), 
                       e=os.path.join(out_folder,"minim.edr"), g=os.path.join(out_folder,"minim.log"), 
-                      o=os.path.join(out_folder,"minim.trr"), x=os.path.join(out_folder,"minim.xtc"), nt=nt)
+                      o=os.path.join(out_folder,"minim.trr"), x=os.path.join(out_folder,"minim.xtc"), nt=nt, nb=gpu, pin='on') 
         logger.info("mdrun for minimization command completed.")
         gromacs.trjconv(f=os.path.join(out_folder, 'minim.pdb'),o=os.path.join(out_folder, 'minim.pdb'), s=os.path.join(out_folder, next_pdb), input=('0','q'))
         logger.info("trjconv for minimization command completed.")
@@ -703,8 +708,15 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     df_elec = df_elec.transpose()
     df_vdw = df_vdw.transpose()
 
+    # Reset index to avoid pairs being used as index
+    df_total.reset_index(inplace=True)
+    df_elec.reset_index(inplace=True)
+    df_vdw.reset_index(inplace=True)
+
     def supplement_df(df, system_ca):
         # Rename the first column to 'Pair_indices'
+        print(df.columns[1])
+        print(type(df.columns[1]))
         df.rename(columns={df.columns[0]: 'Pair_indices'}, inplace=True)
 
         # Extract {res1_index}-{res2_index} from 'Pair_indices', convert them to integers and store them in two separate columns
@@ -719,9 +731,9 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
         df['res1_resname'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
         df['res2_resname'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
 
-        # Merge res1_resname and res1_resnum into a new column, do the same for res2_resname and res2_resnum
-        df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str)
-        df['res2'] = df['res2_resname'] + df['res2_resnum'].astype(str)
+        # Merge res1_resname, res1_resnum, and _res1_chain into a new column, do the same for res2
+        df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str) + '_' + df['res1_chain']
+        df['res2'] = df['res2_resname'] + df['res2_resnum'].astype(str) + '_' + df['res2_chain']
 
         return df
     
@@ -797,11 +809,16 @@ def cleanUp(outFolder, logger):
 
     logger.info('Cleaning up... completed.')
 
-def run_grinn_workflow(pdb_file, mdp_files_folder, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
-                       traj=False, nointeraction=False, solvate=False, npt=False, source_sel="all", target_sel="all", lig=False, lig_gro_file=None, 
+def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
+                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", lig=False, lig_gro_file=None, 
                        lig_itp_file=None, nt=1, noconsole_handler=False, include_files=False):
 
     start_time = time.time()  # Start the timer
+
+    # Find the folder of the current script
+    script_folder = os.path.dirname(os.path.realpath(__file__))
+    # mdp_files_folder is the mdp_files folder in the script folder
+    mdp_files_folder = os.path.join(script_folder, 'mdp_files')
 
     # If source_sel is None, set it to an appropriate selection
     if source_sel is None:
@@ -866,7 +883,7 @@ def run_grinn_workflow(pdb_file, mdp_files_folder, out_folder, ff_folder, init_p
             gromacs.trjconv(f=os.path.join(out_folder, 'system_dry.pdb'), o=os.path.join(out_folder, 'traj_dry.xtc'))
 
     else:
-        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt)
+        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt)
     
     if nointeraction:
         logger.info('Not calculating interaction energies as per user request.')
@@ -889,11 +906,11 @@ def run_grinn_workflow(pdb_file, mdp_files_folder, out_folder, ff_folder, init_p
 def parse_args():
     parser = argparse.ArgumentParser(description="Run gRINN workflow")
     parser.add_argument("pdb_file", type=str, help="Input PDB file")
-    parser.add_argument("mdp_files_folder", type=str, help="Folder containing the MDP files")
     parser.add_argument("out_folder", type=str, help="Output folder")
     parser.add_argument("--nofixpdb", action="store_true", help="Fix PDB file using pdbfixer")
     parser.add_argument("--initpairfiltercutoff", type=float, default=10, help="Initial pair filter cutoff (default is 10)")
     parser.add_argument("--nointeraction", action="store_true", help="Do not calculate interaction energies")
+    parser.add_argument("--gpu", action="store_true", help="Use GPU for non-bonded interactions in GROMACS commands")
     parser.add_argument("--solvate", action="store_true", help="Run solvation")
     parser.add_argument("--npt", action="store_true", help="Run NPT equilibration")
     parser.add_argument("--source_sel", nargs="+", type=str, help="Source selection")
@@ -913,8 +930,8 @@ def parse_args():
 def main():
 
     args = parse_args()
-    run_grinn_workflow(args.pdb_file, args.mdp_files_folder, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
-                       args.nointeraction, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
+    run_grinn_workflow(args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
+                       args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
                        args.noconsole_handler, args.include_files)
 
 if __name__ == "__main__":
