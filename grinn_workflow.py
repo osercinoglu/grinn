@@ -857,7 +857,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         logger.info('Force field folder provided. Using provided force field folder.')
         logger.info('Copying force field folder to output folder...')
         ff_folder_basename = os.path.basename(ff_folder)
-        shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename))
+        shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename), dirs_exist_ok=True)
 
     # Check whether a topology file as well as toppar folder is provided
     if top:
