@@ -575,7 +575,7 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     """
 
     system = parsePDB(os.path.join(outFolder, 'system_dry.pdb'))
-    system_ca = system.select('calpha')
+    
     
     logger.info('Parsing GMX energy output... This may take a while...')
     df = panedr.edr_to_df(os.path.join(outFolder, 'interact0.edr'))
@@ -713,10 +713,9 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     df_elec.reset_index(inplace=True)
     df_vdw.reset_index(inplace=True)
 
-    def supplement_df(df, system_ca):
+    def supplement_df(df, system):
         # Rename the first column to 'Pair_indices'
-        print(df.columns[1])
-        print(type(df.columns[1]))
+
         df.rename(columns={df.columns[0]: 'Pair_indices'}, inplace=True)
 
         # Extract {res1_index}-{res2_index} from 'Pair_indices', convert them to integers and store them in two separate columns
@@ -724,12 +723,13 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
         df['res2_index'] = df['Pair_indices'].apply(lambda x: int(x.split('-')[1]))
 
         # Find chain ID, residue number, and residue one letter code for each res1 and for each res2, and assign them to new columns
-        df['res1_chain'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getChids()[0])
-        df['res2_chain'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getChids()[0])
-        df['res1_resnum'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnums()[0])
-        df['res2_resnum'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnums()[0])
-        df['res1_resname'] = df['res1_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
-        df['res2_resname'] = df['res2_index'].apply(lambda x: system_ca.select('resindex ' + str(x)).getResnames()[0])
+        df['res1_chain'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
+        df['res1_chain'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
+        df['res2_chain'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
+        df['res1_resnum'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnums()[0])
+        df['res2_resnum'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnums()[0])
+        df['res1_resname'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnames()[0])
+        df['res2_resname'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnames()[0])
 
         # Merge res1_resname, res1_resnum, and _res1_chain into a new column, do the same for res2
         df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str) + '_' + df['res1_chain']
@@ -738,9 +738,9 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
         return df
     
     # Supplement the DataFrames with additional information
-    df_total = supplement_df(df_total, system_ca)
-    df_elec = supplement_df(df_elec, system_ca)
-    df_vdw = supplement_df(df_vdw, system_ca)
+    df_total = supplement_df(df_total, system)
+    df_elec = supplement_df(df_elec, system)
+    df_vdw = supplement_df(df_vdw, system)
 
     logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnTotal.csv'))
     df_total.to_csv(os.path.join(outFolder, 'energies_intEnTotal.csv'))
