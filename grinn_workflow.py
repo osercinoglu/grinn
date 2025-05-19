@@ -11,7 +11,7 @@ import gromacs
 import gromacs.environment
 #print("GROMACS_DIR:", gmx_env_vars.get("GROMACS_DIR"))
 from contextlib import contextmanager
-import os, sys, pickle, shutil, pexpect, time, subprocess, panedr, pandas, glob
+import os, sys, pickle, shutil, time, subprocess, panedr, pandas, glob
 import logging
 from scipy.sparse import lil_matrix
 from pdbfixer import PDBFixer
