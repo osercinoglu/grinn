@@ -67,7 +67,7 @@ def create_logger(outFolder, noconsoleHandler=False):
 
     return logger
 
-def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt=1):
+def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1):
     """
     Run a GROMACS simulation workflow.
 
@@ -92,7 +92,7 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
     if nofixpdb:
         fixed_pdb_filepath = pdb_filepath
     else:
-    # Fix PDB file
+        # Fix PDB file
         fixer = PDBFixer(filename=pdb_filepath)
         fixer.findMissingResidues()
         fixer.findNonstandardResidues()
@@ -126,80 +126,13 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
         logger.info("pdb2gmx command completed.")
         next_pdb = "protein.pdb"
 
-        if lig:
-            logger.info("Running ligand mode...")
-            lig_itp_outfolder_path = os.path.join(out_folder, "ligand.itp")
-            lig_itp_outfolder_path = os.path.abspath(lig_itp_outfolder_path)
-            lig_gro_outfolder_path = os.path.join(out_folder, "ligand.gro")
-            lig_gro_outfolder_path = os.path.abspath(lig_gro_outfolder_path)
-            lig_pdb_outfolder_path = os.path.join(out_folder, "ligand.pdb")
-            lig_pdb_outfolder_path = os.path.abspath(lig_pdb_outfolder_path)
-            shutil.copy(lig_gro_file, lig_gro_outfolder_path)
-            shutil.copy(lig_itp_file, lig_itp_outfolder_path)
-            logger.info("Ligand gro and itp files copied.")
-            # Convert gro of ligand to pdb
-            gromacs.editconf(f=lig_gro_outfolder_path, o=lig_pdb_outfolder_path)
-            logger.info("Ligand gro file converted to pdb.")
-            # Create protein-ligand complex
-            protein = parsePDB(os.path.join(out_folder, "protein.pdb"))
-            ligand = parsePDB(os.path.join(out_folder, "ligand.pdb"))
-            lig_chids = ligand.getChids()
-            lig_code = ligand.getResnames()[0]
-            # Set "Z" as chain ID for ligand as a chain id is required in later stages of the workflow.
-            ligand.setChids(['Z']*len(lig_chids))
-            complex = protein + ligand
-            writePDB(os.path.join(out_folder, "complex.pdb"), complex)
-            logger.info("Protein-ligand complex created.")
+        index_group_select = 'Protein'
+        index_group_name = "Protein"
+        gromacs.make_ndx(f=os.path.join(out_folder, next_pdb), o=os.path.join(out_folder, "index.ndx"), input=('q'))
 
-            # Supplement topology file with ligand topology
-            f = open(os.path.join(out_folder, "topol.top"), "r")
-            topol_lines = f.readlines()
-            f.close()
-            write_flag = False
-            stop_write = False
-            new_lines = list()
-            for line in topol_lines:
-                new_lines.append(line)
-                if line.startswith("#include"):
-                    write_flag = True
-                if write_flag and not stop_write:
-                    new_lines.append(f"#include \"{lig_itp_outfolder_path}\"\n")
-                    write_flag = False
-                    stop_write = True
-
-            new_lines.append(f"{lig_code}     1\n")
-
-            f = open(os.path.join(out_folder, "topol.top"), "w")
-            f.writelines(new_lines)
-            f.close()
-            logger.info("Supplemented topology file with ligand topology.")
-
-            next_pdb = "complex.pdb"
-
-            # Create the name of the group for the protein+ligand complex for the index file.
-            index_group_select = f'"Protein" | "{lig_code}"'
-            index_group_name = f"Protein_{lig_code}"
-            gromacs.make_ndx(f=os.path.join(out_folder, next_pdb), o=os.path.join(out_folder, "index.ndx"), input=(index_group_select,'q'))
-
-        else:
-            index_group_select = 'Protein'
-            index_group_name = "Protein"
-            gromacs.make_ndx(f=os.path.join(out_folder, next_pdb), o=os.path.join(out_folder, "index.ndx"), input=('q'))
-
-        
         shutil.copy(os.path.join(out_folder, "topol.top"), os.path.join(out_folder, "topol_dry.top"))
         logger.info("Topology file copied.")
-        #source_folder = os.getcwd()
-        #files = os.listdir(source_folder)
 
-        # Filter files starting with "posre" and ending with ".itp"
-        #posre_files = [file for file in files if file.startswith("posre") and file.endswith(".itp")]
-        # Move each posre file to the out_folder
-        #for file in posre_files:
-        #    source_file_path = os.path.join(source_folder, file)
-        #    dest_file_path = os.path.join(out_folder, file)
-        #    shutil.move(source_file_path, dest_file_path)
-        
         if solvate:
             gromacs.editconf(f=os.path.join(out_folder, next_pdb), n=os.path.join(out_folder, "index.ndx"), 
                              o=os.path.join(out_folder, "boxed.pdb"), bt="cubic", c=True, d=1.0, princ=True, input=('0','0','0'))
@@ -810,8 +743,7 @@ def cleanUp(outFolder, logger):
     logger.info('Cleaning up... completed.')
 
 def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
-                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", lig=False, lig_gro_file=None, 
-                       lig_itp_file=None, nt=1, noconsole_handler=False, include_files=False):
+                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", nt=1, noconsole_handler=False, include_files=False):
 
     start_time = time.time()  # Start the timer
 
@@ -883,7 +815,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
             gromacs.trjconv(f=os.path.join(out_folder, 'system_dry.pdb'), o=os.path.join(out_folder, 'traj_dry.xtc'))
 
     else:
-        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, lig, lig_gro_file, lig_itp_file, logger, nt)
+        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt)
     
     if nointeraction:
         logger.info('Not calculating interaction energies as per user request.')
@@ -921,9 +853,6 @@ def parse_args():
     parser.add_argument('--top', type=str, help='Topology file')
     parser.add_argument('--toppar', type=str, help='Toppar folder')
     parser.add_argument('--traj', type=str, help='Trajectory file')
-    parser.add_argument('--lig', action='store_true', help='Ligand mode')
-    parser.add_argument('--lig_gro_file', type=str, help='Ligand gro file')
-    parser.add_argument('--lig_itp_file', type=str, help='Ligand itp file')
     parser.add_argument('--include_files', nargs='+', type=str, help='Include files')
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -934,7 +863,7 @@ def main():
     args = parse_args()
     run_grinn_workflow(
         args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
-        args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
+        args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.nt, 
         args.noconsole_handler, args.include_files
     )
 
