@@ -2,7 +2,7 @@ FROM ubuntu:22.04
 
 # System dependencies
 RUN apt-get update && \
-    apt-get install -y wget git build-essential cmake sudo python3 python3-pip && \
+    apt-get install -y wget git build-essential cmake sudo python3 python3-pip curl && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Miniconda and Mamba
@@ -41,12 +41,18 @@ RUN wget ftp://ftp.gromacs.org/gromacs/gromacs-2024.1.tar.gz && \
     cd / && \
     rm -rf /tmp/gromacs-2024.1*
 
+# Install gsutil (for public buckets, no auth needed)
+RUN pip3 install gsutil
+
 # Set up working directory
 WORKDIR /app
 
 # Copy your code and mdp_files
 COPY grinn_workflow.py ./
 COPY mdp_files ./mdp_files
+
+# Download test data from public Google Cloud Storage bucket
+RUN gsutil -m cp -r gs://grinn-test-data ./grinn-test-data
 
 # Set environment variables for GROMACS
 ENV PATH="/usr/local/gromacs/bin:$PATH"
