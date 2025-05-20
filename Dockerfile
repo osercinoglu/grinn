@@ -52,7 +52,12 @@ COPY mdp_files ./mdp_files
 ENV PATH="/usr/local/gromacs/bin:$PATH"
 ENV GMX_MAXBACKUP=-1
 
-# Activate conda env for all future RUN/CMD
-SHELL ["conda", "run", "-n", "grinn-env", "/bin/bash", "-c"]
+# Activate conda env and source GMXRC for all future RUN/CMD
+SHELL ["/bin/bash", "-c"]
 
-ENTRYPOINT ["conda", "run", "-n", "grinn-env", "python", "grinn_workflow.py"]
+ENV GMXRC_PATH=/usr/local/gromacs/bin/GMXRC
+
+# Set up GromacsWrapper config in root's home
+RUN conda run -n grinn-env python -c "import gromacs; gromacs.config.setup()"
+
+ENTRYPOINT ["bash", "-c", "source $GMXRC_PATH && conda run -n grinn-env python grinn_workflow.py"]

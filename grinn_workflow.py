@@ -925,14 +925,18 @@ def parse_args():
     parser.add_argument('--lig_gro_file', type=str, help='Ligand gro file')
     parser.add_argument('--lig_itp_file', type=str, help='Ligand itp file')
     parser.add_argument('--include_files', nargs='+', type=str, help='Include files')
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(0)
     return parser.parse_args()
 
 def main():
-
     args = parse_args()
-    run_grinn_workflow(args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
-                       args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
-                       args.noconsole_handler, args.include_files)
+    run_grinn_workflow(
+        args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
+        args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.lig, args.lig_gro_file, args.lig_itp_file, args.nt, 
+        args.noconsole_handler, args.include_files
+    )
 
 if __name__ == "__main__":
     def global_signal_handler(sig, frame):
