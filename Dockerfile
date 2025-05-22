@@ -25,7 +25,9 @@ RUN mamba create -y -n grinn-env -c conda-forge -c bioconda \
     mdtraj \
     openmm \
     panedr \
-    gromacswrapper
+    gromacswrapper \
+    networkx \
+    tqdm
 
 # Install GROMACS from source
 WORKDIR /tmp
@@ -41,8 +43,13 @@ RUN wget ftp://ftp.gromacs.org/gromacs/gromacs-2024.1.tar.gz && \
     cd / && \
     rm -rf /tmp/gromacs-2024.1*
 
-# Install gsutil (for public buckets, no auth needed)
-RUN pip3 install gsutil
+# Install gsutil from Google Cloud SDK (system Python)
+RUN apt-get update && \
+    apt-get install -y curl apt-transport-https ca-certificates gnupg && \
+    echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list && \
+    curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - && \
+    apt-get update && \
+    apt-get install -y google-cloud-sdk
 
 # Set up working directory
 WORKDIR /app
@@ -52,7 +59,7 @@ COPY grinn_workflow.py ./
 COPY mdp_files ./mdp_files
 
 # Download test data from public Google Cloud Storage bucket
-RUN gsutil -m cp -r gs://grinn-test-data ./grinn-test-data
+RUN gsutil -m cp -r gs://grinn-test-data/* $PWD
 
 # Set environment variables for GROMACS
 ENV PATH="/usr/local/gromacs/bin:$PATH"
@@ -65,5 +72,14 @@ ENV GMXRC_PATH=/usr/local/gromacs/bin/GMXRC
 
 # Set up GromacsWrapper config in root's home
 RUN conda run -n grinn-env python -c "import gromacs; gromacs.config.setup()"
+
+# Copy test script into the image
+COPY test.sh ./
+
+# Make sure test.sh is executable
+RUN chmod +x test.sh
+
+# Run the test script during build with the correct conda environment
+RUN set -x && conda run -n grinn-env bash ./test.sh
 
 ENTRYPOINT ["bash", "-c", "source $GMXRC_PATH && conda run -n grinn-env python grinn_workflow.py"]

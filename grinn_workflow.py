@@ -18,6 +18,8 @@ from pdbfixer import PDBFixer
 from openmm.app import PDBFile
 import mdtraj as md
 import pandas as pd
+import networkx as nx
+import tqdm
 import argparse
 
 # Global variable to store the process group ID
@@ -66,6 +68,135 @@ def create_logger(outFolder, noconsoleHandler=False):
     logger.addHandler(file_handler)
 
     return logger
+
+def getRibeiroOrtizNetwork(pdb, df_intEn, includeCovalents=True, intEnCutoff=1, startFrame=0, residue_indices=None):
+    sys = parsePDB(pdb)
+    if residue_indices is None:
+        sys_sel = sys.select("all")
+        resIndices = np.unique(sys_sel.getResindices())
+    else:
+        resIndices = np.array(sorted(residue_indices))
+        sys_sel = sys.select(' or '.join([f"resindex {i}" for i in resIndices]))
+    numResidues = len(resIndices)
+    resNames = sys_sel.getResnames()
+    resNums = sys_sel.getResnums()
+    chains = sys_sel.getChids()
+    rname_rnum_ch = ['_'.join(map(str, [resNames[i], resNums[i], chains[i]])) for i in range(numResidues)]
+
+    # Robustly find the pair column
+    pair_col = None
+    for col in ['Pair_indices', 'pair']:
+        if col in df_intEn.columns:
+            pair_col = col
+            break
+    if pair_col is None:
+        raise ValueError("Could not find a 'Pair_indices' or 'pair' column in the input DataFrame.")
+
+    # Identify frame columns: all columns between pair_col and the first annotation column
+    frame_start = list(df_intEn.columns).index(pair_col) + 1
+    annotation_cols = ['res1_index', 'res2_index', 'res1_chain', 'res2_chain', 'res1_resnum', 'res2_resnum', 'res1_resname', 'res2_resname', 'res1', 'res2']
+    frame_end = len(df_intEn.columns)
+    for ann in annotation_cols:
+        if ann in df_intEn.columns:
+            frame_end = list(df_intEn.columns).index(ann)
+            break
+    frame_cols = df_intEn.columns[frame_start:frame_end]
+    numFrames = len(frame_cols)
+
+    nx_list = []
+    for m in range(startFrame, numFrames):
+        frame_col = frame_cols[m]
+        network = nx.Graph()
+        for j in range(numResidues):
+            network.add_node(j + 1, label=rname_rnum_ch[j])
+        resIntEnMat = np.zeros((numResidues, numResidues))
+        for _, row in df_intEn.iterrows():
+            pair = row[pair_col]
+            resindex_1 = int(pair.split('-')[0])
+            resindex_2 = int(pair.split('-')[1])
+            try:
+                value = float(row[frame_col])
+            except Exception:
+                continue
+            resIntEnMat[resindex_1, resindex_2] = value
+            resIntEnMat[resindex_2, resindex_1] = value
+        resIntEnMatNegFavor = np.where(resIntEnMat < 0, np.abs(resIntEnMat), 0)
+        max_abs = np.max(np.abs(resIntEnMatNegFavor))
+        X = resIntEnMatNegFavor / max_abs if max_abs != 0 else resIntEnMatNegFavor
+        X = np.clip(X, 0, 0.99)
+        if includeCovalents:
+            for i in range(numResidues - 1):
+                res1 = sys.select('resindex %i' % resIndices[i])
+                res2 = sys.select('resindex %i' % resIndices[i + 1])
+                if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[0]):
+                    network.add_edge(i + 1, i + 2, weight=X[i, i + 1], distance=1 - float(X[i, i + 1]))
+        for i in range(numResidues):
+            for j in range(numResidues):
+                if not includeCovalents and abs(i - j) == 1:
+                    continue
+                if not network.has_edge(i + 1, j + 1):
+                    if abs(float(resIntEnMat[i, j])) >= abs(intEnCutoff):
+                        if X[i, j] < 0.01:
+                            continue
+                        network.add_edge(i + 1, j + 1, weight=X[i, j], distance=1 - float(X[i, j]))
+        nx_list.append(network)
+    return nx_list
+
+def compute_pen_and_bc(
+    pdb_file, 
+    int_en_csv, 
+    out_folder, 
+    intEnCutoff_values=[1.0], 
+    include_covalents_options=[True, False],
+    logger=None,
+    source_sel="all",
+    target_sel="all"
+):
+    df_intEn = pd.read_csv(int_en_csv)
+    if 'Unnamed: 0' in df_intEn.columns:
+        df_intEn = df_intEn.drop(columns=['Unnamed: 0'])
+    if 'Pair_indices' in df_intEn.columns:
+        df_intEn = df_intEn.rename(columns={'Pair_indices': 'pair'})
+
+    # Get union of residue indices from source_sel and target_sel
+    sys = parsePDB(pdb_file)
+    source_indices = set(sys.select(source_sel).getResindices())
+    target_indices = set(sys.select(target_sel).getResindices())
+    residue_indices = sorted(source_indices | target_indices)
+
+    all_bc_results = []
+    for include_covalents in include_covalents_options:
+        for intEnCutoff in intEnCutoff_values:
+            logger and logger.info(f"Creating PENs: include_covalents={include_covalents}, intEnCutoff={intEnCutoff}")
+            nx_list = getRibeiroOrtizNetwork(
+                pdb_file, df_intEn, 
+                includeCovalents=include_covalents, 
+                intEnCutoff=intEnCutoff,
+                residue_indices=residue_indices
+            )
+            for frame_idx, G in enumerate(nx_list):
+                # Save network
+                gml_path = os.path.join(
+                    out_folder, 
+                    f"pen_cov{include_covalents}_cutoff{intEnCutoff}_frame{frame_idx}.gml"
+                )
+                nx.write_gml(G, gml_path)
+                # Compute BCs
+                bc_dict = nx.betweenness_centrality(G)
+                bc_df = pd.DataFrame({
+                    'Residue': list(bc_dict.keys()),
+                    'BC': list(bc_dict.values()),
+                    'Frame': frame_idx,
+                    'include_covalents': include_covalents,
+                    'intEnCutoff': intEnCutoff,
+                })
+                # Add node labels
+                bc_df['Label'] = [G.nodes[j]['label'] for j in bc_df['Residue'].values]
+                all_bc_results.append(bc_df)
+    # Concatenate all results
+    df_bc = pd.concat(all_bc_results, axis=0, ignore_index=True)
+    df_bc.to_csv(os.path.join(out_folder, "pen_betweenness_centralities.csv"), index=False)
+    logger and logger.info(f"Saved all PENs and BCs to {out_folder}")
 
 def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1):
     """
@@ -743,8 +874,9 @@ def cleanUp(outFolder, logger):
     logger.info('Cleaning up... completed.')
 
 def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
-                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", nt=1, noconsole_handler=False, include_files=False):
-
+                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", nt=1, noconsole_handler=False, include_files=False,
+                       create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False]):
+    
     start_time = time.time()  # Start the timer
 
     # Find the folder of the current script
@@ -816,14 +948,32 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
 
     else:
         run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt)
-    
+
     if nointeraction:
         logger.info('Not calculating interaction energies as per user request.')
-
     else:
         initialFilter = perform_initial_filtering(out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger)
         edrFiles, pairsFilteredChunks = calculate_interaction_energies(out_folder, initialFilter, nt, logger)
         parse_interaction_energies(edrFiles, pairsFilteredChunks, out_folder, logger)
+
+    # --- PEN analysis ---
+    if create_pen:
+        logger.info('Starting PEN (Protein Energy Network) analysis...')
+        pen_csv = os.path.join(out_folder, 'energies_intEnTotal.csv')
+        pdb_path = os.path.join(out_folder, 'system_dry.pdb')
+        if os.path.exists(pen_csv) and os.path.exists(pdb_path):
+            compute_pen_and_bc(
+                pdb_file=pdb_path,
+                int_en_csv=pen_csv,
+                out_folder=out_folder,
+                intEnCutoff_values=pen_cutoffs,
+                include_covalents_options=pen_include_covalents,
+                logger=logger,
+                source_sel=source_sel,
+                target_sel=target_sel
+            )
+        else:
+            logger.warning("PEN input files not found, skipping PEN analysis.")
 
     cleanUp(out_folder, logger)
     elapsed_time = time.time() - start_time  # Calculate the elapsed time    
@@ -854,6 +1004,10 @@ def parse_args():
     parser.add_argument('--toppar', type=str, help='Toppar folder')
     parser.add_argument('--traj', type=str, help='Trajectory file')
     parser.add_argument('--include_files', nargs='+', type=str, help='Include files')
+    # PEN-specific arguments
+    parser.add_argument('--create_pen', action='store_true', help='Create Protein Energy Networks (PENs) and calculate betweenness centralities')
+    parser.add_argument('--pen_cutoffs', nargs='+', type=float, default=[1.0], help='List of intEnCutoff values for PEN construction')
+    parser.add_argument('--pen_include_covalents', nargs='+', type=lambda x: (str(x).lower() == 'true'), default=[True, False], help='Whether to include covalent bonds in PENs (True/False, can be multiple)')
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(0)
@@ -864,7 +1018,10 @@ def main():
     run_grinn_workflow(
         args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
         args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.nt, 
-        args.noconsole_handler, args.include_files
+        args.noconsole_handler, args.include_files,
+        create_pen=args.create_pen,
+        pen_cutoffs=args.pen_cutoffs,
+        pen_include_covalents=args.pen_include_covalents
     )
 
 if __name__ == "__main__":
