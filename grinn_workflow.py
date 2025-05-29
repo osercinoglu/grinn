@@ -873,9 +873,254 @@ def cleanUp(outFolder, logger):
 
     logger.info('Cleaning up... completed.')
 
+def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cutoff=10, 
+                     nofixpdb=False, top=None, toppar=None, traj=None, nointeraction=False, 
+                     gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
+                     nt=1, noconsole_handler=False, include_files=None,
+                     create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False]):
+    """
+    Test and validate inputs for the gRINN workflow.
+    
+    Returns:
+    - (bool, list): (is_valid, list_of_errors)
+    """
+    errors = []
+    warnings = []
+    
+    # Test required arguments
+    if not pdb_file:
+        errors.append("ERROR: PDB file path is required")
+    elif not os.path.exists(pdb_file):
+        errors.append(f"ERROR: PDB file '{pdb_file}' does not exist")
+    elif not pdb_file.endswith('.pdb'):
+        warnings.append(f"WARNING: PDB file '{pdb_file}' does not have .pdb extension")
+    
+    if not out_folder:
+        errors.append("ERROR: Output folder path is required")
+    
+    # Test optional file arguments
+    if top and not os.path.exists(top):
+        errors.append(f"ERROR: Topology file '{top}' does not exist")
+    
+    if traj:
+        if not os.path.exists(traj):
+            errors.append(f"ERROR: Trajectory file '{traj}' does not exist")
+        elif not traj.endswith(('.xtc', '.trr', '.dcd')):
+            warnings.append(f"WARNING: Trajectory file '{traj}' has unusual extension")
+    
+    if ff_folder and not os.path.exists(ff_folder):
+        errors.append(f"ERROR: Force field folder '{ff_folder}' does not exist")
+    
+    if toppar and not os.path.exists(toppar):
+        errors.append(f"ERROR: Toppar folder '{toppar}' does not exist")
+    
+    # Test include_files
+    if include_files:
+        for f in include_files:
+            if not os.path.exists(f):
+                errors.append(f"ERROR: Include file '{f}' does not exist")
+    
+    # Test numeric parameters
+    try:
+        cutoff = float(init_pair_filter_cutoff)
+        if cutoff <= 0:
+            errors.append(f"ERROR: init_pair_filter_cutoff must be positive, got {cutoff}")
+    except (TypeError, ValueError):
+        errors.append(f"ERROR: init_pair_filter_cutoff must be numeric, got {init_pair_filter_cutoff}")
+    
+    try:
+        nt_val = int(nt)
+        if nt_val <= 0:
+            errors.append(f"ERROR: nt (threads) must be positive, got {nt_val}")
+    except (TypeError, ValueError):
+        errors.append(f"ERROR: nt must be an integer, got {nt}")
+    
+    # Test PEN parameters
+    if pen_cutoffs:
+        for i, cutoff in enumerate(pen_cutoffs):
+            try:
+                c = float(cutoff)
+                if c <= 0:
+                    errors.append(f"ERROR: PEN cutoff must be positive, got {c} at position {i}")
+            except (TypeError, ValueError):
+                errors.append(f"ERROR: PEN cutoff must be numeric, got {cutoff} at position {i}")
+    
+    # Test selections
+    if source_sel or target_sel:
+        try:
+            from prody import parsePDB
+            sys = parsePDB(pdb_file)
+            
+            if source_sel and source_sel != "all":
+                try:
+                    sel = sys.select(source_sel)
+                    if sel is None:
+                        errors.append(f"ERROR: source_sel '{source_sel}' selects no atoms")
+                except Exception as e:
+                    errors.append(f"ERROR: Invalid source_sel syntax: {str(e)}")
+            
+            if target_sel and target_sel != "all":
+                try:
+                    sel = sys.select(target_sel)
+                    if sel is None:
+                        errors.append(f"ERROR: target_sel '{target_sel}' selects no atoms")
+                except Exception as e:
+                    errors.append(f"ERROR: Invalid target_sel syntax: {str(e)}")
+        except Exception as e:
+            warnings.append(f"WARNING: Could not parse PDB for selection validation: {str(e)}")
+    
+    # Test logical combinations
+    if traj and not top:
+        errors.append("ERROR: Trajectory file provided but no topology file")
+    
+    if toppar and not top:
+        warnings.append("WARNING: Toppar folder provided but no topology file")
+    
+    if nointeraction and create_pen:
+        errors.append("ERROR: Cannot create PEN without calculating interactions (nointeraction=True)")
+    
+    # Test GROMACS functionality
+    print("\nTesting GROMACS functionality...")
+    gromacs_errors = test_gromacs_functionality(pdb_file, top, traj, ff_folder)
+    errors.extend(gromacs_errors)
+    
+    # Print results
+    print("="*60)
+    print("gRINN Input Validation Report")
+    print("="*60)
+    
+    if not errors and not warnings:
+        print("✓ All inputs valid!")
+    else:
+        if errors:
+            print(f"\n❌ Found {len(errors)} error(s):")
+            for e in errors:
+                print(f"  {e}")
+        
+        if warnings:
+            print(f"\n⚠️  Found {len(warnings)} warning(s):")
+            for w in warnings:
+                print(f"  {w}")
+    
+    print("="*60)
+    
+    return len(errors) == 0, errors
+
+
+def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
+    """
+    Test if GROMACS can actually process the input files.
+    
+    Returns:
+    - errors (list): List of GROMACS-related errors
+    """
+    errors = []
+    temp_dir = None
+    
+    try:
+        import tempfile
+        import gromacs
+        
+        # Create temporary directory for test
+        temp_dir = tempfile.mkdtemp(prefix="grinn_test_")
+        
+        # Test 1: Check if GROMACS is available
+        try:
+            result = gromacs.gmx_version()
+            print(f"✓ GROMACS found: {result}")
+        except Exception as e:
+            errors.append(f"ERROR: GROMACS not found or not working: {str(e)}")
+            return errors
+        
+        # Test 2: Test PDB file with gmx editconf (quick structure check)
+        if pdb_file and os.path.exists(pdb_file):
+            try:
+                test_out = os.path.join(temp_dir, "test.pdb")
+                gromacs.editconf(f=pdb_file, o=test_out, princ=True)
+                print(f"✓ PDB file is readable by GROMACS")
+            except Exception as e:
+                errors.append(f"ERROR: GROMACS cannot read PDB file: {str(e)}")
+        
+        # Test 3: If topology provided, test with gmx grompp
+        if top and os.path.exists(top):
+            try:
+                # Create a minimal mdp file for testing
+                test_mdp = os.path.join(temp_dir, "test.mdp")
+                with open(test_mdp, 'w') as f:
+                    f.write("integrator = md\n")
+                    f.write("nsteps = 0\n")
+                    f.write("cutoff-scheme = Verlet\n")
+                
+                test_tpr = os.path.join(temp_dir, "test.tpr")
+                # Copy PDB to temp dir to ensure paths work
+                import shutil
+                temp_pdb = os.path.join(temp_dir, "system.pdb")
+                shutil.copy(pdb_file, temp_pdb)
+                
+                gromacs.grompp(f=test_mdp, c=temp_pdb, p=top, o=test_tpr, maxwarn=10)
+                print(f"✓ Topology file is valid and compatible with PDB")
+            except Exception as e:
+                error_msg = str(e)
+                if "atom name" in error_msg.lower():
+                    errors.append(f"ERROR: Topology and PDB atom names don't match: {error_msg}")
+                elif "residue" in error_msg.lower():
+                    errors.append(f"ERROR: Topology and PDB residues don't match: {error_msg}")
+                else:
+                    errors.append(f"ERROR: GROMACS cannot process topology with PDB: {error_msg}")
+        
+        # Test 4: If trajectory provided, test with gmx check
+        if traj and os.path.exists(traj):
+            try:
+                # Use gmx check to verify trajectory
+                result = gromacs.check(f=traj)
+                print(f"✓ Trajectory file is valid")
+            except Exception as e:
+                errors.append(f"ERROR: GROMACS cannot read trajectory file: {str(e)}")
+        
+        # Test 5: If custom force field provided, check if it has required files
+        if ff_folder and os.path.exists(ff_folder):
+            required_ff_files = ['forcefield.itp', 'aminoacids.rtp']
+            missing_ff_files = []
+            for ff_file in required_ff_files:
+                if not os.path.exists(os.path.join(ff_folder, ff_file)):
+                    missing_ff_files.append(ff_file)
+            
+            if missing_ff_files:
+                errors.append(f"ERROR: Force field folder missing required files: {', '.join(missing_ff_files)}")
+            else:
+                print(f"✓ Force field folder contains required files")
+        
+    except ImportError:
+        errors.append("ERROR: Could not import GROMACS - is it properly installed?")
+    except Exception as e:
+        errors.append(f"ERROR: Unexpected error during GROMACS testing: {str(e)}")
+    finally:
+        # Clean up temporary directory
+        if temp_dir and os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir)
+    
+    return errors
+
+
 def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
-                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", nt=1, noconsole_handler=False, include_files=False,
-                       create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False]):
+                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
+                       nt=1, noconsole_handler=False, include_files=False, create_pen=False, pen_cutoffs=[1.0], 
+                       pen_include_covalents=[True, False], test_only=False):
+    
+    # If test_only flag is set, just validate inputs and exit
+    if test_only:
+        is_valid, errors = test_grinn_inputs(
+            pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, toppar, 
+            traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, 
+            noconsole_handler, include_files, create_pen, pen_cutoffs, pen_include_covalents
+        )
+        if not is_valid:
+            print("\n❌ Workflow cannot proceed due to errors.")
+            sys.exit(1)
+        else:
+            print("\n✓ All checks passed! Workflow can proceed.")
+            sys.exit(0)
     
     start_time = time.time()  # Start the timer
 
@@ -1008,6 +1253,9 @@ def parse_args():
     parser.add_argument('--create_pen', action='store_true', help='Create Protein Energy Networks (PENs) and calculate betweenness centralities')
     parser.add_argument('--pen_cutoffs', nargs='+', type=float, default=[1.0], help='List of intEnCutoff values for PEN construction')
     parser.add_argument('--pen_include_covalents', nargs='+', type=lambda x: (str(x).lower() == 'true'), default=[True, False], help='Whether to include covalent bonds in PENs (True/False, can be multiple)')
+    # Add test-only flag
+    parser.add_argument("--test-only", action="store_true", 
+                       help="Only test input validity and GROMACS compatibility without running the workflow")
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(0)
@@ -1016,12 +1264,14 @@ def parse_args():
 def main():
     args = parse_args()
     run_grinn_workflow(
-        args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, args.nofixpdb, args.top, args.toppar, args.traj,
-        args.nointeraction, args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, args.nt, 
-        args.noconsole_handler, args.include_files,
+        args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
+        args.nofixpdb, args.top, args.toppar, args.traj, args.nointeraction, 
+        args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, 
+        args.nt, args.noconsole_handler, args.include_files,
         create_pen=args.create_pen,
         pen_cutoffs=args.pen_cutoffs,
-        pen_include_covalents=args.pen_include_covalents
+        pen_include_covalents=args.pen_include_covalents,
+        test_only=getattr(args, 'test_only', False)  # Use getattr for compatibility
     )
 
 if __name__ == "__main__":
