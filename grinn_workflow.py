@@ -6,24 +6,139 @@ from itertools import islice
 import concurrent.futures
 import pyprind
 import signal
+import multiprocessing
+import contextlib
+import io
+import tempfile
 # GromacsWrapper is only import here since source_gmxrc must be run first.
 import gromacs
 import gromacs.environment
 #print("GROMACS_DIR:", gmx_env_vars.get("GROMACS_DIR"))
 from contextlib import contextmanager
-import os, sys, pickle, shutil, time, subprocess, panedr, pandas, glob
+import os, sys, pickle, shutil, time, subprocess, panedr, glob
 import logging
 from scipy.sparse import lil_matrix
 from pdbfixer import PDBFixer
 from openmm.app import PDBFile
 import mdtraj as md
 import pandas as pd
+import numpy as np
 import networkx as nx
 import tqdm
 import argparse
+import warnings
+
+# Suppress pandas dtype warnings and other noisy warnings
+warnings.filterwarnings('ignore', category=UserWarning)
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+warnings.filterwarnings('ignore', message='.*dtype.*')
+warnings.filterwarnings('ignore', message='.*DtypeWarning.*')
+warnings.filterwarnings('ignore', message='.*ParserWarning.*')
+warnings.filterwarnings('ignore', message='.*PerformanceWarning.*')
+import warnings
+import logging
+import time
+import multiprocessing
+import concurrent.futures
+import itertools
+import pickle
+import subprocess
+import signal
+import shutil
+import glob
+import tempfile
+import contextlib
+import io
+
+pd.set_option('display.max_info_columns', 0)
+pd.set_option('display.max_info_rows', 0)
+
+# Optional imports for advanced features
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
+
+try:
+    import gc
+    HAS_GC = True
+except ImportError:
+    HAS_GC = False
 
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
+
+# Simplified pandas-only EDR processing functions
+def parse_edr_file_parallel(edr_file):
+    """
+    Simple helper function for parallel EDR parsing using pandas only
+    """
+    try:
+        # Check if EDR file exists and is not empty
+        if not os.path.exists(edr_file):
+            return None
+        
+        if os.path.getsize(edr_file) == 0:
+            return None
+        
+        # Parse EDR file to DataFrame with suppressed output
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            import panedr
+            df = panedr.edr_to_df(edr_file)
+        
+        if df.empty:
+            return None
+        
+        return df
+            
+    except Exception as e:
+        # Return None on error
+        return None
+
+def combine_dataframes_memory_efficient(df_list, outFolder, logger):
+    """
+    Memory-efficient combination of EDR DataFrames using pandas only
+    """
+    logger.info('Combining parsed EDR files using memory-efficient pandas approach...')
+    
+    # Filter out None/empty results
+    valid_dfs = [df for df in df_list if df is not None and not df.empty]
+    
+    if not valid_dfs:
+        logger.error("No valid DataFrames to combine!")
+        return pd.DataFrame()
+    
+    logger.info(f'Found {len(valid_dfs)} valid DataFrames to combine')
+    
+    try:
+        # Use the original efficient combination method
+        df = valid_dfs[0]
+        
+        for i, df_pair in enumerate(valid_dfs[1:], 1):
+            # Remove already parsed columns to avoid duplication
+            df_pair_columns = set(df_pair.columns)
+            df_columns = set(df.columns)
+            new_columns = list(df_pair_columns - df_columns)
+            
+            if new_columns:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    df = pd.concat([df, df_pair[new_columns]], axis=1)
+            
+            logger.info(f'Combined {i + 1} out of {len(valid_dfs)} EDR files...')
+            
+            # Clean up intermediate DataFrame
+            del df_pair
+            if HAS_GC:
+                gc.collect()
+        
+        logger.info(f'Final combination completed with shape {df.shape}')
+        return df
+        
+    except Exception as e:
+        logger.error(f'Error in combine_dataframes_memory_efficient: {str(e)}')
+        return pd.DataFrame()
 
 # Directly modifying logging level for ProDy to prevent printing of noisy debug/warning
 # level messages on the terminal.
@@ -198,7 +313,7 @@ def compute_pen_and_bc(
     df_bc.to_csv(os.path.join(out_folder, "pen_betweenness_centralities.csv"), index=False)
     logger and logger.info(f"Saved all PENs and BCs to {out_folder}")
 
-def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1):
+def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1, skip=1):
     """
     Run a GROMACS simulation workflow.
 
@@ -209,6 +324,7 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
     - nofixpdb (bool): Whether to fix the PDB file using pdbfixer (default is True).
     - logger (logging.Logger): The logger object for logging messages.
     - nt (int): Number of threads for GROMACS commands (default is 1).
+    - skip (int): Skip every nth frame in trajectory output (default is 1, no skipping).
     - ff_folder (str): The folder containing the force field files (default is None).
 
     Returns:
@@ -305,16 +421,16 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
             logger.info("mdrun for NPT command completed.")
             gromacs.trjconv(f=os.path.join(out_folder, 'npt.pdb'), o=os.path.join(out_folder, 'npt.pdb'), s=os.path.join(out_folder, 'solvated_ions.pdb'), input=('0','q'))
             logger.info("trjconv for NPT command completed.")
-            gromacs.trjconv(s=os.path.join(out_folder, 'npt.tpr'), f=os.path.join(out_folder, 'npt.xtc'), o=os.path.join(out_folder, 'traj.xtc'), input=(index_group_name,))
-            logger.info("trjconv for NPT to XTC conversion command completed.")
+            gromacs.trjconv(s=os.path.join(out_folder, 'npt.tpr'), f=os.path.join(out_folder, 'npt.xtc'), o=os.path.join(out_folder, 'traj.xtc'), skip=skip, input=(index_group_name,))
+            logger.info(f"trjconv for NPT to XTC conversion command completed (skipping every {skip} frames).")
             next_pdb = "npt.pdb"
 
         gromacs.trjconv(f=os.path.join(out_folder, next_pdb), o=os.path.join(out_folder, 'system_dry.pdb'), s=os.path.join(out_folder, next_pdb), n=os.path.join(out_folder, 'index.ndx'), input=(index_group_name,))
         logger.info(f"trjconv for {next_pdb} to DRY PDB conversion command completed.")
         
         gromacs.trjconv(f=os.path.join(out_folder, 'traj.xtc'), o=os.path.join(out_folder, 'traj_dry.xtc'), s=os.path.join(out_folder, 'system_dry.pdb'), 
-                        n=os.path.join(out_folder, 'index.ndx'), input=(index_group_name,))
-        logger.info(f"trjconv for traj.xtc to traj_dry.xtc conversion command completed.")
+                        n=os.path.join(out_folder, 'index.ndx'), skip=skip, input=(index_group_name,))
+        logger.info(f"trjconv for traj.xtc to traj_dry.xtc conversion command completed (skipping every {skip} frames).")
 
         # Convert npt.xtc to npt.dcd
         traj = md.load(os.path.join(out_folder, 'traj_dry.xtc'), top=os.path.join(out_folder, "system_dry.pdb"))
@@ -628,212 +744,303 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
     edrFiles, pairsFilteredChunksProcessed = parallel_process_chunks(pairsFilteredChunks, outFolder, top_file, pdb_file, xtc_file, numCoresIE, logger)
     return edrFiles, pairsFilteredChunksProcessed
 
+def find_energy_columns(columns_set, pair):
+    """Find energy columns for a pair efficiently"""
+    p0, p1 = pair[0], pair[1]
+    possible_cols = {
+        'LJSR': (f'LJ-SR:res{p0}-res{p1}', f'LJ-SR:res{p1}-res{p0}'),
+        'LJ14': (f'LJ-14:res{p0}-res{p1}', f'LJ-14:res{p1}-res{p0}'),
+        'CoulSR': (f'Coul-SR:res{p0}-res{p1}', f'Coul-SR:res{p1}-res{p0}'),
+        'Coul14': (f'Coul-14:res{p0}-res{p1}', f'Coul-14:res{p1}-res{p0}')
+    }
+    
+    found_cols = {}
+    for energy_type, (col1, col2) in possible_cols.items():
+        if col1 in columns_set:
+            found_cols[energy_type] = col1
+        elif col2 in columns_set:
+            found_cols[energy_type] = col2
+    
+    return found_cols if len(found_cols) == 4 else None
+
+def extract_energies_vectorized(df, pair_cols, kj2kcal):
+    """Extract energies using vectorized operations"""
+    # Get energy arrays
+    enLJSR = df[pair_cols['LJSR']].values * kj2kcal
+    enLJ14 = df[pair_cols['LJ14']].values * kj2kcal
+    enCoulSR = df[pair_cols['CoulSR']].values * kj2kcal
+    enCoul14 = df[pair_cols['Coul14']].values * kj2kcal
+    
+    # Calculate totals vectorized
+    enLJ = enLJSR + enLJ14
+    enCoul = enCoulSR + enCoul14
+    enTotal = enLJ + enCoul
+    
+    return {
+        'VdW': enLJ.tolist(),
+        'Elec': enCoul.tolist(),
+        'Total': enTotal.tolist()
+    }
+
+def collect_energies_from_dataframe(df, pairsFilteredChunks, logger):
+    """
+    Collect energies from a DataFrame using vectorized operations
+    """
+    energiesDict = {}
+    kj2kcal = 0.239005736
+    
+    # Flatten all pairs
+    all_pairs = []
+    for chunk in pairsFilteredChunks:
+        all_pairs.extend(chunk)
+    
+    total_pairs = len(all_pairs)
+    logger.info(f'Collecting energies for {total_pairs} residue pairs using vectorized approach...')
+    
+    # Get available columns once
+    columns_set = set(df.columns)
+    
+    # Process pairs in dynamic batches based on available cores
+    available_cores = multiprocessing.cpu_count()
+    batch_size = max(20, min(200, int(available_cores * 10)))  # Scale with cores
+    processed = 0
+    
+    for i in range(0, len(all_pairs), batch_size):
+        batch_pairs = all_pairs[i:i + batch_size]
+        
+        # Find valid pairs in this batch
+        valid_pairs = []
+        for pair in batch_pairs:
+            pair_cols = find_energy_columns(columns_set, pair)
+            if pair_cols:
+                valid_pairs.append((pair, pair_cols))
+        
+        if not valid_pairs:
+            continue
+        
+        # Process valid pairs in batch
+        for pair, pair_cols in valid_pairs:
+            try:
+                energyDict = extract_energies_vectorized(df, pair_cols, kj2kcal)
+                key = f"{pair[0]}-{pair[1]}"
+                energiesDict[key] = energyDict
+                processed += 1
+            except Exception as e:
+                logger.warning(f'Error processing pair {pair}: {str(e)}')
+                continue
+        
+        # Progress update
+        if (i + batch_size) % (batch_size * 10) == 0:  # Update every 10 batches
+            progress_pct = (min(i + batch_size, len(all_pairs)) / len(all_pairs)) * 100
+            logger.info(f'Energy collection progress: {progress_pct:.1f}% ({processed} successful extractions)')
+    
+    success_rate = (processed / total_pairs) * 100 if total_pairs > 0 else 0
+    logger.info(f'Vectorized energy collection completed: {processed}/{total_pairs} pairs extracted successfully ({success_rate:.1f}% success rate)')
+    
+    return energiesDict
+
+def supplement_df_optimized(df, system):
+    """Optimized version of supplement_df with caching"""
+    # Cache system selections
+    selection_cache = {}
+    
+    def get_cached_selection(resindex):
+        if resindex not in selection_cache:
+            selection_cache[resindex] = system.select(f'resindex {resindex}')
+        return selection_cache[resindex]
+    
+    # Extract indices
+    df['res1_index'] = df['Pair_indices'].str.split('-').str[0].astype(int)
+    df['res2_index'] = df['Pair_indices'].str.split('-').str[1].astype(int)
+    
+    # Get unique residue indices to minimize selections
+    unique_indices = pd.concat([df['res1_index'], df['res2_index']]).unique()
+    
+    # Pre-populate cache
+    residue_info = {}
+    for idx in unique_indices:
+        sel = get_cached_selection(idx)
+        residue_info[idx] = {
+            'chain': sel.getChids()[0],
+            'resnum': sel.getResnums()[0],
+            'resname': sel.getResnames()[0]
+        }
+    
+    # Apply cached info vectorized
+    df['res1_chain'] = df['res1_index'].map(lambda x: residue_info[x]['chain'])
+    df['res2_chain'] = df['res2_index'].map(lambda x: residue_info[x]['chain'])
+    df['res1_resnum'] = df['res1_index'].map(lambda x: residue_info[x]['resnum'])
+    df['res2_resnum'] = df['res2_index'].map(lambda x: residue_info[x]['resnum'])
+    df['res1_resname'] = df['res1_index'].map(lambda x: residue_info[x]['resname'])
+    df['res2_resname'] = df['res2_index'].map(lambda x: residue_info[x]['resname'])
+    
+    # Create composite columns
+    df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str) + '_' + df['res1_chain']
+    df['res2'] = df['res2_resname'] + df['res2_resnum'].astype(str) + '_' + df['res2_chain']
+    
+    return df
+
+def create_result_dataframes_optimized(energiesDict, logger):
+    """Create result DataFrames more efficiently"""
+    logger.info('Creating result DataFrames...')
+    
+    # Pre-allocate lists for better performance
+    pairs = list(energiesDict.keys())
+    n_pairs = len(pairs)
+    
+    if n_pairs == 0:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    # Get number of frames from first entry
+    n_frames = len(next(iter(energiesDict.values()))['Total'])
+    
+    # Create DataFrames directly without transpose
+    total_data = np.zeros((n_pairs, n_frames))
+    elec_data = np.zeros((n_pairs, n_frames))
+    vdw_data = np.zeros((n_pairs, n_frames))
+    
+    for i, (pair, energies) in enumerate(energiesDict.items()):
+        total_data[i] = energies['Total']
+        elec_data[i] = energies['Elec']
+        vdw_data[i] = energies['VdW']
+    
+    # Create DataFrames with proper column names (using integers like original)
+    frame_cols = list(range(n_frames))
+    
+    df_total = pd.DataFrame(total_data, index=pairs, columns=frame_cols)
+    df_elec = pd.DataFrame(elec_data, index=pairs, columns=frame_cols)
+    df_vdw = pd.DataFrame(vdw_data, index=pairs, columns=frame_cols)
+    
+    # Reset index to make pairs a column
+    df_total = df_total.reset_index().rename(columns={'index': 'Pair_indices'})
+    df_elec = df_elec.reset_index().rename(columns={'index': 'Pair_indices'})
+    df_vdw = df_vdw.reset_index().rename(columns={'index': 'Pair_indices'})
+    
+    return df_total, df_elec, df_vdw
+
 def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger):
     """
     Parse interaction energies from EDR files and save the results.
+    Optimized version with parallel processing and vectorized operations.
 
     Parameters:
     - edrFiles (list): List of paths to the EDR files.
+    - pairsFilteredChunks (list): List of filtered residue pair chunks.
     - outFolder (str): The folder where output files will be saved.
     - logger (logging.Logger): The logger object for logging messages.
     """
 
     system = parsePDB(os.path.join(outFolder, 'system_dry.pdb'))
     
-    
-    logger.info('Parsing GMX energy output... This may take a while...')
-    df = panedr.edr_to_df(os.path.join(outFolder, 'interact0.edr'))
-    logger.info('Parsed 1 EDR file.')
+    try:
+        # Determine optimal number of workers (80% of available cores)
+        import multiprocessing
+        import psutil
+        available_cores = multiprocessing.cpu_count()
+        max_workers = min(len(edrFiles), max(1, int(available_cores * 0.8)))
+        
+        # Log system resources
+        memory_gb = psutil.virtual_memory().total / (1024**3)
+        logger.info(f'System info: {available_cores} cores, {memory_gb:.1f} GB memory')
+        logger.info(f'Parsing {len(edrFiles)} EDR files in parallel using {max_workers} workers (80% of {available_cores} cores)...')
+        
+        # Parse EDR files in parallel with progress tracking
+        start_time = time.time()
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all jobs
+            futures = {executor.submit(parse_edr_file_parallel, edr_file): i for i, edr_file in enumerate(edrFiles)}
+            
+            # Track progress as jobs complete
+            df_list = [None] * len(edrFiles)  # Pre-allocate list to maintain order
+            completed = 0
+            
+            for future in concurrent.futures.as_completed(futures):
+                original_index = futures[future]
+                df_list[original_index] = future.result()
+                completed += 1
+                
+                # More frequent progress updates - every file for small batches, every 5% for large batches
+                should_log = False
+                if len(edrFiles) <= 20:  # For small batches, log every file
+                    should_log = True
+                elif completed % max(1, len(edrFiles) // 20) == 0:  # For large batches, log every 5%
+                    should_log = True
+                elif completed == len(edrFiles):  # Always log completion
+                    should_log = True
+                    
+                if should_log:
+                    progress_pct = (completed / len(edrFiles)) * 100
+                    remaining = len(edrFiles) - completed
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
+                    eta = remaining / rate if rate > 0 else 0
+                    logger.info(f'EDR parsing progress: {completed}/{len(edrFiles)} files completed ({progress_pct:.1f}%) - {remaining} remaining - ETA: {eta:.1f}s')
+            
+            parsing_time = time.time() - start_time
+            logger.info(f'EDR parsing completed successfully: {len(edrFiles)} files processed in {parsing_time:.1f}s')
+        
+        # Use memory-efficient combination method
+        logger.info('Combining EDR results using memory-efficient pandas processing...')
+        df = combine_dataframes_memory_efficient(df_list, outFolder, logger)
+        
+        # Clear intermediate data and trigger garbage collection
+        del df_list
+        if HAS_GC:
+            gc.collect()
+        
+        # Use direct energy collection from DataFrame
+        logger.info('Collecting energy results using vectorized operations...')
+        energiesDict = collect_energies_from_dataframe(df, pairsFilteredChunks, logger)
+        
+        # Clear the large DataFrame
+        del df
+        gc.collect()
+        
+        logger.info('Collecting results...')
+        
+        # Create result DataFrames more efficiently
+        df_total, df_elec, df_vdw = create_result_dataframes_optimized(energiesDict, logger)
+        
+        # Supplement with residue information using optimized version
+        df_total = supplement_df_optimized(df_total, system)
+        df_elec = supplement_df_optimized(df_elec, system)
+        df_vdw = supplement_df_optimized(df_vdw, system)
+        
+        # Save results (using index=False to avoid extra index column)
+        logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnTotal.csv'))
+        df_total.to_csv(os.path.join(outFolder, 'energies_intEnTotal.csv'), index=False)
+        logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnElec.csv'))
+        df_elec.to_csv(os.path.join(outFolder, 'energies_intEnElec.csv'), index=False)
+        logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnVdW.csv'))
+        df_vdw.to_csv(os.path.join(outFolder, 'energies_intEnVdW.csv'), index=False)
 
-    for i in range(1, len(edrFiles)):
-        edrFile = edrFiles[i]
-        df_pair = panedr.edr_to_df(edrFile)
+        logger.info('Pickling results...')
 
-        # Remove already parsed columns
-        df_pair_columns = df_pair.columns
-        df_pair = df_pair[list(set(df_pair_columns) - set(df.columns))]
+        # Split the dictionary into chunks for pickling
+        def chunks(data, SIZE=10000):
+            it = iter(data)
+            for i in range(0, len(data), SIZE):
+                yield {k: data[k] for k in islice(it, SIZE)}
 
-        df = pd.concat([df, df_pair], axis=1)
-        logger.info('Parsed %i out of %i EDR files...' % (i + 1, len(edrFiles)))
+        enDicts = list(chunks(energiesDict, 1000))
 
-    logger.info('Collecting energy results...')
-    energiesDict = dict()
+        intEnPicklePaths = []
 
-    for i in range(len(pairsFilteredChunks)):
-        pairsFilteredChunk = pairsFilteredChunks[i]
-        energiesDictChunk = dict()
+        # Pickle the chunks
+        for i in range(len(enDicts)):
+            fpath = os.path.join(outFolder, 'energies_%i.pickle' % i)
+            with open(fpath, 'wb') as file:
+                logger.info('Pickling to energies_%i.pickle...' % i)
+                pickle.dump(enDicts[i], file)
+                intEnPicklePaths.append(fpath)
 
-        for pair in pairsFilteredChunk:
-            #res1_string = getChainResnameResnum(system, pair[0])[-1]
-            #res2_string = getChainResnameResnum(system, pair[1])[-1]
-            energyDict = dict()
+        logger.info('Pickling results... Done.')
+        
+    except Exception as e:
+        logger.error(f"Error in parse_interaction_energies: {str(e)}")
+        raise
 
-            # Lennard-Jones Short Range interaction
-            column_stringLJSR1 = 'LJ-SR:res%i-res%i' % (pair[0], pair[1])
-            column_stringLJSR2 = 'LJ-SR:res%i-res%i' % (pair[1], pair[0])
-            if column_stringLJSR1 in df.columns:
-                column_stringLJSR = column_stringLJSR1
-            elif column_stringLJSR2 in df.columns:
-                column_stringLJSR = column_stringLJSR2
-            else:
-                logger.warning(f'Pair {column_stringLJSR1} or {column_stringLJSR2} was not found in the pair interaction '
-                                 'energy output.')
-                continue
 
-            # Lennard-Jones 1-4 interaction
-            column_stringLJ141 = 'LJ-14:res%i-res%i' % (pair[0], pair[1])
-            column_stringLJ142 = 'LJ-14:res%i-res%i' % (pair[1], pair[0])
-            if column_stringLJ141 in df.columns:
-                column_stringLJ14 = column_stringLJ141
-            elif column_stringLJ142 in df.columns:
-                column_stringLJ14 = column_stringLJ142
-            else:
-                logger.warning(f'Pair {column_stringLJ141} or {column_stringLJ142} was not found in the pair interaction '
-                                 'energy output.')
-                continue
-
-            # Coulombic Short Range interaction
-            column_stringCoulSR1 = 'Coul-SR:res%i-res%i' % (pair[0], pair[1])
-            column_stringCoulSR2 = 'Coul-SR:res%i-res%i' % (pair[1], pair[0])
-            if column_stringCoulSR1 in df.columns:
-                column_stringCoulSR = column_stringCoulSR1
-            elif column_stringCoulSR2 in df.columns:
-                column_stringCoulSR = column_stringCoulSR2
-            else:
-                logger.warning(f'Pair {column_stringCoulSR1} or {column_stringCoulSR2} was not found in the pair interaction '
-                                 'energy output.')
-                continue
-
-            # Coulombic Short Range interaction
-            column_stringCoul141 = 'Coul-14:res%i-res%i' % (pair[0], pair[1])
-            column_stringCoul142 = 'Coul-14:res%i-res%i' % (pair[1], pair[0])
-            if column_stringCoul141 in df.columns:
-                column_stringCoul14 = column_stringCoul141
-            elif column_stringCoul142 in df.columns:
-                column_stringCoul14 = column_stringCoul142
-            else:
-                logger.warning(f'Pair {column_stringCoul141} or {column_stringCoul142} was not found in the pair interaction '
-                                 'energy output.')
-                continue
-
-            # Convert energy units from kJ/mol to kcal/mol
-            kj2kcal = 0.239005736
-            enLJSR = np.asarray(df[column_stringLJSR].values) * kj2kcal
-            enLJ14 = np.asarray(df[column_stringLJ14].values) * kj2kcal
-            enLJ = [enLJSR[j] + enLJ14[j] for j in range(len(enLJSR))]
-            energyDict['VdW'] = enLJ
-
-            enCoulSR = np.asarray(df[column_stringCoulSR].values) * kj2kcal
-            enCoul14 = np.asarray(df[column_stringCoul14].values) * kj2kcal
-            enCoul = [enCoulSR[j] + enCoul14[j] for j in range(len(enCoulSR))]
-            energyDict['Elec'] = enCoul
-
-            energyDict['Total'] = [energyDict['VdW'][j] + energyDict['Elec'][j] for j in range(len(energyDict['VdW']))]
-
-            #key1 = res1_string + '-' + res2_string
-            #key1 = key1.replace(' ', '')
-            #key2 = res2_string + '-' + res1_string
-            #key2 = key2.replace(' ', '')
-            #energiesDictChunk[key1] = energyDict
-            #energiesDictChunk[key2] = energyDict
-
-            # Also use residue indices - may come handy later on for some analyses
-            key1_alt = str(pair[0]) + '-' + str(pair[1])
-            energiesDictChunk[key1_alt] = energyDict
-
-        energiesDict.update(energiesDictChunk)
-        logger.info('Collected %i out of %i results' % (i + 1, len(pairsFilteredChunks)))
-
-    logger.info('Collecting results...')
-
-    # Prepare data tables from parsed energies and save to files
-    total_data = {}
-    elec_data = {}
-    vdw_data = {}
-
-    # Collect data into dictionaries
-    for key, value in energiesDict.items():
-        total_data[key] = value['Total']
-        elec_data[key] = value['Elec']
-        vdw_data[key] = value['VdW']
-
-    # Convert dictionaries to DataFrames using pd.concat
-    df_total = pd.DataFrame(total_data)
-    df_elec = pd.DataFrame(elec_data)
-    df_vdw = pd.DataFrame(vdw_data)
-
-    # If necessary, copy the DataFrames to defragment them
-    df_total = df_total.copy()
-    df_elec = df_elec.copy()
-    df_vdw = df_vdw.copy()
-
-    # Take transpose of the DataFrames
-    df_total = df_total.transpose()
-    df_elec = df_elec.transpose()
-    df_vdw = df_vdw.transpose()
-
-    # Reset index to avoid pairs being used as index
-    df_total.reset_index(inplace=True)
-    df_elec.reset_index(inplace=True)
-    df_vdw.reset_index(inplace=True)
-
-    def supplement_df(df, system):
-        # Rename the first column to 'Pair_indices'
-
-        df.rename(columns={df.columns[0]: 'Pair_indices'}, inplace=True)
-
-        # Extract {res1_index}-{res2_index} from 'Pair_indices', convert them to integers and store them in two separate columns
-        df['res1_index'] = df['Pair_indices'].apply(lambda x: int(x.split('-')[0]))
-        df['res2_index'] = df['Pair_indices'].apply(lambda x: int(x.split('-')[1]))
-
-        # Find chain ID, residue number, and residue one letter code for each res1 and for each res2, and assign them to new columns
-        df['res1_chain'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
-        df['res1_chain'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
-        df['res2_chain'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getChids()[0])
-        df['res1_resnum'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnums()[0])
-        df['res2_resnum'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnums()[0])
-        df['res1_resname'] = df['res1_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnames()[0])
-        df['res2_resname'] = df['res2_index'].apply(lambda x: system.select('resindex ' + str(x)).getResnames()[0])
-
-        # Merge res1_resname, res1_resnum, and _res1_chain into a new column, do the same for res2
-        df['res1'] = df['res1_resname'] + df['res1_resnum'].astype(str) + '_' + df['res1_chain']
-        df['res2'] = df['res2_resname'] + df['res2_resnum'].astype(str) + '_' + df['res2_chain']
-
-        return df
-    
-    # Supplement the DataFrames with additional information
-    df_total = supplement_df(df_total, system)
-    df_elec = supplement_df(df_elec, system)
-    df_vdw = supplement_df(df_vdw, system)
-
-    logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnTotal.csv'))
-    df_total.to_csv(os.path.join(outFolder, 'energies_intEnTotal.csv'))
-    logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnElec.csv'))
-    df_elec.to_csv(os.path.join(outFolder, 'energies_intEnElec.csv'))
-    logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnVdW.csv'))
-    df_vdw.to_csv(os.path.join(outFolder, 'energies_intEnVdW.csv'))
-
-    logger.info('Pickling results...')
-
-    # Split the dictionary into chunks for pickling
-    def chunks(data, SIZE=10000):
-        it = iter(data)
-        for i in range(0, len(data), SIZE):
-            yield {k: data[k] for k in islice(it, SIZE)}
-
-    enDicts = list(chunks(energiesDict, 1000))
-
-    intEnPicklePaths = []
-
-    # Pickle the chunks
-    for i in range(len(enDicts)):
-        fpath = os.path.join(outFolder, 'energies_%i.pickle' % i)
-        with open(fpath, 'wb') as file:
-            logger.info('Pickling to energies_%i.pickle...' % i)
-            pickle.dump(enDicts[i], file)
-            intEnPicklePaths.append(fpath)
-
-    logger.info('Pickling results... Done.')
 
 def cleanUp(outFolder, logger):
     """
@@ -876,7 +1083,7 @@ def cleanUp(outFolder, logger):
 def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cutoff=10, 
                      nofixpdb=False, top=None, toppar=None, traj=None, nointeraction=False, 
                      gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                     nt=1, noconsole_handler=False, include_files=None,
+                     nt=1, skip=1, noconsole_handler=False, include_files=None,
                      create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False]):
     """
     Test and validate inputs for the gRINN workflow.
@@ -934,6 +1141,13 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
             errors.append(f"ERROR: nt (threads) must be positive, got {nt_val}")
     except (TypeError, ValueError):
         errors.append(f"ERROR: nt must be an integer, got {nt}")
+    
+    try:
+        skip_val = int(skip)
+        if skip_val <= 0:
+            errors.append(f"ERROR: skip must be positive, got {skip_val}")
+    except (TypeError, ValueError):
+        errors.append(f"ERROR: skip must be an integer, got {skip}")
     
     # Test PEN parameters
     if pen_cutoffs:
@@ -1105,14 +1319,14 @@ def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
 
 def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                       nt=1, noconsole_handler=False, include_files=False, create_pen=False, pen_cutoffs=[1.0], 
+                       nt=1, skip=1, noconsole_handler=False, include_files=False, create_pen=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False):
     
     # If test_only flag is set, just validate inputs and exit
     if test_only:
         is_valid, errors = test_grinn_inputs(
             pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, toppar, 
-            traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, 
+            traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
             noconsole_handler, include_files, create_pen, pen_cutoffs, pen_include_covalents
         )
         if not is_valid:
@@ -1151,6 +1365,37 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
 
     logger = create_logger(out_folder, noconsole_handler)
     logger.info('### gRINN workflow started ###')
+    
+    # Log system resources and check disk space
+    try:
+        import psutil
+        import shutil
+        
+        # System resources
+        memory_gb = psutil.virtual_memory().total / (1024**3)
+        cpu_count = psutil.cpu_count()
+        logger.info(f'System resources: {cpu_count} CPU cores, {memory_gb:.1f} GB memory')
+        
+        # Check disk space
+        total, used, free = shutil.disk_usage(out_folder)
+        free_gb = free / (1024**3)
+        logger.info(f'Disk space available: {free_gb:.1f} GB')
+        
+        # Log frame skipping configuration
+        if skip > 1:
+            logger.info(f'Frame skipping enabled: analyzing every {skip} frames (skipping {skip-1} frames between analyses)')
+        else:
+            logger.info('Frame skipping disabled: analyzing all frames')
+        
+        # Warn if disk space is low
+        if free_gb < 10:
+            logger.warning(f'Warning: Low disk space ({free_gb:.1f} GB). Consider freeing up space.')
+        
+    except ImportError:
+        logger.info('psutil not available, skipping system resource logging')
+    except Exception as e:
+        logger.warning(f'Could not check system resources: {str(e)}')
+    
     # Print the command-line used to call this workflow to the log file
     logger.info('gRINN workflow was called as follows: ')
     logger.info(' '.join(sys.argv))
@@ -1184,15 +1429,17 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
 
         # Check whether also a trajectory file is provided
         if traj:
-            logger.info('Trajectory file provided. Using provided trajectory file.')
-            logger.info('Copying trajectory file to output folder...')
-            shutil.copy(traj, os.path.join(out_folder, 'traj_dry.xtc'))
+            logger.info('Trajectory file provided. Processing trajectory file with frame skipping...')
+            logger.info(f'Applying frame skipping (every {skip} frames) to trajectory...')
+            # Use trjconv to apply frame skipping instead of just copying
+            gromacs.trjconv(f=traj, o=os.path.join(out_folder, 'traj_dry.xtc'), s=os.path.join(out_folder, 'system_dry.pdb'), skip=skip, input=('0',))
+            logger.info(f'Trajectory processing completed (skipped every {skip} frames).')
         else:
             logger.info('Generating traj.xtc file from input pdb_file...')
             gromacs.trjconv(f=os.path.join(out_folder, 'system_dry.pdb'), o=os.path.join(out_folder, 'traj_dry.xtc'))
 
     else:
-        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt)
+        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt, skip)
 
     if nointeraction:
         logger.info('Not calculating interaction energies as per user request.')
@@ -1221,6 +1468,32 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
             logger.warning("PEN input files not found, skipping PEN analysis.")
 
     cleanUp(out_folder, logger)
+    
+    # Generate workflow summary report
+    try:
+        workflow_params = {
+            'pdb_file': pdb_file,
+            'out_folder': out_folder,
+            'ff_folder': ff_folder,
+            'init_pair_filter_cutoff': init_pair_filter_cutoff,
+            'nofixpdb': nofixpdb,
+            'top': top,
+            'traj': traj,
+            'nointeraction': nointeraction,
+            'gpu': gpu,
+            'solvate': solvate,
+            'npt': npt,
+            'source_sel': source_sel,
+            'target_sel': target_sel,
+            'nt': nt,
+            'create_pen': create_pen,
+            'pen_cutoffs': pen_cutoffs,
+            'pen_include_covalents': pen_include_covalents
+        }
+        generate_workflow_summary_report(out_folder, logger, workflow_params)
+    except Exception as e:
+        logger.warning(f'Could not generate workflow summary report: {str(e)}')
+    
     elapsed_time = time.time() - start_time  # Calculate the elapsed time    
     print("Elapsed time: {:.2f} seconds".format(elapsed_time))
     logger.info('Elapsed time: {:.2f} seconds'.format(elapsed_time))
@@ -1231,6 +1504,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         logger.removeHandler(handler)
 
 def parse_args():
+    import argparse
     parser = argparse.ArgumentParser(description="Run gRINN workflow")
     parser.add_argument("pdb_file", type=str, help="Input PDB file")
     parser.add_argument("out_folder", type=str, help="Output folder")
@@ -1243,6 +1517,7 @@ def parse_args():
     parser.add_argument("--source_sel", nargs="+", type=str, help="Source selection")
     parser.add_argument("--target_sel", nargs="+", type=str, help="Target selection")
     parser.add_argument("--nt", type=int, default=1, help="Number of threads for GROMACS commands (default is 1)")
+    parser.add_argument("--skip", type=int, default=1, help="Skip every nth frame in trajectory analysis (default is 1, no skipping)")
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
     parser.add_argument('--top', type=str, help='Topology file')
@@ -1261,13 +1536,211 @@ def parse_args():
         sys.exit(0)
     return parser.parse_args()
 
+def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
+    """
+    Generate a comprehensive summary report of the gRINN workflow results.
+    
+    Parameters:
+    - out_folder (str): The output folder containing workflow results
+    - logger (logging.Logger): The logger object
+    - workflow_params (dict): Optional dictionary containing workflow parameters
+    
+    Returns:
+    - None (writes report to file)
+    """
+    try:
+        import json
+        import glob
+        
+        report_file = os.path.join(out_folder, 'grinn_workflow_summary.json')
+        logger.info(f'Generating workflow summary report: {report_file}')
+        
+        report = {
+            'workflow_info': {
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'grinn_version': 'gRINN v2.0 (optimized)',
+                'output_folder': out_folder
+            },
+            'input_parameters': workflow_params or {},
+            'output_files': {},
+            'analysis_results': {},
+            'system_info': {}
+        }
+        
+        # System info
+        try:
+            import psutil
+            import platform
+            report['system_info'] = {
+                'platform': platform.system(),
+                'cpu_count': psutil.cpu_count(),
+                'memory_gb': round(psutil.virtual_memory().total / (1024**3), 1),
+                'python_version': platform.python_version()
+            }
+        except ImportError:
+            report['system_info'] = {'note': 'psutil not available for system info'}
+        
+        # Check for output files
+        output_files = {
+            'energy_files': {
+                'total_energy_csv': os.path.join(out_folder, 'energies_intEnTotal.csv'),
+                'elec_energy_csv': os.path.join(out_folder, 'energies_intEnElec.csv'),
+                'vdw_energy_csv': os.path.join(out_folder, 'energies_intEnVdW.csv')
+            },
+            'structure_files': {
+                'system_pdb': os.path.join(out_folder, 'system_dry.pdb'),
+                'trajectory': os.path.join(out_folder, 'traj_dry.xtc'),
+                'topology': os.path.join(out_folder, 'topol_dry.top')
+            },
+            'pen_files': {
+                'pen_networks': glob.glob(os.path.join(out_folder, 'pen_*.gml')),
+                'betweenness_centralities': os.path.join(out_folder, 'pen_betweenness_centralities.csv')
+            },
+            'log_files': {
+                'main_log': os.path.join(out_folder, 'calc.log'),
+                'gromacs_log': os.path.join(out_folder, 'gromacs.log')
+            }
+        }
+        
+        # Check file existence and get sizes
+        for category, files in output_files.items():
+            report['output_files'][category] = {}
+            if isinstance(files, dict):
+                for file_type, file_path in files.items():
+                    if os.path.exists(file_path):
+                        file_size = os.path.getsize(file_path)
+                       
+                        report['output_files'][category][file_type] = {
+                            'path': file_path,
+                            'size_mb': round(file_size / (1024**2), 2),
+                            'exists': True
+                        }
+                    else:
+                        report['output_files'][category][file_type] = {
+                            'path': file_path,
+                            'exists': False
+                        }
+            elif isinstance(files, list):
+                report['output_files'][category] = {
+                    'count': len(files),
+                    'files': files
+                }
+        
+        # Analyze energy results if available
+        energy_csv = os.path.join(out_folder, 'energies_intEnTotal.csv')
+        if os.path.exists(energy_csv):
+            try:
+                df = pd.read_csv(energy_csv)
+                
+                # Get frame columns (numeric columns)
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                
+                report['analysis_results']['energy_analysis'] = {
+                    'total_residue_pairs': len(df),
+                    'trajectory_frames': len(numeric_cols),
+                    'energy_statistics': {
+                        'mean_energy': float(df[numeric_cols].mean().mean()),
+                        'std_energy': float(df[numeric_cols].std().mean()),
+                        'min_energy': float(df[numeric_cols].min().min()),
+                        'max_energy': float(df[numeric_cols].max().max())
+                    }
+                }
+            except Exception as e:
+                report['analysis_results']['energy_analysis'] = {
+                    'error': f'Could not analyze energy CSV: {str(e)}'
+                }
+        
+        # Analyze PEN results if available
+        pen_csv = os.path.join(out_folder, 'pen_betweenness_centralities.csv')
+        if os.path.exists(pen_csv):
+            try:
+                df_pen = pd.read_csv(pen_csv)
+                
+                report['analysis_results']['pen_analysis'] = {
+                    'unique_residues': len(df_pen['Residue'].unique()),
+                    'pen_conditions': len(df_pen.groupby(['include_covalents', 'intEnCutoff'])),
+                    'frames_analyzed': len(df_pen['Frame'].unique()),
+                    'bc_statistics': {
+                        'mean_bc': float(df_pen['BC'].mean()),
+                        'max_bc': float(df_pen['BC'].max()),
+                        'min_bc': float(df_pen['BC'].min())
+                    }
+                }
+            except Exception as e:
+                report['analysis_results']['pen_analysis'] = {
+                    'error': f'Could not analyze PEN CSV: {str(e)}'
+                }
+        
+        # Save report
+        with open(report_file, 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        logger.info(f'Workflow summary report generated: {report_file}')
+        
+        # Also create a human-readable text summary
+        text_report = os.path.join(out_folder, 'grinn_workflow_summary.txt');
+        with open(text_report, 'w') as f:
+            f.write("gRINN Workflow Summary Report\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Timestamp: {report['workflow_info']['timestamp']}\n")
+            f.write(f"Output Folder: {out_folder}\n\n")
+            
+            # System info
+            if 'cpu_count' in report['system_info']:
+                f.write("System Information:\n")
+                f.write(f"  Platform: {report['system_info']['platform']}\n")
+                f.write(f"  CPU Cores: {report['system_info']['cpu_count']}\n")
+                f.write(f"  Memory: {report['system_info']['memory_gb']} GB\n\n")
+            
+            # Energy analysis
+            if 'energy_analysis' in report['analysis_results']:
+                ea = report['analysis_results']['energy_analysis']
+                f.write("Energy Analysis:\n")
+                f.write(f"  Total Residue Pairs: {ea.get('total_residue_pairs', 'N/A')}\n")
+                f.write(f"  Trajectory Frames: {ea.get('trajectory_frames', 'N/A')}\n")
+                if 'energy_statistics' in ea:
+                    stats = ea['energy_statistics']
+                    f.write(f"  Mean Energy: {stats['mean_energy']:.2f} kcal/mol\n")
+                    f.write(f"  Energy Range: {stats['min_energy']:.2f} to {stats['max_energy']:.2f} kcal/mol\n")
+                f.write("\n")
+            
+            # PEN analysis
+            if 'pen_analysis' in report['analysis_results']:
+                pa = report['analysis_results']['pen_analysis']
+                f.write("PEN Analysis:\n")
+                f.write(f"  Unique Residues: {pa.get('unique_residues', 'N/A')}\n")
+                f.write(f"  PEN Conditions: {pa.get('pen_conditions', 'N/A')}\n")
+                f.write(f"  Frames Analyzed: {pa.get('frames_analyzed', 'N/A')}\n")
+                if 'bc_statistics' in pa:
+                    stats = pa['bc_statistics']
+                    f.write(f"  Mean Betweenness Centrality: {stats['mean_bc']:.4f}\n")
+                    f.write(f"  Max Betweenness Centrality: {stats['max_bc']:.4f}\n")
+                f.write("\n")
+            
+            # Output files
+            f.write("Output Files:\n")
+            for category, files in report['output_files'].items():
+                f.write(f"  {category.replace('_', ' ').title()}:\n")
+                if isinstance(files, dict):
+                    for file_type, file_info in files.items():
+                        if file_info.get('exists', False):
+                            f.write(f"    ✓ {file_type}: {file_info['size_mb']} MB\n")
+                        else:
+                            f.write(f"    ✗ {file_type}: Not found\n")
+                f.write("\n")
+        
+        logger.info(f'Human-readable summary generated: {text_report}')
+        
+    except Exception as e:
+        logger.error(f'Error generating workflow summary report: {str(e)}')
+
 def main():
     args = parse_args()
     run_grinn_workflow(
         args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
         args.nofixpdb, args.top, args.toppar, args.traj, args.nointeraction, 
         args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, 
-        args.nt, args.noconsole_handler, args.include_files,
+        args.nt, args.skip, args.noconsole_handler, args.include_files,
         create_pen=args.create_pen,
         pen_cutoffs=args.pen_cutoffs,
         pen_include_covalents=args.pen_include_covalents,
