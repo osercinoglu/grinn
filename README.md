@@ -243,7 +243,7 @@ gRINN uses ProDy selection syntax for flexible residue selection:
 
 ## 📚 Documentation
 
-For more detailed information, visit the [gRINN Documentation](https://grinn.readthedocs.io).
+A detail documentation for gRINN is currently under development.
 
 ## 🤝 Contributing
 
