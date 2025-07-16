@@ -1,0 +1,38 @@
+# gRINN Conda Environment File
+# Usage: conda env create -f environment.yml
+
+name: grinn
+channels:
+  - conda-forge
+  - bioconda
+  - plotly
+  - defaults
+
+dependencies:
+  - python=3.10
+  # Core scientific packages
+  - numpy
+  - scipy
+  - pandas
+  - networkx
+  - tqdm
+  
+  # Bioinformatics packages
+  - prody
+  - mdtraj
+  - pdbfixer
+  - openmm
+  - panedr
+  - gromacswrapper
+  - pyprind
+  - gromacs  # Optional: can be installed from source
+  
+  # Dashboard packages
+  - dash
+  - dash-bootstrap-components
+  - plotly
+  
+  # pip packages
+  - pip
+  - pip:
+    - dash-molstar  # 3D molecular visualization

@@ -13,8 +13,8 @@ ENV PATH=/opt/conda/bin:$PATH
 
 RUN conda install -y -c conda-forge mamba
 
-# Create environment with all dependencies
-RUN mamba create -y -n grinn-env -c conda-forge -c bioconda \
+# Create environment with all dependencies including dashboard
+RUN mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
     python=3.10 \
     pdbfixer \
     prody \
@@ -27,7 +27,13 @@ RUN mamba create -y -n grinn-env -c conda-forge -c bioconda \
     panedr \
     gromacswrapper \
     networkx \
-    tqdm
+    tqdm \
+    dash \
+    dash-bootstrap-components \
+    plotly
+
+# Install dash-molstar for 3D visualization
+RUN conda run -n grinn-env pip install dash-molstar
 
 # Install GROMACS from source
 WORKDIR /tmp
@@ -54,8 +60,9 @@ RUN apt-get update && \
 # Set up working directory
 WORKDIR /app
 
-# Copy your code and mdp_files
+# Copy your code, dashboard, and mdp_files
 COPY grinn_workflow.py ./
+COPY gRINN_Dashboard ./gRINN_Dashboard
 COPY mdp_files ./mdp_files
 
 # Download test data from public Google Cloud Storage bucket
@@ -82,4 +89,17 @@ RUN chmod +x test.sh
 # Run the test script during build with the correct conda environment
 RUN set -x && conda run -n grinn-env bash ./test.sh
 
-ENTRYPOINT ["bash", "-c", "source $GMXRC_PATH && conda run -n grinn-env python grinn_workflow.py"]
+# Create a script to determine execution mode
+RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
+    echo 'if [ "$1" = "dashboard" ]; then' >> /app/entrypoint.sh && \
+    echo '    shift' >> /app/entrypoint.sh && \
+    echo '    source $GMXRC_PATH && conda run -n grinn-env python gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo 'else' >> /app/entrypoint.sh && \
+    echo '    source $GMXRC_PATH && conda run -n grinn-env python grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+# Expose port for dashboard
+EXPOSE 8051
+
+ENTRYPOINT ["/app/entrypoint.sh"]

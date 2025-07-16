@@ -7,7 +7,36 @@
 
 **gRINN** (get Residue Interaction Energies and Networks) is a computational tool for **residue interaction energy-based analysis** of protein molecular dynamics (MD) simulation trajectories. This is the **next-generation version** of gRINN, featuring significant performance improvements, enhanced workflow capabilities, and containerized deployment.
 
-## 🚀 Key Features
+## 🚀 Quick Start
+
+### Using Docker (Easiest)
+```bash
+# Build the image
+docker build -t grinn .
+
+# Run analysis
+docker run -v /path/to/data:/data grinn /data/protein.pdb /data/results --top /data/protein.top --traj /data/trajectory.xtc
+
+# Launch dashboard
+docker run -p 8051:8051 -v /path/to/data:/data grinn dashboard /data/results
+```
+
+### Using Conda
+```bash
+# Setup environment
+conda create -n grinn python=3.10
+conda activate grinn
+conda install -c conda-forge -c bioconda prody numpy scipy pandas mdtraj networkx tqdm pdbfixer openmm panedr gromacswrapper pyprind dash dash-bootstrap-components plotly
+pip install dash-molstar
+
+# Run analysis
+python grinn_workflow.py protein.pdb results/ --top protein.top --traj trajectory.xtc
+
+# Launch dashboard
+python gRINN_Dashboard/grinn_dashboard.py results/
+```
+
+## 🎯 Key Features
 
 ### Core Functionality
 - **Residue Interaction Energy Calculation**: Compute pairwise amino acid non-bonded interaction energies from GROMACS MD trajectories
@@ -22,11 +51,13 @@
 - **Comprehensive Validation**: Input validation and GROMACS compatibility testing
 - **Automated Workflows**: Complete pipeline from structure preparation to network analysis
 - **Docker Support**: Containerized deployment for reproducible results
+- **Interactive Dashboard**: Web-based visualization and analysis interface with 3D molecular viewer
 
 ### Output Formats
 - **Energy Matrices**: CSV files with interaction energies for all residue pairs
 - **Network Files**: GML format networks for visualization and further analysis
 - **Comprehensive Reports**: JSON and text summaries of workflow results
+- **Interactive Visualization**: Web dashboard for real-time analysis and exploration
 - **Visualization Ready**: Compatible with network analysis tools like Cytoscape
 
 ## 📦 Installation & Usage
@@ -35,6 +66,7 @@
 
 The easiest way to run gRINN is using Docker. The container includes all dependencies and test data.
 
+#### For Command Line Analysis:
 ```bash
 # Build the Docker image
 docker build -t grinn .
@@ -50,25 +82,67 @@ docker run -v /path/to/your/data:/data grinn \
   --pen_cutoffs 1.0 2.0
 ```
 
-### Option 2: Local Installation
-
-#### Prerequisites
-- Python 3.10+
-- GROMACS 2024.1 or later
-- Required Python packages (see requirements below)
-
-#### Required Python Packages
+#### For Interactive Dashboard:
 ```bash
-# Install via conda (recommended)
-conda create -n grinn python=3.10
-conda activate grinn
-conda install -c conda-forge -c bioconda \
-  prody numpy scipy pandas mdtraj networkx tqdm \
-  pdbfixer openmm panedr gromacswrapper pyprind
+# Build the Docker image (if not already built)
+docker build -t grinn .
+
+# Run the dashboard with your results
+docker run -p 8051:8051 -v /path/to/your/results:/data grinn dashboard /data
+
+# Run the dashboard with test data
+docker run -p 8051:8051 grinn dashboard test
+
+# Access the dashboard at http://localhost:8051
 ```
 
-#### Running gRINN
+### Option 2: Conda Installation (Recommended for Local Development)
+
+#### Prerequisites
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda](https://www.anaconda.com/products/individual)
+- GROMACS 2024.1 or later (can be installed via conda)
+
+#### Installation Steps
 ```bash
+# Option 1: Automated setup (recommended)
+./setup_conda.sh
+
+# Option 2: Use the provided environment file
+conda env create -f environment.yml
+conda activate grinn
+
+# Option 3: Manual installation
+conda create -n grinn python=3.10
+conda activate grinn
+
+# Install core dependencies
+conda install -c conda-forge -c bioconda \
+    prody numpy scipy pandas mdtraj networkx tqdm \
+    pdbfixer openmm panedr gromacswrapper pyprind
+
+# Install GROMACS (optional - you can also install from source)
+conda install -c conda-forge -c bioconda gromacs
+
+# For dashboard functionality, install additional packages
+conda install -c conda-forge -c plotly \
+    dash dash-bootstrap-components plotly pandas \
+    networkx numpy
+
+# Install dash-molstar for 3D visualization
+pip install dash-molstar
+```
+
+#### Verify Installation
+```bash
+# Run the verification script to check all dependencies
+./verify_installation.sh
+```
+
+#### Running gRINN Workflow
+```bash
+# Activate environment
+conda activate grinn
+
 # Basic usage
 python grinn_workflow.py input.pdb output_folder
 
@@ -87,6 +161,71 @@ python grinn_workflow.py input.pdb output_folder \
   --pen_cutoffs 0.5 1.0 2.0 \
   --pen_include_covalents True False
 ```
+
+#### Running Interactive Dashboard
+```bash
+# Navigate to the dashboard directory
+cd gRINN_Dashboard
+
+# Run with your results
+python grinn_dashboard.py /path/to/your/results
+
+# Run with test data
+python grinn_dashboard.py test
+
+# Access at http://localhost:8051
+```
+
+### Option 3: Manual Installation
+
+#### Prerequisites
+- Python 3.10+
+- GROMACS 2024.1 or later
+- Required Python packages (see requirements below)
+
+#### Required Python Packages
+```bash
+# Install via pip
+pip install prody numpy scipy pandas mdtraj networkx tqdm \
+           pdbfixer openmm panedr gromacswrapper pyprind \
+           dash dash-bootstrap-components plotly dash-molstar
+```
+
+## 🎯 Interactive Dashboard
+
+The gRINN Dashboard provides a web-based interface for exploring and visualizing interaction energy results. It features:
+
+### Dashboard Features
+- **3D Molecular Visualization**: Interactive protein structure viewer with trajectory support
+- **Pairwise Energy Analysis**: Select residue pairs and visualize their interaction energies across frames
+- **Energy Matrix Heatmaps**: Interactive heatmaps showing interaction patterns between all residue pairs
+- **Network Analysis**: Protein Energy Network visualization with centrality metrics
+- **Multi-Energy Support**: Analyze total, electrostatic, and van der Waals energies separately
+- **Real-time Interaction**: Synchronized 3D viewer with energy plots and network analysis
+
+### Dashboard Usage
+```bash
+# Run dashboard with your gRINN results
+python gRINN_Dashboard/grinn_dashboard.py /path/to/results
+
+# Run with test data
+python gRINN_Dashboard/grinn_dashboard.py test
+
+# Access at http://localhost:8051
+```
+
+### Dashboard Input Files
+The dashboard expects these files in your results directory:
+- `system_dry.pdb` - Protein structure (required)
+- `energies_intEnTotal.csv` - Total interaction energies (required)
+- `energies_intEnVdW.csv` - Van der Waals energies (required)
+- `energies_intEnElec.csv` - Electrostatic energies (required)
+- `traj_superposed.xtc` - Trajectory file (optional, for dynamic visualization)
+
+### Dashboard Tabs
+1. **🔗 Pairwise Energies**: Select two residues and analyze their interaction energy over time
+2. **🔥 Interaction Energy Matrix**: Visualize all pairwise interactions as interactive heatmaps
+3. **🕸️ Network Analysis**: Construct and analyze Protein Energy Networks with centrality metrics
 
 ## 🛠️ Command Line Options
 
@@ -155,6 +294,46 @@ python grinn_workflow.py protein.pdb results/ \
   --pen_cutoffs 0.5 1.0 1.5 2.0
 ```
 
+### Complete Workflow with Dashboard Visualization
+
+#### Using Docker (Recommended):
+```bash
+# 1. Build the Docker image
+docker build -t grinn .
+
+# 2. Run gRINN analysis with your data
+docker run -v /path/to/your/data:/data grinn \
+  /data/protein.pdb \
+  /data/results \
+  --top /data/protein.top \
+  --traj /data/trajectory.xtc \
+  --nt 8 \
+  --create_pen \
+  --pen_cutoffs 1.0 2.0
+
+# 3. Launch interactive dashboard
+docker run -p 8051:8051 -v /path/to/your/data:/data grinn dashboard /data/results
+
+# 4. Open http://localhost:8051 in your browser
+```
+
+#### Using Conda:
+```bash
+# 1. Run gRINN analysis
+conda activate grinn
+python grinn_workflow.py protein.pdb results/ \
+  --top protein.top \
+  --traj trajectory.xtc \
+  --nt 8 \
+  --create_pen \
+  --pen_cutoffs 1.0 2.0
+
+# 2. Launch interactive dashboard
+python gRINN_Dashboard/grinn_dashboard.py results/
+
+# 3. Open http://localhost:8051 in your browser
+```
+
 ## 📁 Output Files
 
 ### Energy Analysis
@@ -162,6 +341,11 @@ python grinn_workflow.py protein.pdb results/ \
 - `energies_intEnElec.csv`: Electrostatic interaction energies
 - `energies_intEnVdW.csv`: Van der Waals interaction energies
 - `energies_*.pickle`: Pickled energy dictionaries for programmatic access
+
+### Structure and Trajectory Files
+- `system_dry.pdb`: Processed protein structure (dashboard compatible)
+- `traj_superposed.xtc`: Superposed trajectory (dashboard compatible)
+- `topol_dry.top`: GROMACS topology file
 
 ### Network Analysis (if `--create_pen` enabled)
 - `pen_*.gml`: Protein Energy Network files in GML format
@@ -171,6 +355,14 @@ python grinn_workflow.py protein.pdb results/ \
 - `grinn_workflow_summary.json`: Comprehensive workflow summary
 - `grinn_workflow_summary.txt`: Human-readable summary
 - `calc.log`: Detailed calculation log
+
+### Setup and Configuration Files
+- `environment.yml`: Conda environment specification
+- `setup_conda.sh`: Automated conda setup script
+- `verify_installation.sh`: Installation verification script
+
+### Dashboard Visualization
+All energy CSV files and structure files are directly compatible with the interactive dashboard for real-time analysis and exploration.
 
 ## 🔬 Scientific Background
 
@@ -234,6 +426,12 @@ gRINN uses ProDy selection syntax for flexible residue selection:
 2. **Memory issues**: Use `--skip` to reduce trajectory size or increase available RAM
 3. **Topology errors**: Verify topology file matches the PDB structure
 4. **Missing files**: Use `--test-only` to validate inputs before running
+5. **Dashboard not accessible**: Ensure port 8051 is not blocked and Docker port mapping is correct
+
+### Docker-Specific Issues
+- **Port conflicts**: If port 8051 is in use, try `-p 8052:8051` and access via `http://localhost:8052`
+- **File permissions**: Use `docker run --user $(id -u):$(id -g)` to match host permissions
+- **Volume mounting**: Ensure your data directory exists and has proper permissions
 
 ### Performance Tips
 - Use `--nt` to leverage multiple CPU cores
