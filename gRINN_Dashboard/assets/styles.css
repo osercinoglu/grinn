@@ -1,0 +1,357 @@
+@import url('https://fonts.googleapis.com/css2?family=Irish+Grover&family=Roboto:wght@300;400;500;700&display=swap');
+
+body {
+    background: #F5F7F5;
+    font-family: 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.main-title {
+    font-family: 'Roboto', sans-serif;
+    font-weight: 700;
+    color: #7C9885;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    font-size: 2.5rem;
+    margin: 20px 0;
+    text-align: center;
+    position: relative;
+    letter-spacing: 1px;
+}
+
+.main-title::before {
+    content: "🍀";
+    position: absolute;
+    left: -60px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2rem;
+}
+
+.main-title::after {
+    content: "🍀";
+    position: absolute;
+    right: -60px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2rem;
+}
+
+.panel {
+    background: rgba(255,255,255,0.9);
+    border: 3px solid #B5C5B5;
+    border-radius: 15px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+}
+
+.tab-content {
+    background: rgba(248,253,248,0.6);
+    border-radius: 10px;
+    padding: 15px;
+    margin: 10px;
+}
+
+/* Network Analysis - Prevent horizontal scrolling */
+.network-plots-container {
+    display: flex;
+    gap: 15px;
+    padding: 10px;
+    height: 75vh;
+    width: 100%;
+    overflow-x: hidden !important;  /* Force no horizontal scrollbar */
+    overflow-y: hidden;  /* Parent container doesn't need vertical scroll */
+}
+
+.network-plot-wrapper {
+    flex: 1;
+    min-width: 0;  /* Allow shrinking */
+    max-width: 32%;  /* Slightly smaller to ensure fit with gaps */
+    height: 100%;  /* Take full height of parent container (75vh) */
+    overflow-y: auto !important;  /* Enable vertical scrolling */
+    overflow-x: hidden !important;  /* Prevent horizontal scrolling */
+    border: 1px solid #D0E5D0;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.95);  /* Remove debug red background */
+    position: relative;
+}
+
+/* Ensure the Plotly graph container takes full width and its natural height */
+.network-plot-wrapper .js-plotly-plot {
+    width: 100% !important;
+    height: auto !important;  /* Let the plot determine its natural height */
+    position: relative;
+    flex-shrink: 0 !important;  /* Prevent shrinking */
+}
+
+/* Ensure the plotly graph div stretches properly and maintains its height */
+.network-plot-wrapper .plotly-graph-div {
+    width: 100% !important;
+    height: auto !important;  /* Let height be auto to allow overflow */
+    flex-shrink: 0 !important;  /* Prevent shrinking */
+}
+
+/* Force the SVG to maintain its specified dimensions */
+.network-plot-wrapper .main-svg {
+    flex-shrink: 0 !important;  /* Prevent shrinking */
+}
+
+/* Critical: Disable Plotly's automatic resizing behavior */
+.network-plot-wrapper .js-plotly-plot .plotly {
+    overflow: visible !important;
+    height: auto !important;
+}
+
+/* Force the plot container to not resize itself */
+.network-plot-wrapper .plot-container {
+    height: auto !important;
+    flex-shrink: 0 !important;
+}
+
+/* Ensure the plot axis labels don't cause overflow */
+.network-plot-wrapper .xtick text,
+.network-plot-wrapper .ytick text {
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.dash-table-container {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    background: rgba(248,255,248,0.6);
+}
+
+.dash-table-container table {
+    background: rgba(248,255,248,0.6) !important;
+}
+
+.dash-table-container .dash-cell {
+    background-color: rgba(248,255,248,0.6) !important;
+    border-bottom: 1px solid #C8E6C9 !important;
+}
+
+.dash-table-container .dash-header {
+    background-color: rgba(102,187,106,0.3) !important;
+    color: #2E7D32 !important;
+    font-weight: 600 !important;
+}
+
+/* Mol* viewer container */
+.mol-viewer-container {
+    background: rgba(240,255,240,0.6);
+    border: 2px solid #90EE90;
+    border-radius: 10px;
+    padding: 10px;
+    margin: 10px;
+}
+
+.shamrock-bg {
+    background: #E8F4FD;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 5px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+/* Button hover effects */
+.dash-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.3) !important;
+    transition: all 0.3s ease;
+}
+
+/* Dropdown styling */
+.Select-control {
+    border: 2px solid #9AB3A8 !important;
+    border-radius: 8px !important;
+}
+
+/* Heatmap range slider styling */
+#heatmap_range_slider {
+    width: 200px !important;
+    margin: 10px 0 !important;
+}
+
+#heatmap_range_slider .rc-slider-rail {
+    background-color: rgba(255,255,255,0.6) !important;
+    height: 4px !important;
+}
+
+#heatmap_range_slider .rc-slider-track {
+    background-color: #A8C4A2 !important;
+    height: 4px !important;
+}
+
+#heatmap_range_slider .rc-slider-handle {
+    border: 2px solid #A8C4A2 !important;
+    background-color: #FFFFFF !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin-top: -6px !important;
+    opacity: 1 !important;
+    cursor: pointer !important;
+}
+
+#heatmap_range_slider .rc-slider-handle:hover {
+    border-color: #95A895 !important;
+    box-shadow: 0 0 5px rgba(149, 168, 149, 0.5) !important;
+}
+
+#heatmap_range_slider .rc-slider-handle:active {
+    border-color: #95A895 !important;
+    box-shadow: 0 0 8px rgba(149, 168, 149, 0.7) !important;
+}
+
+#heatmap_range_slider .rc-slider-handle:focus {
+    border-color: #95A895 !important;
+    box-shadow: 0 0 8px rgba(149, 168, 149, 0.7) !important;
+    outline: none !important;
+}
+
+/* Tab styling */
+.tab-content {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Checkbox styling */
+input[type="checkbox"] {
+    transform: scale(1.2);
+    margin-right: 8px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(248,255,248,0.3);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #7C9885;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #6B806B;
+}
+
+/* Network Analysis Tab Specific Styles */
+#network-analysis-tab .dash-graph {
+    overflow-y: auto;
+    overflow-x: hidden;  /* Prevent horizontal scrolling */
+    border: 1px solid #D0E5D0;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    /* Removed max-height to allow plots to expand naturally */
+}
+
+#network-analysis-tab .dash-graph::-webkit-scrollbar {
+    width: 10px;
+}
+
+#network-analysis-tab .dash-graph::-webkit-scrollbar-track {
+    background-color: #E8F5E8;
+    border-radius: 5px;
+}
+
+#network-analysis-tab .dash-graph::-webkit-scrollbar-thumb {
+    background-color: #B5C5B5;
+    border-radius: 5px;
+    border: 2px solid #E8F5E8;
+}
+
+#network-analysis-tab .dash-graph::-webkit-scrollbar-thumb:hover {
+    background-color: #A0B0A0;
+}
+
+/* Ensure the plot containers have proper flex behavior */
+#network-analysis-tab .dash-graph .js-plotly-plot {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 400px !important;
+    overflow: hidden !important;  /* Prevent content from overflowing */
+}
+
+/* Force bar plots to maintain their calculated height and prevent compression */
+#network-analysis-tab .dash-graph .plotly-graph-div {
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 400px !important;
+    overflow: hidden !important;  /* Prevent horizontal overflow */
+}
+
+/* Prevent plot distortion during updates */
+#network-analysis-tab .dash-graph .plot-container {
+    position: relative;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto;
+    overflow: hidden !important;  /* Prevent overflow */
+}
+
+/* Ensure text and bars stay properly sized after updates */
+#network-analysis-tab .dash-graph .ytick text {
+    font-size: 8px !important;
+    font-family: 'Roboto', sans-serif !important;
+}
+
+#network-analysis-tab .dash-graph .xtick text {
+    font-size: 8px !important;
+    font-family: 'Roboto', sans-serif !important;
+}
+
+/* Prevent bar width changes during updates */
+#network-analysis-tab .dash-graph .bars path {
+    stroke-width: 1px !important;
+}
+
+/* Maintain compact spacing between bars */
+#network-analysis-tab .dash-graph .bar {
+    opacity: 0.9;
+}
+
+#network-analysis-tab .dash-graph .bar:hover {
+    opacity: 1;
+}
+
+/* Compact layout for residue metrics container */
+#network-analysis-tab .residue-metrics-container {
+    max-width: 100%;
+    overflow-x: hidden;  /* Prevent horizontal scrolling */
+}
+
+/* Ensure the residue metrics container allows plots to expand */
+#network-analysis-tab .residue-metrics-container > div {
+    max-height: none !important;
+    height: auto !important;
+}
+
+/* Additional safeguards to prevent horizontal scrolling */
+#network-analysis-tab .dash-graph svg {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+#network-analysis-tab .dash-graph .plotly .main-svg {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+}
+
+/* Ensure all plotly elements stay within bounds */
+#network-analysis-tab .dash-graph .plotly-graph-div .plotly-graph-div {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+}
