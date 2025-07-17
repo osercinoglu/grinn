@@ -11,6 +11,13 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
     rm /tmp/miniconda.sh
 ENV PATH=/opt/conda/bin:$PATH
 
+# Accept conda Terms of Service for default channels
+RUN conda config --set channel_priority strict && \
+    conda config --add channels conda-forge && \
+    conda config --add channels bioconda && \
+    conda config --add channels plotly && \
+    echo "yes" | conda tos accept
+
 RUN conda install -y -c conda-forge mamba
 
 # Create environment with all dependencies including dashboard
