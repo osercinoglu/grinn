@@ -96,14 +96,75 @@ RUN chmod +x test.sh
 # Run the test script during build with the correct conda environment
 RUN set -x && conda run -n grinn-env bash ./test.sh
 
-# Create a script to determine execution mode
+# Create a sophisticated entrypoint script to handle multiple execution modes
 RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
-    echo 'if [ "$1" = "dashboard" ]; then' >> /app/entrypoint.sh && \
-    echo '    shift' >> /app/entrypoint.sh && \
-    echo '    source $GMXRC_PATH && conda run -n grinn-env python gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
-    echo 'else' >> /app/entrypoint.sh && \
-    echo '    source $GMXRC_PATH && conda run -n grinn-env python grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
-    echo 'fi' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Function to show usage' >> /app/entrypoint.sh && \
+    echo 'show_usage() {' >> /app/entrypoint.sh && \
+    echo '    echo "gRINN Docker Container - Usage:"' >> /app/entrypoint.sh && \
+    echo '    echo ""' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run [docker-options] grinn <mode> [mode-options]"' >> /app/entrypoint.sh && \
+    echo '    echo ""' >> /app/entrypoint.sh && \
+    echo '    echo "Available modes:"' >> /app/entrypoint.sh && \
+    echo '    echo "  workflow <input.pdb> <output_dir> [options]  - Run gRINN workflow analysis"' >> /app/entrypoint.sh && \
+    echo '    echo "  dashboard <results_folder>                  - Launch interactive dashboard"' >> /app/entrypoint.sh && \
+    echo '    echo "  gmx <gmx_command> [gmx_options]             - Run GROMACS commands"' >> /app/entrypoint.sh && \
+    echo '    echo "  bash                                        - Start interactive bash session"' >> /app/entrypoint.sh && \
+    echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh && \
+    echo '    echo ""' >> /app/entrypoint.sh && \
+    echo '    echo "Examples:"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -v /data:/data grinn workflow /data/protein.pdb /data/results --top /data/protein.top"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn dashboard /data/results"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -v /data:/data grinn gmx grompp -f /data/input.mdp -c /data/protein.pdb"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -it grinn bash"' >> /app/entrypoint.sh && \
+    echo '}' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Source GROMACS environment' >> /app/entrypoint.sh && \
+    echo 'source $GMXRC_PATH' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Handle different execution modes' >> /app/entrypoint.sh && \
+    echo 'case "$1" in' >> /app/entrypoint.sh && \
+    echo '    "workflow")' >> /app/entrypoint.sh && \
+    echo '        shift' >> /app/entrypoint.sh && \
+    echo '        echo "🧬 Starting gRINN Workflow Analysis..."' >> /app/entrypoint.sh && \
+    echo '        echo "Arguments: $@"' >> /app/entrypoint.sh && \
+    echo '        conda run -n grinn-env python grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "dashboard")' >> /app/entrypoint.sh && \
+    echo '        shift' >> /app/entrypoint.sh && \
+    echo '        echo "📊 Starting gRINN Dashboard..."' >> /app/entrypoint.sh && \
+    echo '        echo "Dashboard will be available at http://localhost:8051"' >> /app/entrypoint.sh && \
+    echo '        echo "Results folder: $1"' >> /app/entrypoint.sh && \
+    echo '        conda run -n grinn-env python gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "gmx")' >> /app/entrypoint.sh && \
+    echo '        shift' >> /app/entrypoint.sh && \
+    echo '        echo "⚗️  Running GROMACS command: gmx $@"' >> /app/entrypoint.sh && \
+    echo '        gmx "$@"' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "bash")' >> /app/entrypoint.sh && \
+    echo '        echo "🐚 Starting interactive bash session..."' >> /app/entrypoint.sh && \
+    echo '        echo "GROMACS environment is already sourced"' >> /app/entrypoint.sh && \
+    echo '        echo "Conda environment: grinn-env"' >> /app/entrypoint.sh && \
+    echo '        echo "To activate conda env: conda activate grinn-env"' >> /app/entrypoint.sh && \
+    echo '        exec /bin/bash' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "help"|"--help"|"-h")' >> /app/entrypoint.sh && \
+    echo '        show_usage' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "")' >> /app/entrypoint.sh && \
+    echo '        echo "❌ Error: No execution mode specified"' >> /app/entrypoint.sh && \
+    echo '        echo ""' >> /app/entrypoint.sh && \
+    echo '        show_usage' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    *)' >> /app/entrypoint.sh && \
+    echo '        echo "❌ Error: Unknown execution mode: $1"' >> /app/entrypoint.sh && \
+    echo '        echo ""' >> /app/entrypoint.sh && \
+    echo '        show_usage' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo 'esac' >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
 
 # Expose port for dashboard
