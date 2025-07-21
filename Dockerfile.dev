@@ -82,6 +82,9 @@ RUN conda run -n grinn-env python -c "import gromacs; gromacs.config.setup()"
 # Download test data from public Google Cloud Storage bucket (do this before copying code)
 RUN gsutil -m cp -r gs://grinn-test-data/* $PWD
 
+# Force cache invalidation for development builds
+ARG CACHEBUST=1
+
 # Copy MDP files first (these change less frequently)
 COPY mdp_files ./mdp_files
 
