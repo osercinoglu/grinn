@@ -1,8 +1,8 @@
-title                   = NPT 
+title                   = NVT 
 define                  = -DPOSRES  ; position restrain the protein
 ; Run parameters
 integrator              = md        ; leap-frog integrator
-nsteps                  = 1000000   ; 2 * 1000000 = 2000 ps (2 ns)
+nsteps                  = 500000    ; 2 * 500000 = 1000 ps (1 ns)
 dt                      = 0.002     ; 2 fs
 ; Output control
 nstxout-compressed      = 500       ; save coordinates every 1 ps
@@ -10,7 +10,7 @@ nstvout                 = 0         ; don't save velocities
 nstenergy               = 500       ; save energies every 1 ps
 nstlog                  = 500       ; update log file every 1 ps
 ; Bond parameters
-continuation            = yes       ; Restarting after NVT 
+continuation            = no        ; first dynamics run
 constraint_algorithm    = lincs     ; holonomic constraints 
 constraints             = h-bonds   ; bonds involving H are constrained
 lincs_iter              = 1         ; accuracy of LINCS
@@ -31,14 +31,11 @@ tcoupl                  = V-rescale             ; modified Berendsen thermostat
 tc-grps                 = Protein Non-Protein   ; two coupling groups - more accurate
 tau_t                   = 0.1     0.1           ; time constant, in ps
 ref_t                   = 300     300           ; reference temperature, one for each group, in K
-; Pressure coupling is on
-pcoupl                  = Parrinello-Rahman     ; Pressure coupling on in NPT
-pcoupltype              = isotropic             ; uniform scaling of box vectors
-tau_p                   = 5.5                   ; time constant, in ps
-ref_p                   = 1.0                   ; reference pressure, in bar
-compressibility         = 4.5e-5                ; isothermal compressibility of water, bar^-1
-refcoord_scaling        = com
+; Pressure coupling is off
+pcoupl                  = no        ; no pressure coupling in NVT
 ; Periodic boundary conditions
 pbc                     = xyz       ; 3-D PBC
 ; Velocity generation
-gen_vel                 = no        ; Velocity generation is off (continuing from NVT) 
+gen_vel                 = yes       ; assign velocities from Maxwell distribution
+gen_temp                = 300       ; temperature for Maxwell distribution
+gen_seed                = -1        ; generate a random seed

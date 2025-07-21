@@ -1,16 +1,15 @@
-title                   = NPT 
-define                  = -DPOSRES  ; position restrain the protein
+title                   = Quick Production MD
 ; Run parameters
 integrator              = md        ; leap-frog integrator
-nsteps                  = 1000000   ; 2 * 1000000 = 2000 ps (2 ns)
+nsteps                  = 1000      ; Just 1000 steps (2 ps)
 dt                      = 0.002     ; 2 fs
 ; Output control
-nstxout-compressed      = 500       ; save coordinates every 1 ps
+nstxout-compressed      = 10        ; save coordinates every 20 fs
 nstvout                 = 0         ; don't save velocities 
-nstenergy               = 500       ; save energies every 1 ps
-nstlog                  = 500       ; update log file every 1 ps
+nstenergy               = 10        ; save energies every 20 fs
+nstlog                  = 10        ; update log file every 20 fs
 ; Bond parameters
-continuation            = yes       ; Restarting after NVT 
+continuation            = no        ; Starting from minimization
 constraint_algorithm    = lincs     ; holonomic constraints 
 constraints             = h-bonds   ; bonds involving H are constrained
 lincs_iter              = 1         ; accuracy of LINCS
@@ -41,4 +40,6 @@ refcoord_scaling        = com
 ; Periodic boundary conditions
 pbc                     = xyz       ; 3-D PBC
 ; Velocity generation
-gen_vel                 = no        ; Velocity generation is off (continuing from NVT) 
+gen_vel                 = yes       ; Generate velocities from Maxwell distribution
+gen_temp                = 300       ; Temperature for Maxwell distribution
+gen_seed                = -1        ; Generate a random seed
