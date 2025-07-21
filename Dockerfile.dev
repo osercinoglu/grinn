@@ -85,21 +85,14 @@ RUN gsutil -m cp -r gs://grinn-test-data/* $PWD
 # Copy MDP files first (these change less frequently)
 COPY mdp_files ./mdp_files
 
+# DEVELOPMENT VERSION: Skip tests during build for faster iteration
 # Copy your code and dashboard (these change more frequently)
 COPY grinn_workflow.py ./
 COPY gRINN_Dashboard ./gRINN_Dashboard
 
-# Copy test script into the image
+# Copy test script but don't run it during build
 COPY test.sh ./
-
-# Make sure test.sh is executable
 RUN chmod +x test.sh
-
-# Add cache-busting argument for development builds
-ARG CACHEBUST=1
-
-# Run the test script during build with the correct conda environment
-RUN set -x && conda run -n grinn-env bash ./test.sh
 
 # Create a sophisticated entrypoint script to handle multiple execution modes
 RUN echo '#!/bin/bash' > /app/entrypoint.sh && \

@@ -1,0 +1,42 @@
+# Git files
+.git/
+.gitignore
+.gitattributes
+
+# Documentation (for code-only builds)
+README.md
+*.md
+docs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.tar.gz
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+.tmp/
