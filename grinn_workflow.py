@@ -193,9 +193,26 @@ def getRibeiroOrtizNetwork(pdb, df_intEn, includeCovalents=True, intEnCutoff=1, 
         resIndices = np.array(sorted(residue_indices))
         sys_sel = sys.select(' or '.join([f"resindex {i}" for i in resIndices]))
     numResidues = len(resIndices)
-    resNames = sys_sel.getResnames()
-    resNums = sys_sel.getResnums()
-    chains = sys_sel.getChids()
+    
+    # ✅ FIX: Get residue information correctly by using unique residue indices
+    # Create arrays for residue names, numbers, and chains
+    resNames = []
+    resNums = []
+    chains = []
+    
+    for res_idx in resIndices:
+        # Get the first atom of this residue to extract residue information
+        atoms_in_residue = sys.select(f"resindex {res_idx}")
+        if atoms_in_residue is not None and len(atoms_in_residue) > 0:
+            resNames.append(atoms_in_residue.getResnames()[0])
+            resNums.append(atoms_in_residue.getResnums()[0])
+            chains.append(atoms_in_residue.getChids()[0])
+        else:
+            # Fallback in case of issues
+            resNames.append("UNK")
+            resNums.append(0)
+            chains.append("A")
+    
     rname_rnum_ch = ['_'.join(map(str, [resNames[i], resNums[i], chains[i]])) for i in range(numResidues)]
 
     # Robustly find the pair column
@@ -751,9 +768,10 @@ def apply_chain_assignments(system, chain_assignments, pdb_file, logger=None):
         # Set new chain IDs
         system.setChids(new_chain_ids)
         
-        # Write to temporary file first
-        temp_pdb = pdb_file + '.tmp'
-        writePDB(temp_pdb, system)
+        # Write to temporary file first (use basename without .pdb extension to avoid double extension)
+        temp_base = pdb_file.replace('.pdb', '') + '_tmp'
+        temp_pdb = temp_base + '.pdb'
+        writePDB(temp_base, system)  # writePDB will add .pdb extension
         
         # Now combine header + modified structure + footer
         with open(temp_pdb, 'r') as f:
@@ -772,8 +790,9 @@ def apply_chain_assignments(system, chain_assignments, pdb_file, logger=None):
             # Write footer lines (END, etc.)
             f.writelines(footer_lines)
         
-        # Clean up temporary file
-        os.remove(temp_pdb)
+        # Clean up temporary file (remove the actual file created by writePDB)
+        if os.path.exists(temp_pdb):
+            os.remove(temp_pdb)
         
         # Log results with clear warning
         unique_chains = np.unique(new_chain_ids)

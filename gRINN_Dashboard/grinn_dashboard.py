@@ -2,7 +2,6 @@ import os
 import re
 import sys
 import argparse
-import dash
 from dash import Dash, dcc, html, dash_table, Input, Output, State, no_update, ctx
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -12,6 +11,15 @@ from dash_molstar.utils import molstar_helper
 from dash_molstar.utils.representations import Representation
 import networkx as nx
 import numpy as np
+from prody import parsePDB
+
+# Import the sophisticated network construction function from the main workflow
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from grinn_workflow import getRibeiroOrtizNetwork
+
+# Global cache variables for network data
+last_network_params = None
+last_network_data = None
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -25,24 +33,14 @@ def setup_data_paths(results_folder):
     if results_folder == "test":
         # Use hardcoded test data directory
         data_dir = os.path.join(os.path.dirname(__file__), 'test_data', 'prot_lig_1')
-        print(f"Using test data directory: {data_dir}")
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"__file__ location: {__file__}")
-        print(f"os.path.dirname(__file__): {os.path.dirname(__file__)}")
     else:
         # Use provided results folder
         data_dir = os.path.abspath(results_folder)
-        print(f"Using results directory: {data_dir}")
     
     # Check if directory exists
-    print(f"Checking if directory exists: {data_dir}")
     if not os.path.exists(data_dir):
         print(f"Error: Directory '{data_dir}' does not exist!")
-        print(f"Contents of parent directory: {os.listdir(os.path.dirname(data_dir))}")
         sys.exit(1)
-    else:
-        print(f"✓ Directory exists: {data_dir}")
-        print(f"Contents: {os.listdir(data_dir)}")
     
     # Define expected file paths
     pdb_path = os.path.join(data_dir, 'system_dry.pdb')
@@ -51,26 +49,14 @@ def setup_data_paths(results_folder):
     elec_csv = os.path.join(data_dir, 'energies_intEnElec.csv')
     traj_xtc = os.path.join(data_dir, 'traj_dry.xtc')
     
-    print(f"Expected file paths:")
-    print(f"  PDB: {pdb_path}")
-    print(f"  Total CSV: {total_csv}")
-    print(f"  VdW CSV: {vdw_csv}")
-    print(f"  Elec CSV: {elec_csv}")
-    print(f"  Traj XTC: {traj_xtc}")
-    
     # Check if required files exist
     required_files = [pdb_path, total_csv, vdw_csv, elec_csv]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
-    print(f"File existence check:")
-    for f in required_files:
-        exists = os.path.exists(f)
-        print(f"  {f}: {'✓' if exists else '✗'}")
-    
     if missing_files:
         print(f"Error: Missing required files in '{data_dir}':")
         for file in missing_files:
-            print(f"  - {file}")
+            print(f"  - {os.path.basename(file)}")
         print("\nRequired files for gRINN dashboard:")
         print("  - system_dry.pdb")
         print("  - energies_intEnTotal.csv")
@@ -81,7 +67,6 @@ def setup_data_paths(results_folder):
     
     # Check if trajectory file exists (optional)
     if not os.path.exists(traj_xtc):
-        print(f"Warning: Trajectory file '{traj_xtc}' not found. Using static structure only.")
         traj_xtc = None
     
     return data_dir, pdb_path, total_csv, vdw_csv, elec_csv, traj_xtc
@@ -103,6 +88,11 @@ def main():
     except Exception as e:
         print(f"Error loading energy data: {e}")
         sys.exit(1)
+
+    # Keep original wide-format data for proper network construction
+    total_df_wide = total_df.copy()
+    vdw_df_wide = vdw_df.copy()
+    elec_df_wide = elec_df.copy()
 
     # Create a combined dataframe with all energy types
     energy_dfs = {
@@ -164,6 +154,8 @@ def main():
 
     first_res_list = sort_residues_by_sequence(total_df['res1'].unique())
 
+    # Simple network cache for faster UI responsiveness
+
     # Molecular visualization setup
     cartoon = Representation(type='cartoon', color='uniform')
     cartoon.set_color_params({'value': 0xD3D3D3})
@@ -181,21 +173,60 @@ def main():
         # Use static structure only
         initial_traj = topo
 
-    # Build graph helper
+    # Build graph helper - optimized for speed
     def build_graph(frame, include_cov, cutoff):
-        df_f = total_long[total_long['Frame'].astype(int) == frame]
+        """
+        Build a protein energy network using the simplified method for better performance.
+        """
+        
+        # Use the simplified method for speed
+        df_f = total_long[total_long['Frame'].astype(str) == str(frame)]
         G = nx.Graph()
+        
+        # Add all residues as nodes
         for res in first_res_list:
             G.add_node(res)
+        
+        # Add edges based on energy cutoff
+        edges_added = 0
         for _, row in df_f.iterrows():
             r1, r2 = row['Pair'].split('-')
             e = row['Energy']
             if abs(e) >= cutoff:
                 G.add_edge(r1, r2, weight=abs(e))
-        if 'include' in include_cov:
+                edges_added += 1
+        
+        # Add covalent bonds if requested
+        if include_cov and 'include' in str(include_cov):
+            covalent_added = 0
             for i in range(len(first_res_list) - 1):
-                G.add_edge(first_res_list[i], first_res_list[i+1], weight=0.0)
+                if not G.has_edge(first_res_list[i], first_res_list[i+1]):
+                    G.add_edge(first_res_list[i], first_res_list[i+1], weight=0.0)
+        
         return G
+
+    def get_cached_network_data(frame, include_cov, cutoff):
+        """Get network data with simple caching to avoid recomputation."""
+        global last_network_params, last_network_data
+        
+        # Create cache key
+        cache_key = (frame, str(include_cov), cutoff)
+        
+        # Check if we have cached data for these exact parameters
+        if last_network_params == cache_key and last_network_data is not None:
+            return last_network_data['deg'], last_network_data['btw'], last_network_data['clo']
+        
+        # Compute new network data
+        G = build_graph(frame, include_cov, cutoff)
+        deg = dict(G.degree())
+        btw = nx.betweenness_centrality(G)
+        clo = nx.closeness_centrality(G)
+        
+        # Cache the results
+        last_network_params = cache_key
+        last_network_data = {'deg': deg, 'btw': btw, 'clo': clo}
+        
+        return deg, btw, clo
 
     # App layout
     app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -882,7 +913,6 @@ def main():
             initial_value = max(slider_min, range_limit * 0.2)
             
             # Create exactly 5 marks evenly distributed across the slider range
-            import numpy as np
             mark_values = np.linspace(slider_min, slider_max, 5)
             
             marks = {}
@@ -1021,21 +1051,27 @@ def main():
         )
         return fig
 
-    # Network Metrics
+    # Network Metrics - trigger on button click OR on initial load
     @app.callback(
         Output('degree_centrality','figure'),
         Output('betweenness_centrality','figure'),
         Output('closeness_centrality','figure'),
-        Input('update_network_btn','n_clicks'),
-        Input('frame_slider','value'),
-        Input('include_covalent_edges','value'),
-        Input('energy_cutoff','value')
+        [Input('update_network_btn','n_clicks'),
+         Input('frame_slider','value')],
+        [State('include_covalent_edges','value'),
+         State('energy_cutoff','value')]
     )
     def update_network(n_clicks, frame, include_cov, cutoff):
-        G = build_graph(frame, include_cov, cutoff)
-        deg = dict(G.degree())
-        btw = nx.betweenness_centrality(G)
-        clo = nx.closeness_centrality(G)
+        # Use default values if not provided
+        if frame is None:
+            frame = frame_min
+        if cutoff is None:
+            cutoff = 1.0
+        if include_cov is None:
+            include_cov = ['include']
+            
+        # Use simple cached network data for fast response
+        deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
         
         def mk(data, title): 
             # Use the global residue list to ensure consistency
@@ -1123,11 +1159,9 @@ def main():
         except:
             return []
 
-    print(f"Starting gRINN Dashboard...")
-    print(f"Data directory: {data_dir}")
-    print(f"Frame range: {frame_min} - {frame_max}")
-    print(f"Number of residues: {len(first_res_list)}")
-    print(f"Dashboard will be available at: http://0.0.0.0:8051")
+    print(f"🍀 gRINN Dashboard starting...")
+    print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}")
+    print(f"🌐 Dashboard: http://0.0.0.0:8051")
     
     app.run(debug=False, host='0.0.0.0', port=8051)
 
