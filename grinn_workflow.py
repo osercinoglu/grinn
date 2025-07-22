@@ -428,6 +428,14 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
         gromacs.trjconv(f=os.path.join(out_folder, next_pdb), o=os.path.join(out_folder, 'system_dry.pdb'), s=os.path.join(out_folder, next_pdb), n=os.path.join(out_folder, 'index.ndx'), input=(index_group_name,))
         logger.info(f"trjconv for {next_pdb} to DRY PDB conversion command completed.")
         
+        # Detect and assign chain IDs if missing (after system_dry.pdb is created)
+        topology_file = os.path.join(out_folder, 'topol_dry.top')
+        try:
+            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+        except ValueError as e:
+            logger.warning(f"Chain ID assignment failed: {str(e)}")
+            logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")
+        
         gromacs.trjconv(f=os.path.join(out_folder, 'traj.xtc'), o=os.path.join(out_folder, 'traj_dry.xtc'), s=os.path.join(out_folder, 'system_dry.pdb'), 
                         n=os.path.join(out_folder, 'index.ndx'), skip=skip, input=(index_group_name,))
         logger.info(f"trjconv for traj.xtc to traj_dry.xtc conversion command completed (skipping every {skip} frames).")
@@ -450,6 +458,350 @@ def suppress_stdout():
             yield
         finally:
             sys.stdout = old_stdout
+
+def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
+    """
+    Detect missing chain IDs in PDB file and assign them based on topology or sequence breaks.
+    
+    Parameters:
+    - pdb_file (str): Path to the PDB file to check and potentially modify
+    - topology_file (str): Optional path to topology file for chain information
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - bool: True if chain IDs were modified, False if no changes needed
+    """
+    if logger:
+        logger.info("Checking chain ID assignment in PDB file...")
+    
+    try:
+        # Parse the PDB file
+        system = parsePDB(pdb_file)
+        
+        # Check if chain IDs are present and meaningful
+        chain_ids = system.getChids()
+        unique_chains = np.unique(chain_ids)
+        
+        # Check if chains are missing or all blank/identical
+        chains_missing = (
+            len(unique_chains) == 1 and (
+                unique_chains[0] == '' or 
+                unique_chains[0] == ' ' or 
+                unique_chains[0] is None
+            )
+        )
+        
+        if not chains_missing:
+            if logger:
+                logger.info(f"Chain IDs already present: {list(unique_chains)}")
+            return False
+        
+        if logger:
+            logger.info("No meaningful chain IDs detected. Attempting to assign chain IDs...")
+        
+        # Method 1: Try to extract chain information from topology file
+        if topology_file and os.path.exists(topology_file):
+            try:
+                chain_assignments = extract_chains_from_topology(topology_file, system, logger)
+                if chain_assignments:
+                    apply_chain_assignments(system, chain_assignments, pdb_file, logger)
+                    return True
+            except Exception as e:
+                if logger:
+                    logger.warning(f"Could not extract chain info from topology: {str(e)}")
+        
+        # Method 2: Assign chains based on sequence breaks and molecule types
+        chain_assignments = detect_chains_from_sequence_breaks(system, logger)
+        if chain_assignments:
+            apply_chain_assignments(system, chain_assignments, pdb_file, logger)
+            return True
+        
+        # No reliable method worked - return error
+        error_msg = "Could not reliably assign chain IDs. Please provide a PDB file with proper chain IDs or ensure topology file contains molecule information."
+        if logger:
+            logger.error(error_msg)
+        raise ValueError(error_msg)
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error in chain ID detection/assignment: {str(e)}")
+        return False
+
+def extract_chains_from_topology(topology_file, system, logger=None):
+    """
+    Extract chain information from GROMACS topology file.
+    
+    Returns:
+    - dict: Mapping of residue indices to chain IDs, or None if extraction fails
+    """
+    try:
+        chain_assignments = {}
+        current_chain = 'A'
+        chain_counter = 0
+        
+        with open(topology_file, 'r') as f:
+            content = f.read()
+        
+        # Look for molecule definitions in topology
+        molecules_section = False
+        chain_molecules = []
+        
+        for line in content.split('\n'):
+            line = line.strip()
+            
+            if line.startswith('[ molecules ]'):
+                molecules_section = True
+                continue
+            elif line.startswith('[') and molecules_section:
+                break
+            elif molecules_section and line and not line.startswith(';'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    mol_name = parts[0]
+                    mol_count = int(parts[1])
+                    chain_molecules.extend([mol_name] * mol_count)
+        
+        if chain_molecules:
+            # Assign chain IDs based on molecule types
+            residue_idx = 0
+            for i, mol_name in enumerate(chain_molecules):
+                chain_id = chr(ord('A') + i % 26)  # A, B, C, ... Z, then cycle
+                
+                # Find residues belonging to this molecule
+                # This is simplified - in practice, we'd need more sophisticated parsing
+                # For now, we'll use a heuristic based on molecule names
+                if 'protein' in mol_name.lower() or mol_name.lower().startswith('prot'):
+                    # Protein chain - assign based on protein residues
+                    protein_residues = system.select('protein')
+                    if protein_residues:
+                        protein_resindices = np.unique(protein_residues.getResindices())
+                        for res_idx in protein_resindices:
+                            chain_assignments[res_idx] = chain_id
+                elif 'water' in mol_name.lower() or mol_name.lower() == 'sol':
+                    # Water molecules - assign to chain W
+                    water_residues = system.select('water or resname SOL')
+                    if water_residues:
+                        water_resindices = np.unique(water_residues.getResindices())
+                        for res_idx in water_resindices:
+                            chain_assignments[res_idx] = 'W'
+                else:
+                    # Other molecules (ions, ligands, etc.)
+                    chain_id = chr(ord('X') + (i % 3))  # X, Y, Z for other molecules
+                    
+        return chain_assignments if chain_assignments else None
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Topology parsing failed: {str(e)}")
+        return None
+
+def detect_chains_from_sequence_breaks(system, logger=None):
+    """
+    Detect chain breaks based on sequence gaps and molecule types.
+    Only returns assignments when confident about chain boundaries.
+    
+    Returns:
+    - dict: Mapping of residue indices to chain IDs, or None if not confident
+    """
+    try:
+        chain_assignments = {}
+        
+        # Get all residues
+        all_residues = system.select('all')
+        residue_indices = np.unique(all_residues.getResindices())
+        residue_numbers = []
+        residue_names = []
+        
+        for res_idx in residue_indices:
+            res_sel = system.select(f'resindex {res_idx}')
+            residue_numbers.append(res_sel.getResnums()[0])
+            residue_names.append(res_sel.getResnames()[0])
+        
+        # Count different molecule types to determine if we can confidently assign chains
+        protein_count = sum(1 for name in residue_names if is_protein_residue(name))
+        nucleic_count = sum(1 for name in residue_names if is_nucleic_residue(name))
+        water_count = sum(1 for name in residue_names if name in ['SOL', 'WAT', 'TIP3', 'TIP4', 'SPC'])
+        ion_count = sum(1 for name in residue_names if name in ['NA', 'CL', 'K', 'MG', 'CA', 'ZN'])
+        other_count = len(residue_names) - protein_count - nucleic_count - water_count - ion_count
+        
+        # Only proceed if we have clear molecular boundaries or sequence breaks
+        has_clear_boundaries = (protein_count > 0 and (nucleic_count > 0 or water_count > 0 or ion_count > 0 or other_count > 0))
+        
+        # Check for clear sequence breaks in protein/nucleic sequences
+        sequence_breaks = []
+        current_chain = 'A'
+        chain_counter = 0
+        
+        for i, res_idx in enumerate(residue_indices):
+            res_name = residue_names[i]
+            res_num = residue_numbers[i]
+            
+            # Check if this should be a new chain
+            should_start_new_chain = False
+            
+            if i > 0:
+                prev_res_num = residue_numbers[i-1]
+                prev_res_name = residue_names[i-1]
+                
+                # Check for significant sequence break (gap > 5 in residue numbering for proteins/nucleics)
+                if (is_protein_residue(res_name) or is_nucleic_residue(res_name)) and \
+                   (is_protein_residue(prev_res_name) or is_nucleic_residue(prev_res_name)):
+                    if res_num - prev_res_num > 5:
+                        should_start_new_chain = True
+                        sequence_breaks.append(i)
+                
+                # Check for molecule type change (strong indicator)
+                if (is_protein_residue(prev_res_name) != is_protein_residue(res_name) or
+                    is_nucleic_residue(prev_res_name) != is_nucleic_residue(res_name)):
+                    should_start_new_chain = True
+            
+            if should_start_new_chain:
+                chain_counter += 1
+                current_chain = chr(ord('A') + chain_counter % 26)
+            
+            # Assign chains based on molecule type
+            if res_name in ['SOL', 'WAT', 'TIP3', 'TIP4', 'SPC']:
+                chain_assignments[res_idx] = 'W'  # Water chain
+            elif res_name in ['NA', 'CL', 'K', 'MG', 'CA', 'ZN']:
+                chain_assignments[res_idx] = 'I'  # Ion chain
+            else:
+                chain_assignments[res_idx] = current_chain
+        
+        # Only return assignments if we have confidence
+        if has_clear_boundaries or len(sequence_breaks) > 0:
+            if logger:
+                logger.info(f"Detected chain boundaries: {len(sequence_breaks)} sequence breaks, molecule types: "
+                           f"protein={protein_count}, nucleic={nucleic_count}, water={water_count}, ions={ion_count}, other={other_count}")
+            return chain_assignments
+        else:
+            if logger:
+                logger.info("No clear chain boundaries detected - cannot confidently assign chains")
+            return None
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Sequence break detection failed: {str(e)}")
+        return None
+
+def is_protein_residue(res_name):
+    """Check if residue is a standard protein residue."""
+    protein_residues = {
+        'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE',
+        'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL',
+        'HID', 'HIE', 'HIP', 'HSD', 'HSE', 'HSP'  # Histidine variants
+    }
+    return res_name in protein_residues
+
+def is_nucleic_residue(res_name):
+    """Check if residue is a nucleic acid residue."""
+    nucleic_residues = {
+        'A', 'T', 'G', 'C', 'U',  # Single letter
+        'DA', 'DT', 'DG', 'DC',   # DNA
+        'RA', 'RU', 'RG', 'RC',   # RNA
+        'ADE', 'THY', 'GUA', 'CYT', 'URA'  # Full names
+    }
+    return res_name in nucleic_residues
+
+def apply_chain_assignments(system, chain_assignments, pdb_file, logger=None):
+    """
+    Apply chain ID assignments to the system and save to file.
+    Preserves CRYST1 and other header lines that are crucial for GROMACS.
+    
+    Parameters:
+    - system: ProDy system object
+    - chain_assignments: dict mapping residue indices to chain IDs
+    - pdb_file: path to save the modified PDB
+    - logger: optional logger
+    """
+    try:
+        # Read the original PDB file to preserve header lines (especially CRYST1)
+        header_lines = []
+        footer_lines = []
+        
+        with open(pdb_file, 'r') as f:
+            lines = f.readlines()
+            
+        # Extract header lines (everything before first ATOM/HETATM)
+        # and footer lines (everything after last ATOM/HETATM)
+        atom_start_idx = None
+        atom_end_idx = None
+        
+        for i, line in enumerate(lines):
+            if line.startswith(('ATOM', 'HETATM')) and atom_start_idx is None:
+                atom_start_idx = i
+            if line.startswith(('ATOM', 'HETATM')):
+                atom_end_idx = i
+        
+        if atom_start_idx is not None:
+            header_lines = lines[:atom_start_idx]
+            if atom_end_idx is not None and atom_end_idx < len(lines) - 1:
+                footer_lines = lines[atom_end_idx + 1:]
+        
+        # Create new chain ID array
+        new_chain_ids = system.getChids().copy()
+        
+        # Apply assignments
+        for res_idx, chain_id in chain_assignments.items():
+            res_sel = system.select(f'resindex {res_idx}')
+            if res_sel:
+                atom_indices = res_sel.getIndices()
+                for atom_idx in atom_indices:
+                    new_chain_ids[atom_idx] = chain_id
+        
+        # Set new chain IDs
+        system.setChids(new_chain_ids)
+        
+        # Write to temporary file first
+        temp_pdb = pdb_file + '.tmp'
+        writePDB(temp_pdb, system)
+        
+        # Now combine header + modified structure + footer
+        with open(temp_pdb, 'r') as f:
+            structure_lines = f.readlines()
+        
+        # Write final file with preserved headers/footers
+        with open(pdb_file, 'w') as f:
+            # Write header lines (including CRYST1)
+            f.writelines(header_lines)
+            
+            # Write structure lines (ATOM/HETATM records with new chain IDs)
+            for line in structure_lines:
+                if line.startswith(('ATOM', 'HETATM')):
+                    f.write(line)
+            
+            # Write footer lines (END, etc.)
+            f.writelines(footer_lines)
+        
+        # Clean up temporary file
+        os.remove(temp_pdb)
+        
+        # Log results with clear warning
+        unique_chains = np.unique(new_chain_ids)
+        unique_chains = [c for c in unique_chains if c.strip()]  # Remove empty chains
+        
+        if logger:
+            logger.warning("⚠️  CHAIN ID ASSIGNMENT PERFORMED BY gRINN")
+            logger.warning(f"   The input PDB file lacked chain IDs. gRINN has automatically assigned chains.")
+            logger.warning(f"   Detected and assigned {len(unique_chains)} chains: {', '.join(unique_chains)}")
+            logger.warning(f"   Please verify that chain assignments are correct for your analysis.")
+            logger.warning(f"   CRYST1 and other header information have been preserved.")
+            
+            # Count residues per chain
+            for chain_id in unique_chains:
+                chain_residues = system.select(f'chain {chain_id}')
+                if chain_residues:
+                    n_residues = len(np.unique(chain_residues.getResindices()))
+                    logger.info(f"  Chain {chain_id}: {n_residues} residues")
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error applying chain assignments: {str(e)}")
+        raise
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error applying chain assignments: {str(e)}")
+        raise
 
 def filterInitialPairsSingleCore(args):
     outFolder = args[0]
@@ -587,6 +939,7 @@ def process_chunk(i, chunk, outFolder, top_file, pdb_file, xtc_file):
 
     return edrFile, chunk
 
+
 def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger):
     """
     Calculate interaction energies for residue pairs.
@@ -606,8 +959,135 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
 
     # Read necessary files from outFolder
     pdb_file = os.path.join(outFolder, 'system_dry.pdb')
-    top_file = os.path.join(outFolder, 'topol_dry.top')
     xtc_file = os.path.join(outFolder, 'traj_dry.xtc')
+    top_file = os.path.join(outFolder, 'topol_dry.top')
+    
+    # Check if we have topology file
+    if not os.path.exists(top_file):
+        raise ValueError("Topology file required for detailed interaction energy calculation")
+
+        # Modify atom serial numbers to account for possible PDB files with more than 99999 atoms
+        system = parsePDB(pdb_file)
+        system.setSerials(np.arange(1, system.numAtoms() + 1))
+
+        system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
+        system_dry = system_dry.select('not resname SOL')
+
+        indicesFiltered = np.unique(np.hstack(initialFilter))
+        allSerials = {}
+
+        for index in indicesFiltered:
+            residue = system_dry.select('resindex %i' % index)
+            lenSerials = len(residue.getSerials())
+            if lenSerials > 14:
+                residueSerials = residue.getSerials()
+                allSerials[index] = [residueSerials[i:i + 14] for i in range(0, lenSerials, 14)]
+            else:
+                allSerials[index] = np.asarray([residue.getSerials()])
+
+        # Write a standard .ndx file for GMX
+        filename = os.path.join(outFolder, 'interact.ndx')
+        gromacs.make_ndx(f=os.path.join(outFolder, 'system_dry.pdb'), o=filename, input=('q',))
+
+        # Append our residue groups to this standard file!
+        with open(filename, 'a') as f:
+            for key in allSerials:
+                f.write('[ res%i ]\n' % key)
+                if type(allSerials[key][0]).__name__ == 'ndarray':
+                    for line in allSerials[key][0:]:
+                        f.write(' '.join(list(map(str, line))) + '\n')
+                else:
+                    f.write(' '.join(list(map(str, allSerials))) + '\n')
+
+        # Write the .mdp files necessary for GMX
+        mdpFiles = []
+
+        # Divide pairsFiltered into chunks so that each chunk does not contain
+        # more than 200 unique residue indices.
+        pairsFilteredChunks = []
+        if len(np.unique(np.hstack(initialFilter))) <= 60:
+            pairsFilteredChunks.append(initialFilter)
+        else:
+            i = 2
+            maxNumRes = len(np.unique(np.hstack(initialFilter)))
+            while maxNumRes >= 60:
+                pairsFilteredChunks = np.array_split(initialFilter, i)
+                chunkNumResList = [len(np.unique(np.hstack(chunk))) for chunk in pairsFilteredChunks]
+                maxNumRes = np.max(chunkNumResList)
+                i += 1
+
+        for pair in initialFilter:
+            if pair not in np.vstack(pairsFilteredChunks):
+                logger.exception('Missing at least one residue in filtered residue pairs. Please contact the developer.')
+            
+        i = 0
+        for chunk in pairsFilteredChunks:
+            filename = str(outFolder)+'/interact'+str(i)+'.mdp'
+            f = open(filename,'w')
+            #f.write('cutoff-scheme = group\n')
+            f.write('cutoff-scheme = Verlet\n')
+            #f.write('epsilon-r = %f\n' % soluteDielectric)
+
+            chunkResidues = np.unique(np.hstack(chunk))
+
+            resString = ''
+            for res in chunkResidues:
+                resString += 'res'+str(res)+' '
+
+            #resString += ' SOL'
+
+            f.write('energygrps = '+resString+'\n')
+
+            # Add energygroup exclusions.
+            #energygrpExclString = 'energygrp-excl ='
+
+            # GOTTA COMMENT OUT THE FOLLOWING DUE TO TOO LONG LINE ERROR IN GROMPP
+            # for key in allSerials:
+            # 	energygrpExclString += ' res%i res%i' % (key,key)
+
+            #energygrpExclString += ' SOL SOL'
+            #f.write(energygrpExclString)
+
+            f.close()
+            mdpFiles.append(filename)
+            i += 1
+
+        def start_subprocess(command):
+            return subprocess.Popen(command, preexec_fn=os.setsid, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        def terminate_process_group(pgid):
+            os.killpg(pgid, signal.SIGTERM)
+
+        def parallel_process_chunks(pairsFilteredChunks, outFolder, top_file, pdb_file, xtc_file, numCoresIE, logger):
+            edrFiles = []
+            pairsFilteredChunksProcessed = []
+
+            max_workers = min(numCoresIE, len(pairsFilteredChunks))  # Adjust max_workers to a smaller number if needed
+
+            with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = [
+                    executor.submit(process_chunk, i, chunk, outFolder, top_file, pdb_file, xtc_file)
+                    for i, chunk in enumerate(pairsFilteredChunks)
+                ]
+
+                def signal_handler(sig, frame):
+                    logger.info('Signal caught. Terminating ongoing tasks.')
+
+                signal.signal(signal.SIGINT, signal_handler)
+                signal.signal(signal.SIGTERM, signal_handler)
+                
+                j = 0
+                for future in concurrent.futures.as_completed(futures):
+                    edrFile, chunk = future.result()
+                    edrFiles.append(edrFile)
+                    pairsFilteredChunksProcessed.append(chunk)
+                    logger.info('Completed energy calculation for chunk %d' % j)
+                    j += 1
+
+            return edrFiles, pairsFilteredChunksProcessed
+        
+        edrFiles, pairsFilteredChunksProcessed = parallel_process_chunks(pairsFilteredChunks, outFolder, top_file, pdb_file, xtc_file, numCoresIE, logger)
+        return edrFiles, pairsFilteredChunksProcessed
 
     # Modify atom serial numbers to account for possible PDB files with more than 99999 atoms
     system = parsePDB(pdb_file)
@@ -1185,7 +1665,7 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
     
     # Test logical combinations
     if traj and not top:
-        errors.append("ERROR: Trajectory file provided but no topology file")
+        errors.append("ERROR: Trajectory file provided but no topology (.top) file specified")
     
     if toppar and not top:
         warnings.append("WARNING: Toppar folder provided but no topology file")
@@ -1282,7 +1762,7 @@ def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
                 else:
                     errors.append(f"ERROR: GROMACS cannot process topology with PDB: {error_msg}")
         
-        # Test 4: If trajectory provided, test with gmx check
+        # Test 3: If trajectory provided, test with gmx check
         if traj and os.path.exists(traj):
             try:
                 # Use gmx check to verify trajectory
@@ -1413,7 +1893,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         ff_folder_basename = os.path.basename(ff_folder)
         shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename), dirs_exist_ok=True)
 
-    # Check whether a topology file as well as toppar folder is provided
+    # Check whether a topology file or toppar folder is provided
     if top:
         logger.info('Topology file provided. Using provided topology file.')
         logger.info('Copying topology file to output folder...')
@@ -1422,31 +1902,63 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         if toppar:
             logger.info('Toppar folder provided. Using provided toppar folder.')
             logger.info('Copying toppar folder to output folder...')
-            shutil.copytree(toppar, os.path.join(out_folder, 'toppar'))
+            toppar_folder_basename = os.path.basename(toppar)
+            shutil.copytree(toppar, os.path.join(out_folder, toppar_folder_basename), dirs_exist_ok=True)
+    else:
+        if traj:
+            logger.warning('Trajectory provided but no topology file - will attempt to use existing simulation files')
+        logger.info('No topology file provided. Will generate topology during simulation.')
 
+    if traj:
         logger.info('Copying input pdb_file to output_folder as "system.pdb"...')
         shutil.copy(pdb_file, os.path.join(out_folder, 'system_dry.pdb'))
 
+        # Detect and assign chain IDs if missing
+        topology_file = os.path.join(out_folder, 'topol_dry.top') if top else None
+        try:
+            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+        except ValueError as e:
+            logger.warning(f"Chain ID assignment failed: {str(e)}")
+            logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")
+
         # Check whether also a trajectory file is provided
-        if traj:
-            logger.info('Trajectory file provided. Processing trajectory file with frame skipping...')
-            logger.info(f'Applying frame skipping (every {skip} frames) to trajectory...')
-            # Use trjconv to apply frame skipping instead of just copying
-            gromacs.trjconv(f=traj, o=os.path.join(out_folder, 'traj_dry.xtc'), s=os.path.join(out_folder, 'system_dry.pdb'), skip=skip, input=('0',))
-            logger.info(f'Trajectory processing completed (skipped every {skip} frames).')
+        logger.info('Trajectory file provided. Processing trajectory file with frame skipping...')
+        logger.info(f'Applying frame skipping (every {skip} frames) to trajectory...')
+        # Use trjconv to apply frame skipping instead of just copying
+        gromacs.trjconv(f=traj, o=os.path.join(out_folder, 'traj_dry.xtc'), s=os.path.join(out_folder, 'system_dry.pdb'), skip=skip, input=('0',))
+        logger.info(f'Trajectory processing completed (skipped every {skip} frames).')
+    else:
+        if not top:
+            # Only run simulation if we don't have topology and trajectory
+            run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt, skip)
         else:
             logger.info('Generating traj.xtc file from input pdb_file...')
+            shutil.copy(pdb_file, os.path.join(out_folder, 'system_dry.pdb'))
+            
+            # Detect and assign chain IDs if missing
+            topology_file = os.path.join(out_folder, 'topol_dry.top')
+            try:
+                detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+            except ValueError as e:
+                logger.warning(f"Chain ID assignment failed: {str(e)}")
+                logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")
+            
             gromacs.trjconv(f=os.path.join(out_folder, 'system_dry.pdb'), o=os.path.join(out_folder, 'traj_dry.xtc'))
-
-    else:
-        run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt, skip)
 
     if nointeraction:
         logger.info('Not calculating interaction energies as per user request.')
     else:
-        initialFilter = perform_initial_filtering(out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger)
-        edrFiles, pairsFilteredChunks = calculate_interaction_energies(out_folder, initialFilter, nt, logger)
-        parse_interaction_energies(edrFiles, pairsFilteredChunks, out_folder, logger)
+        # Check if we have topology file for interaction analysis
+        topology_file = os.path.join(out_folder, 'topol_dry.top')
+        
+        if os.path.exists(topology_file):
+            logger.info('Using topology file for detailed residue-residue interaction analysis')
+            initialFilter = perform_initial_filtering(out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger)
+            edrFiles, pairsFilteredChunks = calculate_interaction_energies(out_folder, initialFilter, nt, logger)
+            parse_interaction_energies(edrFiles, pairsFilteredChunks, out_folder, logger)
+        else:
+            logger.error('No topology (.top) file available for interaction energy analysis')
+            raise ValueError("Topology file required for interaction energy calculation")
 
     # --- PEN analysis ---
     if create_pen:
@@ -1520,7 +2032,7 @@ def parse_args():
     parser.add_argument("--skip", type=int, default=1, help="Skip every nth frame in trajectory analysis (default is 1, no skipping)")
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
-    parser.add_argument('--top', type=str, help='Topology file')
+    parser.add_argument('--top', type=str, help='Topology file (.top)')
     parser.add_argument('--toppar', type=str, help='Toppar folder')
     parser.add_argument('--traj', type=str, help='Trajectory file')
     parser.add_argument('--include_files', nargs='+', type=str, help='Include files')

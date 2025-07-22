@@ -104,7 +104,7 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo 'show_usage() {' >> /app/entrypoint.sh && \
     echo '    echo "gRINN Docker Container - Usage:"' >> /app/entrypoint.sh && \
     echo '    echo ""' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run [docker-options] grinn <mode> [mode-options]"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run [docker-options] grinn-dev <mode> [mode-options]"' >> /app/entrypoint.sh && \
     echo '    echo ""' >> /app/entrypoint.sh && \
     echo '    echo "Available modes:"' >> /app/entrypoint.sh && \
     echo '    echo "  workflow <input.pdb> <output_dir> [options]  - Run gRINN workflow analysis"' >> /app/entrypoint.sh && \
@@ -114,10 +114,10 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh && \
     echo '    echo ""' >> /app/entrypoint.sh && \
     echo '    echo "Examples:"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -v /data:/data grinn workflow /data/protein.pdb /data/results --top /data/protein.top"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn dashboard /data/results"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -v /data:/data grinn gmx grompp -f /data/input.mdp -c /data/protein.pdb"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -it grinn bash"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -v /data:/data grinn-dev workflow /data/protein.pdb /data/results --top /data/protein.top"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn-dev dashboard /data/results"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -v /data:/data grinn-dev gmx grompp -f /data/input.mdp -c /data/protein.pdb"' >> /app/entrypoint.sh && \
+    echo '    echo "  docker run -it grinn-dev bash"' >> /app/entrypoint.sh && \
     echo '}' >> /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
     echo '# Source GROMACS environment' >> /app/entrypoint.sh && \

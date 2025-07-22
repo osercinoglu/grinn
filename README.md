@@ -220,7 +220,7 @@ The dashboard expects these files in your results directory:
 - `energies_intEnTotal.csv` - Total interaction energies (required)
 - `energies_intEnVdW.csv` - Van der Waals energies (required)
 - `energies_intEnElec.csv` - Electrostatic energies (required)
-- `traj_superposed.xtc` - Trajectory file (optional, for dynamic visualization)
+- `traj_dry.xtc` - Trajectory file (optional, for dynamic visualization)
 
 ### Dashboard Tabs
 1. **🔗 Pairwise Energies**: Select two residues and analyze their interaction energy over time
@@ -344,7 +344,7 @@ python gRINN_Dashboard/grinn_dashboard.py results/
 
 ### Structure and Trajectory Files
 - `system_dry.pdb`: Processed protein structure (dashboard compatible)
-- `traj_superposed.xtc`: Superposed trajectory (dashboard compatible)
+- `traj_dry.xtc`: Dry trajectory (dashboard compatible)
 - `topol_dry.top`: GROMACS topology file
 
 ### Network Analysis (if `--create_pen` enabled)

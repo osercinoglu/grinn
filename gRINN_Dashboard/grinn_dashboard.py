@@ -49,7 +49,7 @@ def setup_data_paths(results_folder):
     total_csv = os.path.join(data_dir, 'energies_intEnTotal.csv')
     vdw_csv = os.path.join(data_dir, 'energies_intEnVdW.csv')
     elec_csv = os.path.join(data_dir, 'energies_intEnElec.csv')
-    traj_xtc = os.path.join(data_dir, 'traj_superposed.xtc')
+    traj_xtc = os.path.join(data_dir, 'traj_dry.xtc')
     
     print(f"Expected file paths:")
     print(f"  PDB: {pdb_path}")
@@ -76,7 +76,7 @@ def setup_data_paths(results_folder):
         print("  - energies_intEnTotal.csv")
         print("  - energies_intEnVdW.csv")
         print("  - energies_intEnElec.csv")
-        print("  - traj_superposed.xtc (optional, for trajectory visualization)")
+        print("  - traj_dry.xtc (optional, for trajectory visualization)")
         sys.exit(1)
     
     # Check if trajectory file exists (optional)
@@ -123,9 +123,13 @@ def main():
     # Process all energy types
     energy_long = {}
     for energy_type, df in energy_dfs.items():
+        # Only drop columns that actually exist in the DataFrame
+        existing_cols_to_drop = [col for col in cols2drop if col in df.columns]
+        other_cols_to_drop = [col for col in ['res1', 'res2'] if col in df.columns]
+        
         long_df = (
             df
-            .drop(columns=cols2drop + ['res1', 'res2'])
+            .drop(columns=existing_cols_to_drop + other_cols_to_drop)
             .melt(id_vars=['Pair'], var_name='Frame', value_name='Energy')
         )
         long_df['Energy'] = pd.to_numeric(long_df['Energy'], errors='coerce')
