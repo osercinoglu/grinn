@@ -73,6 +73,7 @@ pgid = os.getpgid(os.getpid())
 def parse_structure_file(filepath):
     """
     Parse structure file (PDB or GRO format) using ProDy.
+    For GRO files, converts to PDB using gmx editconf first.
     
     Parameters:
     - filepath (str): Path to the structure file (.pdb or .gro)
@@ -90,16 +91,56 @@ def parse_structure_file(filepath):
         if file_ext == '.pdb':
             return parsePDB(filepath)
         elif file_ext == '.gro':
-            return parseGRO(filepath)
+            # Convert GRO to PDB using gmx editconf
+            import tempfile
+            import gromacs
+            
+            # Create temporary PDB file
+            temp_pdb = filepath.replace('.gro', '_temp.pdb')
+            
+            try:
+                # Use gmx editconf to convert GRO to PDB
+                gromacs.editconf(f=filepath, o=temp_pdb)
+                
+                # Parse the converted PDB file
+                structure = parsePDB(temp_pdb)
+                
+                # Clean up temporary file
+                if os.path.exists(temp_pdb):
+                    os.remove(temp_pdb)
+                
+                return structure
+                
+            except Exception as e:
+                # Clean up temporary file if it exists
+                if os.path.exists(temp_pdb):
+                    os.remove(temp_pdb)
+                raise ValueError(f"Failed to convert GRO file to PDB: {str(e)}")
         else:
             # Try to determine format by attempting to parse
             try:
                 # First try PDB (more common)
                 return parsePDB(filepath)
             except:
+                # For unknown extensions, try GRO conversion
                 try:
-                    # Then try GRO
-                    return parseGRO(filepath)
+                    import tempfile
+                    import gromacs
+                    
+                    # Create temporary PDB file
+                    temp_pdb = filepath + '_temp.pdb'
+                    
+                    # Use gmx editconf to convert to PDB
+                    gromacs.editconf(f=filepath, o=temp_pdb)
+                    
+                    # Parse the converted PDB file
+                    structure = parsePDB(temp_pdb)
+                    
+                    # Clean up temporary file
+                    if os.path.exists(temp_pdb):
+                        os.remove(temp_pdb)
+                    
+                    return structure
                 except:
                     raise ValueError(f"Unsupported file format: {filepath}. Supported formats: .pdb, .gro")
     except Exception as e:
@@ -1005,6 +1046,7 @@ def process_chunk(i, chunk, outFolder, top_file, pdb_file, xtc_file):
     gromacs.environment.flags['capture_output'] = "file"
     gromacs.environment.flags['capture_output_filename'] = os.path.join(outFolder, f"gromacs_interaction{i}.log")
 
+    # Use the topology file
     gromacs.grompp(f=mdpFile, n=os.path.join(outFolder, 'interact.ndx'), p=top_file, c=pdb_file, o=tprFile, maxwarn=20)
     gromacs.mdrun(s=tprFile, c=pdb_file, e=edrFile, g=os.path.join(outFolder, f'interact{i}.log'), nt=1, rerun=xtc_file)
 
@@ -1033,7 +1075,6 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
     xtc_file = os.path.join(outFolder, 'traj_dry.xtc')
     top_file = os.path.join(outFolder, 'topol_dry.top')
     
-    # Check if we have topology file
     if not os.path.exists(top_file):
         raise ValueError("Topology file required for detailed interaction energy calculation")
 
@@ -2004,10 +2045,9 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         # Convert to PDB format if input is GRO
         input_ext = os.path.splitext(structure_file)[1].lower()
         if input_ext == '.gro':
-            logger.info('Input is GRO format, converting to PDB format...')
-            # Use parse_structure_file to read GRO, then save as PDB
-            structure = parse_structure_file(structure_file)
-            writePDB(os.path.join(out_folder, 'system_dry.pdb'), structure)
+            logger.info('Input is GRO format, converting to PDB format with box information...')
+            # Use gmx editconf directly to preserve CRYST1 record with box information
+            gromacs.editconf(f=structure_file, o=os.path.join(out_folder, 'system_dry.pdb'))
         else:
             # For PDB files, just copy
             shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
@@ -2036,10 +2076,9 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             # Convert to PDB format if input is GRO
             input_ext = os.path.splitext(structure_file)[1].lower()
             if input_ext == '.gro':
-                logger.info('Input is GRO format, converting to PDB format...')
-                # Use parse_structure_file to read GRO, then save as PDB
-                structure = parse_structure_file(structure_file)
-                writePDB(os.path.join(out_folder, 'system_dry.pdb'), structure)
+                logger.info('Input is GRO format, converting to PDB format with box information...')
+                # Use gmx editconf directly to preserve CRYST1 record with box information
+                gromacs.editconf(f=structure_file, o=os.path.join(out_folder, 'system_dry.pdb'))
             else:
                 # For PDB files, just copy
                 shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
