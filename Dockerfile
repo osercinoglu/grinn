@@ -6,7 +6,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Miniconda and Mamba
-RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        MINICONDA_ARCH="aarch64"; \
+    else \
+        MINICONDA_ARCH="x86_64"; \
+    fi && \
+    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${MINICONDA_ARCH}.sh -O /tmp/miniconda.sh && \
     bash /tmp/miniconda.sh -b -p /opt/conda && \
     rm /tmp/miniconda.sh
 ENV PATH=/opt/conda/bin:$PATH
