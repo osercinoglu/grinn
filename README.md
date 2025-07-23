@@ -10,16 +10,48 @@
 ## 🚀 Quick Start
 
 ### Using Docker (Easiest)
+
 ```bash
 # Build the image
 docker build -t grinn .
 
-# Run analysis
-docker run -v /path/to/data:/data grinn /data/protein.pdb /data/results --top /data/protein.top --traj /data/trajectory.xtc
+# Get a protein structure
+wget https://files.rcsb.org/download/1L2Y.pdb
+
+# 1. Prepare protein structure with AMBER force field
+docker run -v $(pwd):/data grinn gmx pdb2gmx -f /data/1L2Y.pdb -o /data/processed.gro -p /data/topol.top -ff amber99sb-ildn -water tip3p
+
+# 2. Define simulation box
+docker run -v $(pwd):/data grinn gmx editconf -f /data/processed.gro -o /data/boxed.gro -c -d 1.0 -bt cubic
+
+# 3. Add solvent (optional but recommended)
+docker run -v $(pwd):/data grinn gmx solvate -cp /data/boxed.gro -cs spc216.gro -o /data/solvated.gro -p /data/topol.top
+
+# 4. Energy minimization
+docker run -v $(pwd):/data grinn gmx grompp -f /app/mdp_files/minim.mdp -c /data/solvated.gro -p /data/topol.top -o /data/em.tpr
+docker run -v $(pwd):/data grinn gmx mdrun -v -deffnm /data/em
+
+# 5. Short MD simulation
+docker run -v $(pwd):/data grinn gmx grompp -f /app/mdp_files/npt.mdp -c /data/em.gro -p /data/topol.top -o /data/md.tpr
+docker run -v $(pwd):/data grinn gmx mdrun -v -deffnm /data/md
+
+# 6. Run gRINN analysis on your trajectory
+docker run -v $(pwd):/data grinn workflow /data/em.gro /data/results --tpr /data/md.tpr --traj /data/md.xtc
+
+# 7. Launch dashboard
+docker run -p 8051:8051 -v $(pwd):/data grinn dashboard /data/results
+```
+
+#### Analyze Existing Trajectory
+```bash
+# If you already have GROMACS files
+docker run -v $(pwd):/data grinn workflow /data/protein.pdb /data/results --tpr /data/system.tpr --traj /data/trajectory.xtc
 
 # Launch dashboard
-docker run -p 8051:8051 -v /path/to/data:/data grinn dashboard /data/results
+docker run -p 8051:8051 -v $(pwd):/data grinn dashboard /data/results
 ```
+
+**Note:** All force field files and MD parameters are included in the Docker container.
 
 ### Using Conda
 ```bash
