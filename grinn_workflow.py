@@ -70,6 +70,41 @@ except ImportError:
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
 
+def parse_structure_file(filepath):
+    """
+    Parse structure file (PDB or GRO format) using ProDy.
+    
+    Parameters:
+    - filepath (str): Path to the structure file (.pdb or .gro)
+    
+    Returns:
+    - ProDy AtomGroup: Parsed structure
+    
+    Raises:
+    - ValueError: If file format is not supported or parsing fails
+    """
+    try:
+        # Determine file format from extension
+        file_ext = os.path.splitext(filepath)[1].lower()
+        
+        if file_ext == '.pdb':
+            return parsePDB(filepath)
+        elif file_ext == '.gro':
+            return parseGRO(filepath)
+        else:
+            # Try to determine format by attempting to parse
+            try:
+                # First try PDB (more common)
+                return parsePDB(filepath)
+            except:
+                try:
+                    # Then try GRO
+                    return parseGRO(filepath)
+                except:
+                    raise ValueError(f"Unsupported file format: {filepath}. Supported formats: .pdb, .gro")
+    except Exception as e:
+        raise ValueError(f"Failed to parse structure file {filepath}: {str(e)}")
+
 # Simplified pandas-only EDR processing functions
 def parse_edr_file_parallel(edr_file):
     """
@@ -184,8 +219,8 @@ def create_logger(outFolder, noconsoleHandler=False):
 
     return logger
 
-def getRibeiroOrtizNetwork(pdb, df_intEn, includeCovalents=True, intEnCutoff=1, startFrame=0, residue_indices=None):
-    sys = parsePDB(pdb)
+def getRibeiroOrtizNetwork(structure_file, df_intEn, includeCovalents=True, intEnCutoff=1, startFrame=0, residue_indices=None):
+    sys = parse_structure_file(structure_file)
     if residue_indices is None:
         sys_sel = sys.select("all")
         resIndices = np.unique(sys_sel.getResindices())
@@ -275,7 +310,7 @@ def getRibeiroOrtizNetwork(pdb, df_intEn, includeCovalents=True, intEnCutoff=1, 
     return nx_list
 
 def compute_pen_and_bc(
-    pdb_file, 
+    structure_file, 
     int_en_csv, 
     out_folder, 
     intEnCutoff_values=[1.0], 
@@ -291,7 +326,7 @@ def compute_pen_and_bc(
         df_intEn = df_intEn.rename(columns={'Pair_indices': 'pair'})
 
     # Get union of residue indices from source_sel and target_sel
-    sys = parsePDB(pdb_file)
+    sys = parse_structure_file(structure_file)
     source_indices = set(sys.select(source_sel).getResindices())
     target_indices = set(sys.select(target_sel).getResindices())
     residue_indices = sorted(source_indices | target_indices)
@@ -301,7 +336,7 @@ def compute_pen_and_bc(
         for intEnCutoff in intEnCutoff_values:
             logger and logger.info(f"Creating PENs: include_covalents={include_covalents}, intEnCutoff={intEnCutoff}")
             nx_list = getRibeiroOrtizNetwork(
-                pdb_file, df_intEn, 
+                structure_file, df_intEn, 
                 includeCovalents=include_covalents, 
                 intEnCutoff=intEnCutoff,
                 residue_indices=residue_indices
@@ -330,12 +365,12 @@ def compute_pen_and_bc(
     df_bc.to_csv(os.path.join(out_folder, "pen_betweenness_centralities.csv"), index=False)
     logger and logger.info(f"Saved all PENs and BCs to {out_folder}")
 
-def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1, skip=1):
+def run_gromacs_simulation(structure_filepath, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt=1, skip=1):
     """
     Run a GROMACS simulation workflow.
 
     Parameters:
-    - pdb_filepath (str): The path to the input PDB file.
+    - structure_filepath (str): The path to the input structure file (PDB or GRO format).
     - mdp_files_folder (str): The folder containing the MDP files.
     - out_folder (str): The folder where output files will be saved.
     - nofixpdb (bool): Whether to fix the PDB file using pdbfixer (default is True).
@@ -351,13 +386,30 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
     gromacs.environment.flags['capture_output'] = "file"
     gromacs.environment.flags['capture_output_filename'] = os.path.join(out_folder, "gromacs.log")
 
-    logger.info(f"Running GROMACS simulation for PDB file: {pdb_filepath}")
+    logger.info(f"Running GROMACS simulation for structure file: {structure_filepath}")
 
-    if nofixpdb:
-        fixed_pdb_filepath = pdb_filepath
+    # Determine input file format and prepare for GROMACS
+    input_ext = os.path.splitext(structure_filepath)[1].lower()
+    
+    if nofixpdb or input_ext == '.gro':
+        # For GRO files or when PDB fixing is disabled
+        if input_ext == '.gro':
+            logger.info('Converting GRO file to PDB format for GROMACS processing...')
+            structure = parse_structure_file(structure_filepath)
+            fixed_pdb_filepath = os.path.join(out_folder, "protein.pdb")
+            writePDB(fixed_pdb_filepath, structure.select('protein'))
+            logger.info("GRO file converted to PDB format.")
+        else:
+            # PDB file without fixing
+            logger.info('Using PDB file without fixing...')
+            structure = parse_structure_file(structure_filepath)
+            fixed_pdb_filepath = os.path.join(out_folder, "protein.pdb")
+            writePDB(fixed_pdb_filepath, structure.select('protein'))
+            logger.info("PDB file processed without fixing.")
     else:
-        # Fix PDB file
-        fixer = PDBFixer(filename=pdb_filepath)
+        # Fix PDB file using PDBFixer
+        logger.info('Fixing PDB file using PDBFixer...')
+        fixer = PDBFixer(filename=structure_filepath)
         fixer.findMissingResidues()
         fixer.findNonstandardResidues()
         fixer.replaceNonstandardResidues()
@@ -365,11 +417,11 @@ def run_gromacs_simulation(pdb_filepath, mdp_files_folder, out_folder, ff_folder
         fixer.findMissingAtoms()
         fixer.addMissingAtoms()
         fixer.addMissingHydrogens(7.0)
-        pdb_filename = os.path.basename(pdb_filepath)
+        pdb_filename = os.path.basename(structure_filepath)
         fixed_pdb_filepath = os.path.join(out_folder, "protein.pdb")
         PDBFile.writeFile(fixer.topology, fixer.positions, open(fixed_pdb_filepath, 'w'))
         logger.info("PDB file fixed.")
-        system = parsePDB(fixed_pdb_filepath)
+        system = parse_structure_file(fixed_pdb_filepath)
         writePDB(fixed_pdb_filepath, system.select('protein'))
 
     if ff_folder is not None:
@@ -1579,7 +1631,7 @@ def cleanUp(outFolder, logger):
 
     logger.info('Cleaning up... completed.')
 
-def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cutoff=10, 
+def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filter_cutoff=10, 
                      nofixpdb=False, top=None, toppar=None, traj=None, nointeraction=False, 
                      gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
                      nt=1, skip=1, noconsole_handler=False, include_files=None,
@@ -1594,12 +1646,23 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
     warnings = []
     
     # Test required arguments
-    if not pdb_file:
-        errors.append("ERROR: PDB file path is required")
-    elif not os.path.exists(pdb_file):
-        errors.append(f"ERROR: PDB file '{pdb_file}' does not exist")
-    elif not pdb_file.endswith('.pdb'):
-        warnings.append(f"WARNING: PDB file '{pdb_file}' does not have .pdb extension")
+    if not structure_file:
+        errors.append("ERROR: Structure file path is required")
+    elif not os.path.exists(structure_file):
+        errors.append(f"ERROR: Structure file '{structure_file}' does not exist")
+    else:
+        # Check file extension and validate format
+        file_ext = os.path.splitext(structure_file)[1].lower()
+        if file_ext not in ['.pdb', '.gro']:
+            warnings.append(f"WARNING: Structure file '{structure_file}' has unsupported extension. Supported: .pdb, .gro")
+        
+        # Try to parse the structure file to validate format
+        try:
+            structure = parse_structure_file(structure_file)
+            if structure is None:
+                errors.append(f"ERROR: Could not parse structure file '{structure_file}'")
+        except Exception as e:
+            errors.append(f"ERROR: Failed to parse structure file '{structure_file}': {str(e)}")
     
     if not out_folder:
         errors.append("ERROR: Output folder path is required")
@@ -1662,7 +1725,7 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
     if source_sel or target_sel:
         try:
             from prody import parsePDB
-            sys = parsePDB(pdb_file)
+            sys = parse_structure_file(structure_file)
             
             if source_sel and source_sel != "all":
                 try:
@@ -1694,7 +1757,7 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
     
     # Test GROMACS functionality
     print("\nTesting GROMACS functionality...")
-    gromacs_errors = test_gromacs_functionality(pdb_file, top, traj, ff_folder)
+    gromacs_errors = test_gromacs_functionality(structure_file, top, traj, ff_folder)
     errors.extend(gromacs_errors)
     
     # Print results
@@ -1720,7 +1783,7 @@ def test_grinn_inputs(pdb_file, out_folder, ff_folder=None, init_pair_filter_cut
     return len(errors) == 0, errors
 
 
-def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
+def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=None):
     """
     Test if GROMACS can actually process the input files.
     
@@ -1745,12 +1808,19 @@ def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
             errors.append(f"ERROR: GROMACS not found or not working: {str(e)}")
             return errors
         
-        # Test 2: Test PDB file with gmx editconf (quick structure check)
-        if pdb_file and os.path.exists(pdb_file):
+        # Test 2: Test structure file with gmx editconf (quick structure check)
+        if structure_file and os.path.exists(structure_file):
             try:
-                test_out = os.path.join(temp_dir, "test.pdb")
-                gromacs.editconf(f=pdb_file, o=test_out, princ=True)
-                print(f"✓ PDB file is readable by GROMACS")
+                # Convert GRO to PDB if needed for GROMACS compatibility testing
+                input_ext = os.path.splitext(structure_file)[1].lower()
+                if input_ext == '.gro':
+                    # GROMACS can work with GRO files directly
+                    test_out = os.path.join(temp_dir, "test.pdb")
+                    gromacs.editconf(f=structure_file, o=test_out, princ=True)
+                else:
+                    test_out = os.path.join(temp_dir, "test.pdb")
+                    gromacs.editconf(f=structure_file, o=test_out, princ=True)
+                print(f"✓ Structure file is readable by GROMACS")
             except Exception as e:
                 errors.append(f"ERROR: GROMACS cannot read PDB file: {str(e)}")
         
@@ -1765,10 +1835,10 @@ def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
                     f.write("cutoff-scheme = Verlet\n")
                 
                 test_tpr = os.path.join(temp_dir, "test.tpr")
-                # Copy PDB to temp dir to ensure paths work
+                # Copy structure file to temp dir to ensure paths work
                 import shutil
                 temp_pdb = os.path.join(temp_dir, "system.pdb")
-                shutil.copy(pdb_file, temp_pdb)
+                shutil.copy(structure_file, temp_pdb)
                 
                 gromacs.grompp(f=test_mdp, c=temp_pdb, p=top, o=test_tpr, maxwarn=10)
                 print(f"✓ Topology file is valid and compatible with PDB")
@@ -1816,7 +1886,7 @@ def test_gromacs_functionality(pdb_file, top=None, traj=None, ff_folder=None):
     return errors
 
 
-def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
+def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
                        nt=1, skip=1, noconsole_handler=False, include_files=False, create_pen=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False):
@@ -1824,7 +1894,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
     # If test_only flag is set, just validate inputs and exit
     if test_only:
         is_valid, errors = test_grinn_inputs(
-            pdb_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, toppar, 
+            structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, toppar, 
             traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
             noconsole_handler, include_files, create_pen, pen_cutoffs, pen_include_covalents
         )
@@ -1929,8 +1999,18 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         logger.info('No topology file provided. Will generate topology during simulation.')
 
     if traj:
-        logger.info('Copying input pdb_file to output_folder as "system.pdb"...')
-        shutil.copy(pdb_file, os.path.join(out_folder, 'system_dry.pdb'))
+        logger.info('Copying input structure_file to output_folder as "system_dry.pdb"...')
+        
+        # Convert to PDB format if input is GRO
+        input_ext = os.path.splitext(structure_file)[1].lower()
+        if input_ext == '.gro':
+            logger.info('Input is GRO format, converting to PDB format...')
+            # Use parse_structure_file to read GRO, then save as PDB
+            structure = parse_structure_file(structure_file)
+            writePDB(os.path.join(out_folder, 'system_dry.pdb'), structure)
+        else:
+            # For PDB files, just copy
+            shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
 
         # Detect and assign chain IDs if missing
         topology_file = os.path.join(out_folder, 'topol_dry.top') if top else None
@@ -1949,10 +2029,20 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
     else:
         if not top:
             # Only run simulation if we don't have topology and trajectory
-            run_gromacs_simulation(pdb_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt, skip)
+            run_gromacs_simulation(structure_file, mdp_files_folder, out_folder, ff_folder, nofixpdb, gpu, solvate, npt, logger, nt, skip)
         else:
-            logger.info('Generating traj.xtc file from input pdb_file...')
-            shutil.copy(pdb_file, os.path.join(out_folder, 'system_dry.pdb'))
+            logger.info('Generating traj.xtc file from input structure_file...')
+            
+            # Convert to PDB format if input is GRO
+            input_ext = os.path.splitext(structure_file)[1].lower()
+            if input_ext == '.gro':
+                logger.info('Input is GRO format, converting to PDB format...')
+                # Use parse_structure_file to read GRO, then save as PDB
+                structure = parse_structure_file(structure_file)
+                writePDB(os.path.join(out_folder, 'system_dry.pdb'), structure)
+            else:
+                # For PDB files, just copy
+                shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
             
             # Detect and assign chain IDs if missing
             topology_file = os.path.join(out_folder, 'topol_dry.top')
@@ -1986,7 +2076,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
         pdb_path = os.path.join(out_folder, 'system_dry.pdb')
         if os.path.exists(pen_csv) and os.path.exists(pdb_path):
             compute_pen_and_bc(
-                pdb_file=pdb_path,
+                structure_file=pdb_path,
                 int_en_csv=pen_csv,
                 out_folder=out_folder,
                 intEnCutoff_values=pen_cutoffs,
@@ -2003,7 +2093,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
     # Generate workflow summary report
     try:
         workflow_params = {
-            'pdb_file': pdb_file,
+            'structure_file': structure_file,
             'out_folder': out_folder,
             'ff_folder': ff_folder,
             'init_pair_filter_cutoff': init_pair_filter_cutoff,
@@ -2037,7 +2127,7 @@ def run_grinn_workflow(pdb_file, out_folder, ff_folder, init_pair_filter_cutoff,
 def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description="Run gRINN workflow")
-    parser.add_argument("pdb_file", type=str, help="Input PDB file")
+    parser.add_argument("structure_file", type=str, help="Input structure file (PDB or GRO format)")
     parser.add_argument("out_folder", type=str, help="Output folder")
     parser.add_argument("--nofixpdb", action="store_true", help="Fix PDB file using pdbfixer")
     parser.add_argument("--initpairfiltercutoff", type=float, default=10, help="Initial pair filter cutoff (default is 10)")
@@ -2268,7 +2358,7 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
 def main():
     args = parse_args()
     run_grinn_workflow(
-        args.pdb_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
+        args.structure_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
         args.nofixpdb, args.top, args.toppar, args.traj, args.nointeraction, 
         args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, 
         args.nt, args.skip, args.noconsole_handler, args.include_files,
