@@ -36,7 +36,7 @@ docker run -v $(pwd):/data grinn gmx grompp -f /app/mdp_files/npt.mdp -c /data/e
 docker run -v $(pwd):/data grinn gmx mdrun -v -deffnm /data/md
 
 # 6. Run gRINN analysis on your trajectory
-docker run -v $(pwd):/data grinn workflow /data/em.gro /data/results --tpr /data/md.tpr --traj /data/md.xtc
+docker run -v $(pwd):/data grinn workflow /data/em.gro /data/results --tpr /data/topol.top --traj /data/md.xtc
 
 # 7. Launch dashboard
 docker run -p 8051:8051 -v $(pwd):/data grinn dashboard /data/results
