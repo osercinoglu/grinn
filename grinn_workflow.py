@@ -626,70 +626,243 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
 def extract_chains_from_topology(topology_file, system, logger=None):
     """
     Extract chain information from GROMACS topology file.
+    Uses a more sophisticated approach to map molecules to residues by analyzing
+    the topology structure and residue ordering.
     
     Returns:
     - dict: Mapping of residue indices to chain IDs, or None if extraction fails
     """
     try:
         chain_assignments = {}
-        current_chain = 'A'
-        chain_counter = 0
         
         with open(topology_file, 'r') as f:
             content = f.read()
         
-        # Look for molecule definitions in topology
-        molecules_section = False
-        chain_molecules = []
+        # Parse molecule definitions and their residue compositions
+        molecule_info = parse_topology_molecules(content, logger)
+        if not molecule_info:
+            if logger:
+                logger.warning("Could not parse molecule information from topology")
+            return None
         
-        for line in content.split('\n'):
-            line = line.strip()
+        # Get all residues in order from the system
+        all_residues = system.select('all')
+        all_resindices = np.unique(all_residues.getResindices())
+        
+        # Map residues to molecules based on topology order and residue counts
+        residue_to_molecule = map_residues_to_molecules(system, molecule_info, all_resindices, logger)
+        
+        if not residue_to_molecule:
+            if logger:
+                logger.warning("Could not map residues to molecules")
+            return None
+        
+        # Assign chain IDs based on molecule assignments
+        chain_assignments = assign_chain_ids_from_molecules(residue_to_molecule, logger)
+        
+        if logger and chain_assignments:
+            unique_chains = list(set(chain_assignments.values()))
+            logger.info(f"Successfully assigned {len(unique_chains)} chains from topology: {', '.join(sorted(unique_chains))}")
             
-            if line.startswith('[ molecules ]'):
-                molecules_section = True
-                continue
-            elif line.startswith('[') and molecules_section:
-                break
-            elif molecules_section and line and not line.startswith(';'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    mol_name = parts[0]
-                    mol_count = int(parts[1])
-                    chain_molecules.extend([mol_name] * mol_count)
+            # Log molecule type distribution
+            molecule_counts = {}
+            for res_idx, chain_id in chain_assignments.items():
+                mol_name = residue_to_molecule.get(res_idx, 'Unknown')
+                if mol_name not in molecule_counts:
+                    molecule_counts[mol_name] = {'chain': chain_id, 'count': 0}
+                molecule_counts[mol_name]['count'] += 1
+            
+            for mol_name, info in molecule_counts.items():
+                logger.info(f"  Molecule '{mol_name}' -> Chain {info['chain']}: {info['count']} residues")
         
-        if chain_molecules:
-            # Assign chain IDs based on molecule types
-            residue_idx = 0
-            for i, mol_name in enumerate(chain_molecules):
-                chain_id = chr(ord('A') + i % 26)  # A, B, C, ... Z, then cycle
-                
-                # Find residues belonging to this molecule
-                # This is simplified - in practice, we'd need more sophisticated parsing
-                # For now, we'll use a heuristic based on molecule names
-                if 'protein' in mol_name.lower() or mol_name.lower().startswith('prot'):
-                    # Protein chain - assign based on protein residues
-                    protein_residues = system.select('protein')
-                    if protein_residues:
-                        protein_resindices = np.unique(protein_residues.getResindices())
-                        for res_idx in protein_resindices:
-                            chain_assignments[res_idx] = chain_id
-                elif 'water' in mol_name.lower() or mol_name.lower() == 'sol':
-                    # Water molecules - assign to chain W
-                    water_residues = system.select('water or resname SOL')
-                    if water_residues:
-                        water_resindices = np.unique(water_residues.getResindices())
-                        for res_idx in water_resindices:
-                            chain_assignments[res_idx] = 'W'
-                else:
-                    # Other molecules (ions, ligands, etc.)
-                    chain_id = chr(ord('X') + (i % 3))  # X, Y, Z for other molecules
-                    
         return chain_assignments if chain_assignments else None
         
     except Exception as e:
         if logger:
             logger.warning(f"Topology parsing failed: {str(e)}")
         return None
+
+def parse_topology_molecules(content, logger=None):
+    """
+    Parse the [molecules] section and gather information about each molecule type.
+    
+    Returns:
+    - list: List of tuples (molecule_name, count, estimated_residues)
+    """
+    molecules_info = []
+    
+    # Find molecules section
+    molecules_section = False
+    for line in content.split('\n'):
+        line = line.strip()
+        
+        if line.startswith('[ molecules ]'):
+            molecules_section = True
+            continue
+        elif line.startswith('[') and molecules_section:
+            break
+        elif molecules_section and line and not line.startswith(';'):
+            parts = line.split()
+            if len(parts) >= 2:
+                mol_name = parts[0]
+                mol_count = int(parts[1])
+                
+                # Try to estimate number of residues per molecule from topology
+                estimated_residues = estimate_molecule_residues(content, mol_name, logger)
+                
+                molecules_info.append((mol_name, mol_count, estimated_residues))
+    
+    return molecules_info
+
+def estimate_molecule_residues(content, mol_name, logger=None):
+    """
+    Estimate the number of residues in a molecule by looking for its definition
+    in the topology file.
+    
+    Returns:
+    - int: Estimated number of residues (defaults to 1 for unknown molecules)
+    """
+    try:
+        # Look for molecule definition section
+        in_molecule_section = False
+        residue_count = 0
+        
+        for line in content.split('\n'):
+            line = line.strip()
+            
+            # Check if we're entering the molecule definition
+            if line == f'[ moleculetype ]':
+                in_molecule_section = 'search_name'
+                continue
+            elif in_molecule_section == 'search_name':
+                # Next non-comment line should have molecule name
+                if not line.startswith(';') and line:
+                    parts = line.split()
+                    if parts and parts[0] == mol_name:
+                        in_molecule_section = 'in_molecule'
+                    else:
+                        in_molecule_section = False
+                continue
+            elif in_molecule_section == 'in_molecule':
+                # Look for atoms section to count residues
+                if line.startswith('[ atoms ]'):
+                    in_molecule_section = 'counting_atoms'
+                    continue
+                elif line.startswith('['):
+                    # Entered a different section, stop counting
+                    break
+            elif in_molecule_section == 'counting_atoms':
+                if line.startswith('['):
+                    # End of atoms section
+                    break
+                elif line and not line.startswith(';'):
+                    # This is an atom line, extract residue info
+                    parts = line.split()
+                    if len(parts) >= 4:  # atom_nr, atom_type, residue_nr, residue_name
+                        try:
+                            res_nr = int(parts[2])
+                            residue_count = max(residue_count, res_nr)
+                        except (ValueError, IndexError):
+                            continue
+        
+        return max(1, residue_count)  # At least 1 residue
+        
+    except Exception as e:
+        if logger:
+            logger.debug(f"Could not estimate residues for molecule {mol_name}: {str(e)}")
+        return 1  # Default fallback
+
+def map_residues_to_molecules(system, molecule_info, all_resindices, logger=None):
+    """
+    Map residues to molecules based on topology order and molecule information.
+    
+    Returns:
+    - dict: Mapping of residue index to molecule name
+    """
+    residue_to_molecule = {}
+    current_residue_idx = 0
+    
+    try:
+        # Sort residue indices to ensure proper ordering
+        sorted_resindices = sorted(all_resindices)
+        
+        for mol_name, mol_count, estimated_residues_per_mol in molecule_info:
+            
+            for mol_instance in range(mol_count):
+                # Assign residues for this molecule instance
+                for res_in_mol in range(estimated_residues_per_mol):
+                    if current_residue_idx < len(sorted_resindices):
+                        res_idx = sorted_resindices[current_residue_idx]
+                        residue_to_molecule[res_idx] = mol_name
+                        current_residue_idx += 1
+                    else:
+                        # We've run out of residues - this can happen if our estimation is off
+                        if logger:
+                            logger.warning(f"Ran out of residues while assigning molecule {mol_name}")
+                        break
+                
+                # If we couldn't assign all estimated residues, continue to next molecule
+                if current_residue_idx >= len(sorted_resindices):
+                    break
+        
+        # Handle any remaining residues (assign to last molecule type or create a generic assignment)
+        if current_residue_idx < len(sorted_resindices):
+            if logger:
+                remaining = len(sorted_resindices) - current_residue_idx
+                logger.warning(f"Topology mapping left {remaining} residues unassigned - assigning to 'Other'")
+            
+            for i in range(current_residue_idx, len(sorted_resindices)):
+                res_idx = sorted_resindices[i]
+                residue_to_molecule[res_idx] = 'Other'
+        
+        return residue_to_molecule
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Failed to map residues to molecules: {str(e)}")
+        return {}
+
+def assign_chain_ids_from_molecules(residue_to_molecule, logger=None):
+    """
+    Assign chain IDs based on molecule assignments.
+    
+    Returns:
+    - dict: Mapping of residue index to chain ID
+    """
+    chain_assignments = {}
+    molecule_to_chain = {}
+    current_chain_idx = 0
+    
+    # Group molecules by type and assign chain IDs
+    for res_idx, mol_name in residue_to_molecule.items():
+        
+        # Determine chain ID for this molecule type
+        if mol_name not in molecule_to_chain:
+            # Assign chain based on molecule type
+            if is_water_molecule(mol_name):
+                chain_id = 'W'  # Water
+            elif is_ion_molecule(mol_name):
+                chain_id = 'I'  # Ions
+            else:
+                # Regular chains (proteins, nucleic acids, ligands, etc.)
+                chain_id = chr(ord('A') + current_chain_idx % 26)
+                current_chain_idx += 1
+            
+            molecule_to_chain[mol_name] = chain_id
+        
+        chain_assignments[res_idx] = molecule_to_chain[mol_name]
+    
+    return chain_assignments
+
+def is_water_molecule(mol_name):
+    """Check if molecule name indicates water."""
+    water_names = {'sol', 'water', 'wat', 'h2o', 'tip3', 'tip4', 'tip5', 'spc', 'spce'}
+    return mol_name.lower() in water_names
+
+def is_ion_molecule(mol_name):
+    """Check if molecule name indicates an ion."""
+    ion_names = {'na', 'cl', 'k', 'mg', 'ca', 'zn', 'fe', 'na+', 'cl-', 'k+', 'mg2+', 'ca2+', 'zn2+'}
+    return mol_name.lower() in ion_names
 
 def detect_chains_from_sequence_breaks(system, logger=None):
     """
@@ -1806,6 +1979,216 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     return len(errors) == 0, errors
 
 
+def detect_gromacs_version():
+    """
+    Detect installed GROMACS version and capabilities.
+    
+    Returns:
+    - dict: Information about GROMACS installation, or None if not found
+    """
+    try:
+        # Try to get GROMACS version
+        result = subprocess.run(['gmx', '--version'], 
+                              capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            version_info = {}
+            
+            # Parse version from output
+            import re
+            version_match = re.search(r'GROMACS version:\s*(\d+\.\d+(?:\.\d+)?)', result.stdout)
+            if version_match:
+                version_str = version_match.group(1)
+                version_info['version_string'] = version_str
+                
+                # Convert to float for comparisons (use major.minor)
+                version_parts = version_str.split('.')
+                version_info['version'] = float(f"{version_parts[0]}.{version_parts[1]}")
+                
+                # Detect capabilities
+                version_info['has_gpu'] = 'GPU' in result.stdout or 'CUDA' in result.stdout
+                version_info['has_mpi'] = 'MPI' in result.stdout
+                version_info['has_double_precision'] = 'double precision' in result.stdout.lower()
+                
+                # Version-specific features
+                version_info['supports_verlet'] = version_info['version'] >= 4.6
+                version_info['has_new_mdrun'] = version_info['version'] >= 5.0
+                version_info['supports_awh'] = version_info['version'] >= 2016.0
+                
+                # Get installation path
+                try:
+                    which_result = subprocess.run(['which', 'gmx'], 
+                                                capture_output=True, text=True)
+                    if which_result.returncode == 0:
+                        version_info['gmx_path'] = which_result.stdout.strip()
+                except:
+                    pass
+                
+                return version_info
+                
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    
+    return None
+
+def get_gromacs_commands(gromacs_info):
+    """
+    Return version-appropriate GROMACS commands based on detected version.
+    
+    Parameters:
+    - gromacs_info (dict): Information from detect_gromacs_version()
+    
+    Returns:
+    - dict: Command mappings for different GROMACS tools
+    """
+    if gromacs_info is None:
+        # Default to modern GROMACS commands
+        return {
+            'base_cmd': 'gmx',
+            'pdb2gmx': 'gmx pdb2gmx',
+            'editconf': 'gmx editconf',
+            'solvate': 'gmx solvate',
+            'genion': 'gmx genion',
+            'grompp': 'gmx grompp',
+            'mdrun': 'gmx mdrun',
+            'trjconv': 'gmx trjconv',
+            'make_ndx': 'gmx make_ndx',
+            'check': 'gmx check'
+        }
+    
+    version = gromacs_info['version']
+    
+    if version >= 5.0:
+        # Modern GROMACS (5.0+) - all commands under 'gmx'
+        return {
+            'base_cmd': 'gmx',
+            'pdb2gmx': 'gmx pdb2gmx',
+            'editconf': 'gmx editconf',
+            'solvate': 'gmx solvate',
+            'genion': 'gmx genion',
+            'grompp': 'gmx grompp',
+            'mdrun': 'gmx mdrun',
+            'trjconv': 'gmx trjconv',
+            'make_ndx': 'gmx make_ndx',
+            'check': 'gmx check'
+        }
+    else:
+        # Legacy GROMACS (4.x) - separate commands
+        return {
+            'base_cmd': '',
+            'pdb2gmx': 'pdb2gmx',
+            'editconf': 'editconf',
+            'solvate': 'genbox',  # Different name in 4.x
+            'genion': 'genion',
+            'grompp': 'grompp',
+            'mdrun': 'mdrun',
+            'trjconv': 'trjconv',
+            'make_ndx': 'make_ndx',
+            'check': 'g_check'  # Different name in 4.x
+        }
+
+def setup_gromacs_environment(logger=None):
+    """
+    Set up GROMACS environment and detect version compatibility.
+    
+    Parameters:
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - dict: GROMACS information and command mappings
+    
+    Raises:
+    - RuntimeError: If GROMACS is not found or incompatible
+    """
+    if logger:
+        logger.info("Setting up GROMACS environment...")
+    
+    # Try different GROMACS installation locations
+    gromacs_paths = [
+        '/opt/gromacs/bin',           # Host-mounted GROMACS
+        '/usr/local/gromacs/bin',     # Container GROMACS
+        '/usr/bin',                   # System GROMACS
+    ]
+    
+    gromacs_found = False
+    for gromacs_path in gromacs_paths:
+        gmx_executable = os.path.join(gromacs_path, 'gmx')
+        if os.path.exists(gmx_executable):
+            # Add to PATH if not already there
+            current_path = os.environ.get('PATH', '')
+            if gromacs_path not in current_path:
+                os.environ['PATH'] = f"{gromacs_path}:{current_path}"
+            
+            # Try to source GMXRC if it exists
+            gmxrc_path = os.path.join(os.path.dirname(gromacs_path), 'bin', 'GMXRC')
+            if os.path.exists(gmxrc_path):
+                if logger:
+                    logger.info(f"Found GMXRC at {gmxrc_path}")
+                # Note: In Python, we can't directly source shell scripts
+                # The Docker entrypoint should handle GMXRC sourcing
+            
+            gromacs_found = True
+            if logger:
+                logger.info(f"Using GROMACS from {gromacs_path}")
+            break
+    
+    if not gromacs_found:
+        # Check if gmx is in system PATH
+        try:
+            subprocess.run(['which', 'gmx'], check=True, capture_output=True)
+            gromacs_found = True
+            if logger:
+                logger.info("Using GROMACS from system PATH")
+        except subprocess.CalledProcessError:
+            pass
+    
+    if not gromacs_found:
+        error_msg = ("GROMACS not found. Please ensure GROMACS is installed or mount it from the host. "
+                    "For Docker: docker run -v /path/to/gromacs:/opt/gromacs ...")
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    
+    # Detect GROMACS version and capabilities
+    gromacs_info = detect_gromacs_version()
+    
+    if gromacs_info is None:
+        error_msg = "GROMACS found but could not determine version. Please check installation."
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    
+    # Log GROMACS information
+    if logger:
+        logger.info(f"GROMACS version detected: {gromacs_info['version_string']}")
+        if gromacs_info.get('has_gpu'):
+            logger.info("GPU support detected")
+        if gromacs_info.get('has_mpi'):
+            logger.info("MPI support detected")
+        if gromacs_info.get('has_double_precision'):
+            logger.info("Double precision build detected")
+    
+    # Get version-appropriate commands
+    commands = get_gromacs_commands(gromacs_info)
+    
+    # Verify critical commands work
+    try:
+        subprocess.run([commands['base_cmd'] if commands['base_cmd'] else 'gmx', '--version'], 
+                      capture_output=True, check=True, timeout=5)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        error_msg = f"GROMACS commands not working properly: {str(e)}"
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg)
+    
+    # Return comprehensive information
+    return {
+        'info': gromacs_info,
+        'commands': commands,
+        'version': gromacs_info['version'],
+        'version_string': gromacs_info['version_string']
+    }
+
 def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=None):
     """
     Test if GROMACS can actually process the input files.
@@ -1821,10 +2204,26 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
         # Create temporary directory for test
         temp_dir = tempfile.mkdtemp(prefix="grinn_test_")
         
-        # Test 1: Check if GROMACS is available
+        # Test 1: Check if GROMACS is available and get version info
         try:
-            result = gromacs.gmx_version()
-            print(f"✓ GROMACS found: {result}")
+            gromacs_env = setup_gromacs_environment()
+            gromacs_info = gromacs_env['info']
+            commands = gromacs_env['commands']
+            
+            print(f"✓ GROMACS found: version {gromacs_info['version_string']}")
+            
+            # Print capabilities
+            capabilities = []
+            if gromacs_info.get('has_gpu'):
+                capabilities.append("GPU")
+            if gromacs_info.get('has_mpi'):
+                capabilities.append("MPI")
+            if gromacs_info.get('has_double_precision'):
+                capabilities.append("Double precision")
+            
+            if capabilities:
+                print(f"  Capabilities: {', '.join(capabilities)}")
+                
         except Exception as e:
             errors.append(f"ERROR: GROMACS not found or not working: {str(e)}")
             return errors
@@ -1953,6 +2352,15 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
 
     logger = create_logger(out_folder, noconsole_handler)
     logger.info('### gRINN workflow started ###')
+    
+    # Set up and validate GROMACS environment
+    try:
+        gromacs_env = setup_gromacs_environment(logger)
+        logger.info(f"GROMACS environment ready: version {gromacs_env['version_string']}")
+    except RuntimeError as e:
+        logger.error(f"GROMACS setup failed: {str(e)}")
+        logger.error("Please check GROMACS installation or mount GROMACS from host")
+        sys.exit(1)
     
     # Log system resources and check disk space
     try:

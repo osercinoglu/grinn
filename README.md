@@ -98,13 +98,13 @@ python gRINN_Dashboard/grinn_dashboard.py results/
 
 The easiest way to run gRINN is using Docker. The container includes all dependencies and test data.
 
-#### For Command Line Analysis:
+#### Quick Start with Default GROMACS (2024.1)
 ```bash
 # Build the Docker image
 docker build -t grinn .
 
 # Run with your data (mount your data directory)
-docker run -v /path/to/your/data:/data grinn \
+docker run -v /path/to/your/data:/data grinn workflow \
   /data/your_structure.pdb \
   /data/output_folder \
   --top /data/topology.top \
@@ -114,18 +114,99 @@ docker run -v /path/to/your/data:/data grinn \
   --pen_cutoffs 1.0 2.0
 ```
 
+#### Multi-Version GROMACS Support
+
+gRINN supports building Docker images with different GROMACS versions to match your computational needs:
+
+```bash
+# Build with specific GROMACS versions
+./build-docker.sh --version 2024.1  # Latest stable (default)
+./build-docker.sh --version 2023.3  # Previous stable
+./build-docker.sh --version 2022.5  # Legacy support
+
+# Build for Apple Silicon (M1/M2 Macs)
+./build-docker.sh --platform linux/arm64 --version 2024.1
+
+# Build development version
+./build-docker.sh --dev --version 2023.3
+
+# List all supported GROMACS versions
+./build-docker.sh --list
+```
+
+**Supported GROMACS Versions:**
+- `2024.1` - Latest stable (default)
+- `2023.3` - Previous stable
+- `2022.5` - Legacy support
+- `2021.6` - Extended legacy support
+- `2020.6` - Minimal legacy support
+
+**Usage with specific versions:**
+```bash
+# Use specific GROMACS version
+docker run -v /data:/data grinn:gromacs-2023.3 workflow protein.pdb results/
+
+# Use development image
+docker run -v /data:/data grinn:gromacs-2024.1-dev workflow protein.pdb results/
+
+# Mount custom GROMACS (advanced users)
+docker run -v /usr/local/gromacs:/opt/gromacs -v /data:/data grinn workflow protein.pdb results/
+```
+
 #### For Interactive Dashboard:
 ```bash
 # Build the Docker image (if not already built)
-docker build -t grinn .
+./build-docker.sh
 
 # Run the dashboard with your results
-docker run -p 8051:8051 -v /path/to/your/results:/data grinn dashboard /data
+docker run -p 8051:8051 -v /path/to/your/results:/data grinn:gromacs-2024.1 dashboard /data
 
 # Run the dashboard with test data
-docker run -p 8051:8051 grinn dashboard test
+docker run -p 8051:8051 grinn:gromacs-2024.1 dashboard test
 
 # Access the dashboard at http://localhost:8051
+```
+
+#### Docker Build Script Options
+```bash
+./build-docker.sh [OPTIONS]
+
+Options:
+  -v, --version GROMACS_VERSION    GROMACS version to build (default: 2024.1)
+  -t, --tag IMAGE_TAG              Docker image tag (default: grinn)
+  -d, --dev                        Build development version
+  -p, --platform PLATFORM         Build for specific platform (e.g., linux/arm64)
+  -l, --list                       List available GROMACS versions
+  -h, --help                       Show help message
+```
+
+#### Docker Troubleshooting
+
+**Apple Silicon (M1/M2) Mac Issues:**
+```bash
+# For ARM64 architecture (Apple Silicon)
+./build-docker.sh --platform linux/arm64 --version 2024.1
+
+# If still having issues, build with Rosetta emulation
+docker build --platform linux/amd64 -t grinn:gromacs-2024.1 .
+```
+
+**GROMACS Version Compatibility:**
+```bash
+# Check which GROMACS version your simulation used
+docker run grinn:gromacs-2024.1 gmx --version
+
+# Match the version with your simulation
+./build-docker.sh --version 2023.3  # if your simulation used GROMACS 2023.3
+```
+
+**Memory and Performance:**
+```bash
+# For large trajectories (increase memory limit)
+docker run -m 8g -v /data:/data grinn:gromacs-2024.1 workflow protein.pdb results/
+
+# For better performance (use all CPU cores)
+docker run --cpus="$(nproc)" -v /data:/data grinn:gromacs-2024.1 workflow protein.pdb results/ --nt $(nproc)
 ```
 
 ### Option 2: Conda Installation (Recommended for Local Development)
