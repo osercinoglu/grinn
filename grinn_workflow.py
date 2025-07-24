@@ -1,32 +1,51 @@
-from prody import *
-from prody import LOGGER
-import numpy as np
-import itertools
-from itertools import islice
+# Standard library imports
+import argparse
 import concurrent.futures
-import pyprind
-import signal
-import multiprocessing
 import contextlib
+import gc
+import glob
 import io
-import tempfile
-# GromacsWrapper is only import here since source_gmxrc must be run first.
-import gromacs
-import gromacs.environment
-#print("GROMACS_DIR:", gmx_env_vars.get("GROMACS_DIR"))
-from contextlib import contextmanager
-import os, sys, pickle, shutil, time, subprocess, panedr, glob
+import itertools
+import json
 import logging
-from scipy.sparse import lil_matrix
+import multiprocessing
+import os
+import pickle
+import platform
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import warnings
+from contextlib import contextmanager
+from itertools import islice
+
+# Third-party imports
+import mdtraj as md
+import networkx as nx
+import numpy as np
+import pandas as pd
+import panedr
+import pyprind
+import tqdm
 from pdbfixer import PDBFixer
 from openmm.app import PDBFile
-import mdtraj as md
-import pandas as pd
-import numpy as np
-import networkx as nx
-import tqdm
-import argparse
-import warnings
+from prody import *
+from prody import LOGGER
+from scipy.sparse import lil_matrix
+
+# GromacsWrapper is imported here since source_gmxrc must be run first
+import gromacs
+import gromacs.environment
+
+# Optional imports
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 # Suppress pandas dtype warnings and other noisy warnings
 warnings.filterwarnings('ignore', category=UserWarning)
@@ -36,36 +55,9 @@ warnings.filterwarnings('ignore', message='.*dtype.*')
 warnings.filterwarnings('ignore', message='.*DtypeWarning.*')
 warnings.filterwarnings('ignore', message='.*ParserWarning.*')
 warnings.filterwarnings('ignore', message='.*PerformanceWarning.*')
-import warnings
-import logging
-import time
-import multiprocessing
-import concurrent.futures
-import itertools
-import pickle
-import subprocess
-import signal
-import shutil
-import glob
-import tempfile
-import contextlib
-import io
 
 pd.set_option('display.max_info_columns', 0)
 pd.set_option('display.max_info_rows', 0)
-
-# Optional imports for advanced features
-try:
-    import psutil
-    HAS_PSUTIL = True
-except ImportError:
-    HAS_PSUTIL = False
-
-try:
-    import gc
-    HAS_GC = True
-except ImportError:
-    HAS_GC = False
 
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
@@ -92,8 +84,6 @@ def parse_structure_file(filepath):
             return parsePDB(filepath)
         elif file_ext == '.gro':
             # Convert GRO to PDB using gmx editconf
-            import tempfile
-            import gromacs
             
             # Create temporary PDB file
             temp_pdb = filepath.replace('.gro', '_temp.pdb')
@@ -124,8 +114,6 @@ def parse_structure_file(filepath):
             except:
                 # For unknown extensions, try GRO conversion
                 try:
-                    import tempfile
-                    import gromacs
                     
                     # Create temporary PDB file
                     temp_pdb = filepath + '_temp.pdb'
@@ -161,7 +149,6 @@ def parse_edr_file_parallel(edr_file):
         
         # Parse EDR file to DataFrame with suppressed output
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            import panedr
             df = panedr.edr_to_df(edr_file)
         
         if df.empty:
@@ -206,8 +193,7 @@ def combine_dataframes_memory_efficient(df_list, outFolder, logger):
             
             # Clean up intermediate DataFrame
             del df_pair
-            if HAS_GC:
-                gc.collect()
+            gc.collect()
         
         logger.info(f'Final combination completed with shape {df.shape}')
         return df
@@ -1526,8 +1512,6 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
     
     try:
         # Determine optimal number of workers (80% of available cores)
-        import multiprocessing
-        import psutil
         available_cores = multiprocessing.cpu_count()
         max_workers = min(len(edrFiles), max(1, int(available_cores * 0.8)))
         
@@ -1577,8 +1561,7 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
         
         # Clear intermediate data and trigger garbage collection
         del df_list
-        if HAS_GC:
-            gc.collect()
+        gc.collect()
         
         # Use direct energy collection from DataFrame
         logger.info('Collecting energy results using vectorized operations...')
@@ -1765,7 +1748,6 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     # Test selections
     if source_sel or target_sel:
         try:
-            from prody import parsePDB
             sys = parse_structure_file(structure_file)
             
             if source_sel and source_sel != "all":
@@ -1835,8 +1817,6 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
     temp_dir = None
     
     try:
-        import tempfile
-        import gromacs
         
         # Create temporary directory for test
         temp_dir = tempfile.mkdtemp(prefix="grinn_test_")
@@ -1877,7 +1857,6 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
                 
                 test_tpr = os.path.join(temp_dir, "test.tpr")
                 # Copy structure file to temp dir to ensure paths work
-                import shutil
                 temp_pdb = os.path.join(temp_dir, "system.pdb")
                 shutil.copy(structure_file, temp_pdb)
                 
@@ -1921,7 +1900,6 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
     finally:
         # Clean up temporary directory
         if temp_dir and os.path.exists(temp_dir):
-            import shutil
             shutil.rmtree(temp_dir)
     
     return errors
@@ -1978,8 +1956,6 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
     
     # Log system resources and check disk space
     try:
-        import psutil
-        import shutil
         
         # System resources
         memory_gb = psutil.virtual_memory().total / (1024**3)
@@ -2164,7 +2140,6 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         logger.removeHandler(handler)
 
 def parse_args():
-    import argparse
     parser = argparse.ArgumentParser(description="Run gRINN workflow")
     parser.add_argument("structure_file", type=str, help="Input structure file (PDB or GRO format)")
     parser.add_argument("out_folder", type=str, help="Output folder")
@@ -2209,8 +2184,6 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
     - None (writes report to file)
     """
     try:
-        import json
-        import glob
         
         report_file = os.path.join(out_folder, 'grinn_workflow_summary.json')
         logger.info(f'Generating workflow summary report: {report_file}')
@@ -2229,8 +2202,6 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
         
         # System info
         try:
-            import psutil
-            import platform
             report['system_info'] = {
                 'platform': platform.system(),
                 'cpu_count': psutil.cpu_count(),
