@@ -2404,7 +2404,12 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
     if ff_folder:
         logger.info('Force field folder provided. Using provided force field folder.')
         logger.info('Copying force field folder to output folder...')
-        ff_folder_basename = os.path.basename(ff_folder)
+        # Normalize path to handle trailing slashes properly
+        ff_folder_normalized = os.path.normpath(ff_folder)
+        ff_folder_basename = os.path.basename(ff_folder_normalized)
+        # Ensure we have a valid basename (fallback if somehow still empty)
+        if not ff_folder_basename:
+            ff_folder_basename = "force_field"
         shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename), dirs_exist_ok=True)
 
     # Check whether a topology file or toppar folder is provided
@@ -2416,7 +2421,12 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         if toppar:
             logger.info('Toppar folder provided. Using provided toppar folder.')
             logger.info('Copying toppar folder to output folder...')
-            toppar_folder_basename = os.path.basename(toppar)
+            # Normalize path to handle trailing slashes properly
+            toppar_normalized = os.path.normpath(toppar)
+            toppar_folder_basename = os.path.basename(toppar_normalized)
+            # Ensure we have a valid basename (fallback if somehow still empty)
+            if not toppar_folder_basename:
+                toppar_folder_basename = "toppar"
             shutil.copytree(toppar, os.path.join(out_folder, toppar_folder_basename), dirs_exist_ok=True)
     else:
         if traj:
