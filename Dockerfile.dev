@@ -1,4 +1,7 @@
-FROM ubuntu:22.04
+FROM ubuntu:22.04 as base
+
+# Accept GROMACS version as build argument
+ARG GROMACS_VERSION=2024.1
 
 # System dependencies
 RUN apt-get update && \
@@ -48,19 +51,30 @@ RUN mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
 # Install dash-molstar for 3D visualization
 RUN conda run -n grinn-env pip install dash-molstar
 
-# Install GROMACS from source
+# GROMACS build stage
+FROM base as gromacs-builder
+ARG GROMACS_VERSION
 WORKDIR /tmp
-RUN wget ftp://ftp.gromacs.org/gromacs/gromacs-2024.1.tar.gz && \
-    tar xfz gromacs-2024.1.tar.gz && \
-    cd gromacs-2024.1 && \
+
+# Download and build GROMACS with version parameter
+RUN echo "Building GROMACS version: ${GROMACS_VERSION}" && \
+    wget ftp://ftp.gromacs.org/gromacs/gromacs-${GROMACS_VERSION}.tar.gz && \
+    tar xfz gromacs-${GROMACS_VERSION}.tar.gz && \
+    cd gromacs-${GROMACS_VERSION} && \
     mkdir build && \
     cd build && \
-    cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=ON && \
+    cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=ON -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs && \
     make -j$(nproc) && \
     make check && \
-    sudo make install && \
+    make install && \
     cd / && \
-    rm -rf /tmp/gromacs-2024.1*
+    rm -rf /tmp/gromacs-${GROMACS_VERSION}*
+
+# Final stage - combine base with GROMACS
+FROM base as final
+
+# Copy GROMACS installation from builder stage
+COPY --from=gromacs-builder /usr/local/gromacs /usr/local/gromacs
 
 # Install gsutil from Google Cloud SDK (system Python)
 RUN apt-get update && \
