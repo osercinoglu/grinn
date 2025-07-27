@@ -116,42 +116,54 @@ docker run -v /path/to/your/data:/data grinn workflow \
 
 #### Multi-Version GROMACS Support
 
-gRINN supports building Docker images with different GROMACS versions to match your computational needs:
+gRINN now includes comprehensive Docker support for **24 different GROMACS versions** covering all major releases from 2020 to 2025. This allows you to test compatibility, benchmark performance, or match your existing simulation environment.
 
 ```bash
-# Build with specific GROMACS versions
-./build-docker.sh --version 2024.1  # Latest stable (default)
-./build-docker.sh --version 2023.3  # Previous stable
-./build-docker.sh --version 2022.5  # Legacy support
+# Navigate to Docker images directory
+cd docker-images
 
-# Build for Apple Silicon (M1/M2 Macs)
-./build-docker.sh --platform linux/arm64 --version 2024.1
+# Build all 24 GROMACS versions (comprehensive)
+./build-all-images.sh
 
-# Build development version
-./build-docker.sh --dev --version 2023.3
+# Build specific versions
+./gromacs-2025.2/build.sh  # Latest bleeding-edge
+./gromacs-2024.5/build.sh  # Current stable
+./gromacs-2023.3/build.sh  # Popular choice
+./gromacs-2020.7/build.sh  # Legacy compatibility
 
-# List all supported GROMACS versions
-./build-docker.sh --list
+# Test all built images
+./test-images.sh
 ```
 
-**Supported GROMACS Versions:**
-- `2024.1` - Latest stable (default)
-- `2023.3` - Previous stable
-- `2022.5` - Legacy support
-- `2021.6` - Extended legacy support
-- `2020.6` - Minimal legacy support
+**Complete GROMACS Version Coverage:**
+- **2025 Series**: 2025.2, 2025.1, 2025.0 (latest development)
+- **2024 Series**: 2024.5, 2024.4, 2024.3, 2024.2, 2024.1, 2024.0 (current stable)
+- **2023 Series**: 2023.5, 2023.4, 2023.3, 2023.2, 2023.1, 2023.0 (previous stable)
+- **2022 Series**: 2022.6, 2022.5, 2022.4, 2022.3, 2022.2, 2022.1, 2022.0 (mature)
+- **Legacy**: 2021.7, 2020.7 (legacy compatibility)
 
-**Usage with specific versions:**
+**Usage with Specific Versions:**
 ```bash
-# Use specific GROMACS version
-docker run -v /data:/data grinn:gromacs-2023.3 workflow protein.pdb results/
+# Latest development features
+docker run --rm -v $PWD/data:/data grinn:gromacs-2025.2 \
+  grinn_workflow.py /data/protein.pdb /data/results/
 
-# Use development image
-docker run -v /data:/data grinn:gromacs-2024.1-dev workflow protein.pdb results/
+# Production stable
+docker run --rm -v $PWD/data:/data grinn:gromacs-2024.5 \
+  grinn_workflow.py /data/protein.pdb /data/results/
 
-# Mount custom GROMACS (advanced users)
-docker run -v /usr/local/gromacs:/opt/gromacs -v /data:/data grinn workflow protein.pdb results/
+# Legacy system compatibility
+docker run --rm -v $PWD/data:/data grinn:gromacs-2020.7 \
+  grinn_workflow.py /data/protein.pdb /data/results/
+
+# Version comparison across years
+for version in 2020.7 2021.7 2022.6 2023.3 2024.5 2025.2; do
+  docker run --rm -v $PWD/data:/data grinn:gromacs-$version \
+    grinn_workflow.py /data/protein.pdb /data/results-$version/
+done
 ```
+
+**For detailed Docker documentation and advanced usage**, see [docker-images/README.md](docker-images/README.md).
 
 #### For Interactive Dashboard:
 ```bash
