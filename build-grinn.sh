@@ -69,6 +69,12 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
+# Check for help first
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    show_usage
+    exit 0
+fi
+
 GROMACS_VERSION="$1"
 shift
 
@@ -98,12 +104,12 @@ find_grinn_root() {
     
     # Check if we're in the grinn directory or a parent directory containing it
     while [[ "$current_dir" != "/" ]]; do
-        if [[ -f "$current_dir/grinn_workflow.py" && -d "$current_dir/docker-images" ]]; then
+        if [[ -f "$current_dir/grinn_workflow.py" && -f "$current_dir/Dockerfile" ]]; then
             echo "$current_dir"
             return 0
         fi
         
-        if [[ -f "$current_dir/grinn/grinn_workflow.py" && -d "$current_dir/grinn/docker-images" ]]; then
+        if [[ -f "$current_dir/grinn/grinn_workflow.py" && -f "$current_dir/grinn/Dockerfile" ]]; then
             echo "$current_dir"
             return 0
         fi
@@ -152,7 +158,7 @@ select_dockerfile() {
         IMAGE_TAG="grinn:gromacs-2020.7"
         DESCRIPTION="Legacy GROMACS 2020.7 (Ubuntu 20.04)"
     else
-        DOCKERFILE_PATH="$BUILD_CONTEXT/${GRINN_PREFIX}Dockerfile.unified"
+        DOCKERFILE_PATH="$BUILD_CONTEXT/${GRINN_PREFIX}Dockerfile"
         IMAGE_TAG="grinn:gromacs-$GROMACS_VERSION"
         DESCRIPTION="Modern GROMACS $GROMACS_VERSION (Ubuntu 22.04)"
     fi
