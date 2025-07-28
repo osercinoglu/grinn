@@ -5,6 +5,8 @@
 [![GROMACS](https://img.shields.io/badge/GROMACS-2020.7--2025.2-orange.svg)](https://www.gromacs.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 
+> **🚧 Development Notice**: This tool is currently under active development. We welcome users to test gRINN and report any issues they encounter in the [Issues](../../issues) section. Your feedback helps us improve!
+
 **gRINN** (get Residue Interaction Energies and Networks) is a computational tool for **residue interaction energy-based analysis** of protein molecular dynamics (MD) simulation trajectories. This is the **next-generation version** of gRINN, featuring significant performance improvements, enhanced workflow capabilities, and a unified containerized deployment system.
 
 ## 🎯 Key Features
