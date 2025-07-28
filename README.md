@@ -139,6 +139,8 @@ gRINN implements the methodology from:
 
 **Serçinoğlu, O., & Ozbek, P. (2018).** gRINN: a tool for calculation of residue interaction energies and protein energy network analysis of molecular dynamics simulations. *Nucleic Acids Research*, 46(W1), W554-W562. [https://doi.org/10.1093/nar/gky381](https://doi.org/10.1093/nar/gky381)
 
+**Technical Note**: gRINN is essentially a sophisticated wrapper around `gmx mdrun -rerun` that automates the calculation of pairwise residue interaction energies and provides tools for network analysis and visualization.
+
 ## 📚 Documentation
 
 For advanced usage and build system details, see [BUILD-SYSTEM.md](BUILD-SYSTEM.md).

@@ -831,6 +831,94 @@ def main():
         
         return seldata, focusdata
 
+    # Molecular selection based on heatmap clicks
+    @app.callback(
+        Output('viewer','selection', allow_duplicate=True),
+        Output('viewer','focus', allow_duplicate=True),
+        Input('matrix_heatmap','clickData'),
+        Input('main-tabs','value'),
+        prevent_initial_call=True
+    )
+    def update_molecular_selection_from_heatmap(clickData, active_tab):
+        """Update molecular viewer when user clicks on heatmap"""
+        seldata = no_update
+        focusdata = no_update
+        
+        # Only apply molecular selection if we're on the matrix tab and have click data
+        if active_tab != 'tab-matrix' or not clickData:
+            return seldata, focusdata
+        
+        try:
+            # Extract clicked point data
+            point = clickData['points'][0]
+            x_residue = point['x']  # Column residue
+            y_residue = point['y']  # Row residue
+            
+            print(f"🖱️ Heatmap clicked: {x_residue} ↔ {y_residue}")
+            
+            # Parse residue names to extract chain and residue number
+            def parse_residue(res_name):
+                """Parse residue name to extract chain and residue number"""
+                try:
+                    if '_' in res_name:
+                        # Format: RES123_A or similar
+                        parts = res_name.split('_')
+                        res_part = parts[0]  # e.g., "ALA123"
+                        chain = parts[1] if len(parts) > 1 else 'A'
+                        
+                        # Extract residue number from the end of res_part
+                        # Find the last sequence of digits
+                        import re
+                        match = re.search(r'(\d+)$', res_part)
+                        if match:
+                            res_num = match.group(1)
+                        else:
+                            # If no digits found, try to extract any digits
+                            res_num = ''.join(filter(str.isdigit, res_part))
+                            if not res_num:
+                                res_num = '1'  # fallback
+                        
+                        return chain, res_num
+                    else:
+                        # Try to parse without underscore - assume format like "ALA123"
+                        import re
+                        match = re.search(r'([A-Za-z]+)(\d+)', res_name)
+                        if match:
+                            res_num = match.group(2)
+                            return 'A', res_num  # Default to chain A
+                        else:
+                            # Last resort - extract any digits
+                            res_num = ''.join(filter(str.isdigit, res_name))
+                            return 'A', res_num if res_num else '1'
+                            
+                except Exception as e:
+                    print(f"Error parsing residue {res_name}: {e}")
+                    return 'A', '1'  # Safe fallback
+            
+            # Parse both residues
+            chain1, res_num1 = parse_residue(x_residue)
+            chain2, res_num2 = parse_residue(y_residue)
+            
+            print(f"🎯 Targeting: Chain {chain1} Res {res_num1} ↔ Chain {chain2} Res {res_num2}")
+            
+            # Create molecular targets for both residues
+            target1 = molstar_helper.get_targets(chain1, res_num1)
+            target2 = molstar_helper.get_targets(chain2, res_num2)
+            
+            # Create selection and focus data
+            seldata = molstar_helper.get_selection([target1, target2], select=True, add=False)
+            focusdata = molstar_helper.get_focus([target1, target2], analyse=True)
+            
+            print(f"✅ Molecular viewer updated for residue pair")
+            
+        except Exception as e:
+            print(f"❌ Error processing heatmap click: {e}")
+            print(f"Click data: {clickData}")
+            # Return empty objects to avoid errors but don't crash
+            return {}, {}
+        
+        return seldata, focusdata
+
     # Clear molecular selection when switching away from pairwise tab
     @app.callback(
         Output('viewer','selection', allow_duplicate=True),
@@ -1037,12 +1125,12 @@ def main():
         ))
         
         fig.update_layout(
-            title=f'{energy_type} Interaction Energy Matrix (Frame {frame_value})',
+            title=f'{energy_type} Interaction Energy Matrix (Frame {frame_value})<br><sub>💡 Click on any cell to zoom into the residue pair in the molecular viewer</sub>',
             xaxis_title='🧬 Residue',
             yaxis_title='🧬 Residue',
             xaxis={'tickangle': 45, 'automargin': True},
             yaxis={'automargin': True},
-            margin=dict(l=80, r=50, t=80, b=100),
+            margin=dict(l=80, r=50, t=100, b=100),
             font=dict(size=10, family='Roboto, sans-serif', color='#4A5A4A'),
             title_font=dict(size=16, family='Roboto, sans-serif', color='#4A5A4A'),
             plot_bgcolor='rgba(250,255,250,0.4)',
