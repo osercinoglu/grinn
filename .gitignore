@@ -15,6 +15,9 @@ update_to_conda.sh
 docker-images/
 testing/
 
+# Utility scripts
+cleanup.sh
+
 # Python cache
 __pycache__/
 *.pyc
