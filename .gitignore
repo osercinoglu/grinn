@@ -1,0 +1,47 @@
+# Prevent unwanted files from reappearing
+BUILD-SYSTEM.md
+DOCKER_MULTIVERSION.md
+Dockerfile.dev
+Dockerfile.unified
+TOPOLOGY_RECREATION_ENHANCEMENT.md
+TPR_ONLY_WORKFLOW_ENHANCEMENT.md
+fix_build_scripts.sh
+test_topology_recreation.py
+test_tpr_only_workflow.py
+update_all_build_scripts.sh
+update_to_conda.sh
+
+# Unwanted directories
+docker-images/
+testing/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+build.log
+
+# Docker artifacts
+.docker/
