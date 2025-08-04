@@ -3425,9 +3425,9 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
                 'topology': os.path.join(out_folder, 'topol_dry.top')
             },
             'pen_files': {
-                'pen_networks': glob.glob(os.path.join(out_folder, 'pen_*.gml')),
                 'betweenness_centralities': os.path.join(out_folder, 'pen_betweenness_centralities.csv')
             },
+            'pen_networks': glob.glob(os.path.join(out_folder, 'pen_*.gml')),
             'log_files': {
                 'main_log': os.path.join(out_folder, 'calc.log'),
                 'gromacs_log': os.path.join(out_folder, 'gromacs.log')

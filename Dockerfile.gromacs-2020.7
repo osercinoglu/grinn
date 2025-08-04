@@ -4,7 +4,22 @@
 # Usage:
 #   docker build -f Dockerfile.gromacs-2020.7 -t grinn:gromacs-2020.7 .
 
-# ============================================================================
+    echo '    "workflow")' >> /app/entrypoint.sh && \
+    echo '        shift' >> /app/entrypoint.sh && \
+    echo '        echo "🧬 Starting gRINN Workflow with GROMACS 2020.7..."' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
+    echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
+    echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh && \
+    echo '    "dashboard")' >> /app/entrypoint.sh && \
+    echo '        shift' >> /app/entrypoint.sh && \
+    echo '        echo "📊 Starting gRINN Dashboard with GROMACS 2020.7..."' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
+    echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
+    echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL conda run -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo '        ;;' >> /app/entrypoint.sh &&====================================================================
 # STAGE 1: GROMACS 2020.7 Builder (Ubuntu 20.04)
 # ============================================================================
 
@@ -147,6 +162,11 @@ LABEL description="gRINN molecular dynamics analysis with GROMACS 2020.7 (Ubuntu
 # Set working directory
 WORKDIR /app
 
+# Set Python environment variables for real-time output in Docker containers
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONIOENCODING=utf-8
+
 # Set GROMACS environment
 ENV GMX_MAXBACKUP=-1
 ENV GMXRC_PATH=/usr/local/gromacs/bin/GMXRC
@@ -189,17 +209,18 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '    "workflow")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "🧬 Starting gRINN Workflow with GROMACS 2020.7..."' >> /app/entrypoint.sh && \
-    echo '        conda run -n grinn-env python grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    echo '        conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "📊 Starting gRINN Dashboard with GROMACS 2020.7..."' >> /app/entrypoint.sh && \
-    echo '        conda run -n grinn-env python gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo '        conda run -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "gmx")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "⚗️  Running GROMACS 2020.7: gmx $@"' >> /app/entrypoint.sh && \
-    echo '        gmx "$@"' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output for GROMACS commands' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL gmx "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "bash")' >> /app/entrypoint.sh && \
     echo '        echo "🐚 Starting bash session (GROMACS 2020.7)..."' >> /app/entrypoint.sh && \

@@ -197,6 +197,11 @@ LABEL description="gRINN molecular dynamics analysis with GROMACS ${GROMACS_VERS
 # Set working directory
 WORKDIR /app
 
+# Set Python environment variables for real-time output in Docker containers
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONIOENCODING=utf-8
+
 # Set GROMACS environment variables
 ENV GMX_MAXBACKUP=-1
 ENV GMXRC_PATH=/usr/local/gromacs/bin/GMXRC
@@ -249,19 +254,26 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "🧬 Starting gRINN Workflow Analysis with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh && \
     echo '        echo "Arguments: $@"' >> /app/entrypoint.sh && \
-    echo '        conda run -n grinn-env python grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
+    echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
+    echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "📊 Starting gRINN Dashboard with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh && \
     echo '        echo "Dashboard will be available at http://localhost:8051"' >> /app/entrypoint.sh && \
     echo '        echo "Results folder: $1"' >> /app/entrypoint.sh && \
-    echo '        conda run -n grinn-env python gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
+    echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
+    echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL conda run -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "gmx")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "⚗️  Running GROMACS ${GROMACS_VERSION} command: gmx $@"' >> /app/entrypoint.sh && \
-    echo '        gmx "$@"' >> /app/entrypoint.sh && \
+    echo '        # Enable real-time output for GROMACS commands' >> /app/entrypoint.sh && \
+    echo '        stdbuf -oL -eL gmx "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "bash")' >> /app/entrypoint.sh && \
     echo '        echo "🐚 Starting interactive bash session..."' >> /app/entrypoint.sh && \
