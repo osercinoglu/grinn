@@ -62,6 +62,353 @@ pd.set_option('display.max_info_rows', 0)
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
 
+def parse_topology_includes(topology_file, logger=None):
+    """
+    Parse a GROMACS topology file to find all #include statements.
+    
+    Parameters:
+    - topology_file (str): Path to the topology file
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - list: List of included file paths found in the topology
+    """
+    include_files = []
+    
+    if not os.path.exists(topology_file):
+        if logger:
+            logger.warning(f"Topology file not found: {topology_file}")
+        return include_files
+    
+    try:
+        topology_dir = os.path.dirname(os.path.abspath(topology_file))
+        
+        with open(topology_file, 'r') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                
+                # Skip comments and empty lines
+                if line.startswith(';') or not line:
+                    continue
+                
+                # Look for #include statements
+                if line.startswith('#include'):
+                    # Extract the filename from #include "filename" or #include <filename>
+                    if '"' in line:
+                        # Format: #include "filename"
+                        start = line.find('"') + 1
+                        end = line.rfind('"')
+                        if start > 0 and end > start:
+                            include_path = line[start:end]
+                    elif '<' in line and '>' in line:
+                        # Format: #include <filename>  
+                        start = line.find('<') + 1
+                        end = line.rfind('>')
+                        if start > 0 and end > start:
+                            include_path = line[start:end]
+                    else:
+                        continue
+                    
+                    # Convert relative paths to absolute paths
+                    if not os.path.isabs(include_path):
+                        include_path = os.path.join(topology_dir, include_path)
+                    
+                    include_files.append(include_path)
+        
+        if logger:
+            logger.info(f"Found {len(include_files)} include files in topology")
+            for inc_file in include_files:
+                logger.debug(f"  Include file: {inc_file}")
+        
+        return include_files
+        
+    except Exception as e:
+        if logger:
+            logger.error(f"Error parsing topology file {topology_file}: {str(e)}")
+        return include_files
+
+def find_gromacs_data_directories(gromacs_dir=None, logger=None):
+    """
+    Find GROMACS data directories containing force field files.
+    
+    Parameters:
+    - gromacs_dir (str): Optional path to GROMACS installation directory
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - list: List of directories where GROMACS force field data might be located
+    """
+    potential_dirs = []
+    
+    # 1. Use user-provided GROMACS directory if available
+    if gromacs_dir and os.path.exists(gromacs_dir):
+        if logger:
+            logger.debug(f"Using user-provided GROMACS directory: {gromacs_dir}")
+        # Check common subdirectories where force fields are stored
+        for subdir in ['share/gromacs/top', 'share/top', 'top', 'data/top']:
+            potential_dir = os.path.join(gromacs_dir, subdir)
+            if os.path.exists(potential_dir):
+                potential_dirs.append(potential_dir)
+                if logger:
+                    logger.debug(f"Found GROMACS data directory: {potential_dir}")
+    
+    # 2. Check GROMACS_DIR environment variable (most reliable)
+    gromacs_env_dir = os.environ.get('GROMACS_DIR')
+    if gromacs_env_dir and os.path.exists(gromacs_env_dir):
+        if logger:
+            logger.debug(f"Found GROMACS_DIR environment variable: {gromacs_env_dir}")
+        # Check common subdirectories where force fields are stored
+        for subdir in ['share/gromacs/top', 'share/top', 'top', 'data/top']:
+            potential_dir = os.path.join(gromacs_env_dir, subdir)
+            if os.path.exists(potential_dir):
+                potential_dirs.append(potential_dir)
+                if logger:
+                    logger.debug(f"Found GROMACS data directory from GROMACS_DIR: {potential_dir}")
+    
+    # 3. Check GMXDATA environment variable
+    gmxdata = os.environ.get('GMXDATA')
+    if gmxdata and os.path.exists(gmxdata):
+        potential_dirs.append(gmxdata)
+        if logger:
+            logger.debug(f"Found GROMACS data directory from GMXDATA: {gmxdata}")
+    
+    # 4. Try to get GROMACS installation directory from gmx command
+    try:
+        result = subprocess.run(['gmx', '--version'], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            # Look for data directory in gmx output
+            for line in result.stdout.split('\n'):
+                if 'Data prefix:' in line:
+                    data_dir = line.split('Data prefix:')[1].strip()
+                    if os.path.exists(data_dir):
+                        potential_dirs.append(data_dir)
+                        if logger:
+                            logger.debug(f"Found GROMACS data directory from gmx --version: {data_dir}")
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        if logger:
+            logger.debug("Could not run 'gmx --version' to detect GROMACS installation")
+    
+    # 5. Check common GROMACS installation locations as fallback
+    gromacs_base_paths = [
+        '/usr/local/gromacs',      # Standard installation
+        '/opt/gromacs',            # Host-mounted GROMACS
+        '/usr/share/gromacs',      # System package installation
+        '/opt/conda/share/gromacs', # Conda installation
+    ]
+    
+    for base_path in gromacs_base_paths:
+        # Common subdirectories where force fields are stored
+        for subdir in ['share/gromacs/top', 'share/top', 'top', 'data/top']:
+            potential_dir = os.path.join(base_path, subdir)
+            if os.path.exists(potential_dir):
+                potential_dirs.append(potential_dir)
+                if logger:
+                    logger.debug(f"Found GROMACS data directory: {potential_dir}")
+    
+    # Remove duplicates while preserving order
+    unique_dirs = []
+    for d in potential_dirs:
+        if d not in unique_dirs:
+            unique_dirs.append(d)
+    
+    if logger and unique_dirs:
+        logger.info(f"Found {len(unique_dirs)} GROMACS data directories")
+    elif logger:
+        logger.warning("No GROMACS data directories found")
+    
+    return unique_dirs
+
+def find_file_in_gromacs_data(filename, gromacs_data_dirs=None, gromacs_dir=None, logger=None):
+    """
+    Search for a file in GROMACS data directories.
+    
+    Parameters:
+    - filename (str): The filename to search for (can be a relative path like 'amber99sb-ildn.ff/forcefield.itp')
+    - gromacs_data_dirs (list): Optional list of GROMACS data directories to search
+    - gromacs_dir (str): Optional path to GROMACS installation directory
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - str: Full path to the file if found, None otherwise
+    """
+    if gromacs_data_dirs is None:
+        gromacs_data_dirs = find_gromacs_data_directories(gromacs_dir, logger)
+    
+    for data_dir in gromacs_data_dirs:
+        potential_path = os.path.join(data_dir, filename)
+        if os.path.exists(potential_path):
+            if logger:
+                logger.debug(f"Found {filename} in GROMACS data: {potential_path}")
+            return potential_path
+    
+    return None
+
+def auto_detect_and_copy_topology_dependencies(topology_file, out_folder, gromacs_dir=None, logger=None):
+    """
+    Automatically detect and copy include files and toppar dependencies from a topology file.
+    
+    Parameters:
+    - topology_file (str): Path to the topology file
+    - out_folder (str): Output directory where dependencies will be copied
+    - gromacs_dir (str): Optional path to GROMACS installation directory
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - bool: True if successful, False if critical errors occurred
+    
+    Raises:
+    - RuntimeError: If critical files cannot be found or copied
+    """
+    if not topology_file or not os.path.exists(topology_file):
+        if logger:
+            logger.info("No topology file provided or topology file doesn't exist - skipping dependency detection")
+        return True
+    
+    try:
+        if logger:
+            logger.info("Automatically detecting topology file dependencies...")
+        
+        topology_dir = os.path.dirname(os.path.abspath(topology_file))
+        include_files = parse_topology_includes(topology_file, logger)
+        
+        if not include_files:
+            if logger:
+                logger.info("No include files found in topology file")
+            return True
+        
+        # Find GROMACS data directories once for efficiency
+        gromacs_data_dirs = find_gromacs_data_directories(gromacs_dir, logger)
+        
+        # Categorize files into include files and potential toppar directory
+        actual_include_files = []
+        potential_toppar_dirs = set()
+        gromacs_provided_files = []
+        
+        for include_path in include_files:
+            if os.path.exists(include_path):
+                actual_include_files.append(include_path)
+                
+                # Check if this file is in a potential toppar directory
+                include_dir = os.path.dirname(include_path)
+                if include_dir != topology_dir:
+                    potential_toppar_dirs.add(include_dir)
+            else:
+                # File doesn't exist at absolute path - try relative to topology directory
+                rel_path = os.path.join(topology_dir, os.path.basename(include_path))
+                if os.path.exists(rel_path):
+                    actual_include_files.append(rel_path)
+                else:
+                    # Check if this file exists in GROMACS data directories
+                    # Extract the relative path from the original include_path
+                    if topology_dir in include_path:
+                        # Get the relative part after topology_dir
+                        relative_include = os.path.relpath(include_path, topology_dir)
+                    else:
+                        # Use the basename or relative path as-is
+                        relative_include = os.path.basename(include_path)
+                        # If it looks like a force field path, try to preserve directory structure
+                        if '/' in include_path and ('.ff/' in include_path or include_path.endswith('.itp')):
+                            # Extract force field directory and file pattern
+                            path_parts = include_path.split('/')
+                            for i, part in enumerate(path_parts):
+                                if part.endswith('.ff'):
+                                    relative_include = '/'.join(path_parts[i:])
+                                    break
+                    
+                    gromacs_file_path = find_file_in_gromacs_data(relative_include, gromacs_data_dirs, gromacs_dir, logger)
+                    
+                    if gromacs_file_path:
+                        gromacs_provided_files.append((include_path, gromacs_file_path, relative_include))
+                        if logger:
+                            logger.info(f"Include file found in GROMACS installation: {relative_include}")
+                    else:
+                        error_msg = f"Required include file not found: {include_path}"
+                        if logger:
+                            logger.error(error_msg)
+                            logger.error(f"  Searched in topology directory: {topology_dir}")
+                            logger.error(f"  Searched in GROMACS data directories: {gromacs_data_dirs}")
+                            if gromacs_dir:
+                                logger.error(f"  Used GROMACS directory: {gromacs_dir}")
+                            if os.environ.get('GROMACS_DIR'):
+                                logger.error(f"  GROMACS_DIR environment variable: {os.environ.get('GROMACS_DIR')}")
+                        raise RuntimeError(error_msg)
+        
+        # Copy individual include files that are local to the topology
+        if actual_include_files:
+            if logger:
+                logger.info(f"Copying {len(actual_include_files)} local include files to output directory...")
+            
+            for include_file in actual_include_files:
+                try:
+                    dest_path = os.path.join(out_folder, os.path.basename(include_file))
+                    shutil.copy2(include_file, dest_path)
+                    if logger:
+                        logger.debug(f"  Copied: {os.path.basename(include_file)}")
+                except Exception as e:
+                    error_msg = f"Failed to copy include file {include_file}: {str(e)}"
+                    if logger:
+                        logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+        
+        # Report files found in GROMACS installation (no need to copy)
+        if gromacs_provided_files:
+            if logger:
+                logger.info(f"Found {len(gromacs_provided_files)} include files in GROMACS installation (no need to copy):")
+                for orig_path, gromacs_path, rel_path in gromacs_provided_files:
+                    logger.info(f"  {rel_path} -> {gromacs_path}")
+        
+        # Handle potential toppar directories (only for local files)
+        if potential_toppar_dirs:
+            if logger:
+                logger.info(f"Found {len(potential_toppar_dirs)} potential local toppar directories")
+            
+            for toppar_dir in potential_toppar_dirs:
+                # Skip directories that are part of GROMACS installation
+                is_gromacs_dir = False
+                for gromacs_data_dir in gromacs_data_dirs:
+                    if toppar_dir.startswith(gromacs_data_dir):
+                        is_gromacs_dir = True
+                        if logger:
+                            logger.info(f"Skipping GROMACS system directory: {toppar_dir}")
+                        break
+                
+                if is_gromacs_dir:
+                    continue
+                
+                try:
+                    toppar_basename = os.path.basename(toppar_dir)
+                    dest_toppar = os.path.join(out_folder, toppar_basename)
+                    
+                    if os.path.exists(dest_toppar):
+                        if logger:
+                            logger.info(f"Toppar directory already exists: {toppar_basename}")
+                        continue
+                    
+                    if logger:
+                        logger.info(f"Copying local toppar directory: {toppar_basename}")
+                    
+                    shutil.copytree(toppar_dir, dest_toppar, dirs_exist_ok=True)
+                    
+                except Exception as e:
+                    error_msg = f"Failed to copy toppar directory {toppar_dir}: {str(e)}"
+                    if logger:
+                        logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+        
+        if logger:
+            logger.info("Topology dependencies successfully detected and processed")
+        
+        return True
+        
+    except RuntimeError:
+        # Re-raise RuntimeError as-is
+        raise
+    except Exception as e:
+        error_msg = f"Unexpected error during topology dependency detection: {str(e)}"
+        if logger:
+            logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
 def detect_topology_parameters_from_tpr(tpr_file, logger=None):
     """
     Extract topology information from a TPR file using gmx dump.
@@ -2146,9 +2493,9 @@ def cleanUp(outFolder, logger):
     logger.info('Cleaning up... completed.')
 
 def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filter_cutoff=10, 
-                     nofixpdb=False, top=None, toppar=None, traj=None, nointeraction=False, 
+                     nofixpdb=False, top=None, traj=None, nointeraction=False, 
                      gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                     nt=1, skip=1, noconsole_handler=False, include_files=None,
+                     nt=1, skip=1, noconsole_handler=False,
                      create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False],
                      force_field='amber99sb-ildn', water_model='tip3p', recreate_topology=False,
                      tpr_file=None):
@@ -2209,15 +2556,6 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     
     if ff_folder and not os.path.exists(ff_folder):
         errors.append(f"ERROR: Force field folder '{ff_folder}' does not exist")
-    
-    if toppar and not os.path.exists(toppar):
-        errors.append(f"ERROR: Toppar folder '{toppar}' does not exist")
-    
-    # Test include_files
-    if include_files:
-        for f in include_files:
-            if not os.path.exists(f):
-                errors.append(f"ERROR: Include file '{f}' does not exist")
     
     # Test numeric parameters
     try:
@@ -2287,9 +2625,6 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     if traj and not has_topology_method:
         errors.append("ERROR: Trajectory file provided but no topology source available")
         errors.append("  Please provide one of: --top (topology file), --tpr_file (TPR file), or allow simulation to generate topology")
-    
-    if toppar and not top:
-        warnings.append("WARNING: Toppar folder provided but no topology file")
     
     if nointeraction and create_pen:
         errors.append("ERROR: Cannot create PEN without calculating interactions (nointeraction=True)")
@@ -2698,18 +3033,18 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
     return errors
 
 
-def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, toppar=False, 
+def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, 
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                       nt=1, skip=1, noconsole_handler=False, include_files=False, create_pen=False, pen_cutoffs=[1.0], 
+                       nt=1, skip=1, noconsole_handler=False, create_pen=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
                        recreate_topology=False, tpr_file=None):
     
     # If test_only flag is set, just validate inputs and exit
     if test_only:
         is_valid, errors = test_grinn_inputs(
-            structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, toppar, 
+            structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, 
             traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
-            noconsole_handler, include_files, create_pen, pen_cutoffs, pen_include_covalents,
+            noconsole_handler, create_pen, pen_cutoffs, pen_include_covalents,
             force_field, water_model, recreate_topology, tpr_file
         )
         if not is_valid:
@@ -2813,12 +3148,6 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         logger.error('  2. A TPR file with --tpr_file parameter')
         raise ValueError("No structure source available")
 
-    # If any include files are listed. 
-    if include_files:
-        logger.info('Include files provided. Copying include files to output folder...')
-        for include_file in include_files:
-            shutil.copy(include_file, os.path.join(out_folder, os.path.basename(include_file)))
-
     # If a force field folder is provided
     if ff_folder:
         logger.info('Force field folder provided. Using provided force field folder.')
@@ -2853,16 +3182,14 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         topology_result['topology_available'] = True
         topology_result['method_used'] = 'provided'
 
-        if toppar:
-            logger.info('Toppar folder provided. Using provided toppar folder.')
-            logger.info('Copying toppar folder to output folder...')
-            # Normalize path to handle trailing slashes properly
-            toppar_normalized = os.path.normpath(toppar)
-            toppar_folder_basename = os.path.basename(toppar_normalized)
-            # Ensure we have a valid basename (fallback if somehow still empty)
-            if not toppar_folder_basename:
-                toppar_folder_basename = "toppar"
-            shutil.copytree(toppar, os.path.join(out_folder, toppar_folder_basename), dirs_exist_ok=True)
+        # Automatically detect and copy topology dependencies (include files and toppar)
+        try:
+            auto_detect_and_copy_topology_dependencies(top, out_folder, gromacs_dir=None, logger=logger)
+        except RuntimeError as e:
+            logger.error(f"Failed to copy topology dependencies: {str(e)}")
+            logger.error("This may cause issues during GROMACS execution")
+            logger.error("Please ensure all required files are accessible in the container/environment")
+            sys.exit(1)
     
     # Check the result of topology handling
     if not topology_result['topology_available']:
@@ -3024,9 +3351,7 @@ def parse_args():
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
     parser.add_argument('--top', type=str, help='Topology file (.top)')
-    parser.add_argument('--toppar', type=str, help='Toppar folder')
     parser.add_argument('--traj', type=str, help='Trajectory file')
-    parser.add_argument('--include_files', nargs='+', type=str, help='Include files')
     # Topology recreation arguments
     parser.add_argument('--force_field', type=str, default='amber99sb-ildn', 
                        help='Force field to use for topology recreation (default: amber99sb-ildn). Common options: amber99sb-ildn, charmm27, oplsaa, gromos96')
@@ -3245,9 +3570,9 @@ def main():
     args = parse_args()
     run_grinn_workflow(
         args.structure_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
-        args.nofixpdb, args.top, args.toppar, args.traj, args.nointeraction, 
+        args.nofixpdb, args.top, args.traj, args.nointeraction, 
         args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, 
-        args.nt, args.skip, args.noconsole_handler, args.include_files,
+        args.nt, args.skip, args.noconsole_handler,
         create_pen=args.create_pen,
         pen_cutoffs=args.pen_cutoffs,
         pen_include_covalents=args.pen_include_covalents,
