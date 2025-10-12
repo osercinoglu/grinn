@@ -1191,7 +1191,9 @@ def run_gromacs_simulation(structure_filepath, mdp_files_folder, out_folder, ff_
         # Detect and assign chain IDs if missing (after system_dry.pdb is created)
         topology_file = os.path.join(out_folder, 'topol_dry.top')
         try:
-            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+            # Pass the original input format to help with chain ID detection
+            original_format = 'gro' if input_ext == '.gro' else 'pdb'
+            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger, original_format)
         except ValueError as e:
             logger.warning(f"Chain ID assignment failed: {str(e)}")
             logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")
@@ -1219,7 +1221,7 @@ def suppress_stdout():
         finally:
             sys.stdout = old_stdout
 
-def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
+def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None, original_format=None):
     """
     Detect missing chain IDs in PDB file and assign them based on topology or sequence breaks.
     
@@ -1227,6 +1229,7 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
     - pdb_file (str): Path to the PDB file to check and potentially modify
     - topology_file (str): Optional path to topology file for chain information
     - logger: Optional logger for output messages
+    - original_format (str): Original input file format ('gro', 'pdb', or None for auto-detect)
     
     Returns:
     - bool: True if chain IDs were modified, False if no changes needed
@@ -1242,23 +1245,62 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
         chain_ids = system.getChids()
         unique_chains = np.unique(chain_ids)
         
-        # Check if chains are missing or all blank/identical
-        chains_missing = (
-            len(unique_chains) == 1 and (
+        # If original input was a GRO file, ignore any chain IDs from editconf conversion
+        if original_format and original_format.lower() == 'gro':
+            if logger:
+                logger.info("Original input was GRO file - ignoring chain IDs from editconf conversion")
+                logger.info("GRO files don't contain chain information, so any chain IDs are editconf artifacts")
+            chains_missing = True
+            chains_likely_corrupted = False
+        else:
+            # For PDB inputs or unknown formats, check if chains are missing or corrupted
+            chains_missing = False
+            chains_likely_corrupted = False
+            
+            # Standard case: missing or blank chain IDs
+            if (len(unique_chains) == 1 and (
                 unique_chains[0] == '' or 
                 unique_chains[0] == ' ' or 
                 unique_chains[0] is None
-            )
-        )
+            )):
+                chains_missing = True
+            
+            # GRO conversion issue: single-character chain IDs that are likely residue name spillovers
+            elif len(unique_chains) <= 3:  # Few unique chains
+                residue_names = system.getResnames()
+                unique_residues = np.unique(residue_names)
+                
+                # Check if any chain IDs match characters from long residue names
+                for chain_id in unique_chains:
+                    if chain_id and len(chain_id.strip()) == 1:
+                        chain_char = chain_id.strip()
+                        # Check if this character appears in any residue name at position 3 or 4
+                        for res_name in unique_residues:
+                            if len(res_name) > 3 and (
+                                (len(res_name) >= 4 and res_name[3] == chain_char) or
+                                (len(res_name) >= 5 and res_name[4] == chain_char)
+                            ):
+                                chains_likely_corrupted = True
+                                if logger:
+                                    logger.warning(f"Detected likely corrupted chain ID '{chain_char}' from residue name '{res_name}'")
+                                break
+                    if chains_likely_corrupted:
+                        break
         
-        if not chains_missing:
+        if not chains_missing and not chains_likely_corrupted:
             if logger:
-                logger.info(f"Chain IDs already present: {list(unique_chains)}")
+                logger.info(f"Valid chain IDs detected: {list(unique_chains)}")
             return False
         
-        if logger:
-            logger.info("No meaningful chain IDs detected. Attempting to assign chain IDs...")
-        
+        if chains_missing:
+            if logger:
+                if original_format and original_format.lower() == 'gro':
+                    logger.info("Assigning chain IDs for structure converted from GRO format...")
+                else:
+                    logger.info("No meaningful chain IDs detected. Attempting to assign chain IDs...")
+        elif chains_likely_corrupted:
+            if logger:
+                logger.info("Corrupted chain IDs detected (likely from GRO->PDB conversion). Reassigning chain IDs...")
         # Method 1: Try to extract chain information from topology file
         if topology_file and os.path.exists(topology_file):
             try:
@@ -1289,40 +1331,53 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None):
 
 def extract_chains_from_topology(topology_file, system, logger=None):
     """
-    Extract chain information from GROMACS topology file.
-    Uses a more sophisticated approach to map molecules to residues by analyzing
-    the topology structure and residue ordering.
+    Extract chain information from GROMACS topology file by analyzing included .itp files
+    and mapping residue names to molecule types.
+    
+    This function:
+    1. Parses #include statements to find .itp files
+    2. Extracts residue names from each .itp file  
+    3. Maps molecules to chain IDs based on the [ molecules ] section
+    4. Assigns chain IDs by matching residues to their corresponding molecule types
+    
+    Parameters:
+    - topology_file (str): Path to the GROMACS topology file
+    - system (prody.AtomGroup): Parsed PDB/GRO structure
+    - logger: Optional logger for output messages
     
     Returns:
     - dict: Mapping of residue indices to chain IDs, or None if extraction fails
     """
     try:
-        chain_assignments = {}
+        if logger:
+            logger.info("Analyzing topology file to extract chain information...")
         
-        with open(topology_file, 'r') as f:
-            content = f.read()
-        
-        # Parse molecule definitions and their residue compositions
-        molecule_info = parse_topology_molecules(content, logger)
-        if not molecule_info:
+        # Parse topology file to get included .itp files and molecule information
+        topology_info = parse_topology_comprehensive(topology_file, logger)
+        if not topology_info:
             if logger:
-                logger.warning("Could not parse molecule information from topology")
+                logger.warning("Could not parse comprehensive topology information")
             return None
         
-        # Get all residues in order from the system
+        # Get all residues from the system
         all_residues = system.select('all')
         all_resindices = np.unique(all_residues.getResindices())
+        sorted_resindices = sorted(all_resindices)
         
-        # Map residues to molecules based on topology order and residue counts
-        residue_to_molecule = map_residues_to_molecules(system, molecule_info, all_resindices, logger)
+        # Map residues to molecule types based on residue names
+        residue_to_molecule = map_residues_by_names(
+            system, sorted_resindices, topology_info, logger
+        )
         
         if not residue_to_molecule:
             if logger:
-                logger.warning("Could not map residues to molecules")
+                logger.warning("Could not map residues to molecules using residue names")
             return None
         
         # Assign chain IDs based on molecule assignments
-        chain_assignments = assign_chain_ids_from_molecules(residue_to_molecule, logger)
+        chain_assignments = assign_chain_ids_from_molecule_mapping(
+            residue_to_molecule, topology_info['molecules'], logger
+        )
         
         if logger and chain_assignments:
             unique_chains = list(set(chain_assignments.values()))
@@ -1343,8 +1398,369 @@ def extract_chains_from_topology(topology_file, system, logger=None):
         
     except Exception as e:
         if logger:
-            logger.warning(f"Topology parsing failed: {str(e)}")
+            logger.warning(f"Topology-based chain assignment failed: {str(e)}")
         return None
+
+def parse_topology_comprehensive(topology_file, logger=None):
+    """
+    Comprehensively parse topology file to extract:
+    1. Included .itp files and their molecule names and residue names
+    2. Molecule definitions from [ molecules ] section
+    
+    Returns:
+    - dict: Contains 'itp_residues' (mol_name -> set of residue names) and 'molecules' (ordered list)
+    """
+    try:
+        topology_dir = os.path.dirname(topology_file)
+        
+        with open(topology_file, 'r') as f:
+            top_content = f.read()
+        
+        # Extract #include statements to find .itp files
+        itp_file_paths = extract_itp_includes(top_content, topology_dir, logger)
+        
+        # Parse each .itp file to get molecule names and their residue names
+        itp_residues = {}
+        for itp_path in itp_file_paths:
+            itp_info = parse_itp_file_comprehensive(itp_path, logger)
+            if itp_info:
+                mol_name = itp_info['molecule_name']
+                residue_names = itp_info['residue_names']
+                itp_residues[mol_name] = residue_names
+                if logger:
+                    logger.debug(f"Molecule '{mol_name}' contains residues: {', '.join(sorted(residue_names))}")
+        
+        # Parse [ molecules ] section to get molecule order and counts
+        molecules = parse_molecules_section(top_content, logger)
+        
+        if not itp_residues or not molecules:
+            if logger:
+                logger.warning("Could not extract complete topology information")
+            return None
+        
+        return {
+            'itp_residues': itp_residues,  # mol_name -> set of residue names
+            'molecules': molecules          # [(mol_name, count), ...]
+        }
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error parsing topology comprehensively: {str(e)}")
+        return None
+
+def extract_itp_includes(top_content, topology_dir, logger=None):
+    """
+    Extract #include statements from topology file to find .itp files.
+    
+    Returns:
+    - list: List of .itp file paths (without inferring molecule names from filenames)
+    """
+    itp_files = []
+    
+    try:
+        for line in top_content.split('\n'):
+            line = line.strip()
+            
+            # Look for #include statements with .itp files
+            if line.startswith('#include') and '.itp' in line:
+                # Extract the include path
+                if '"' in line:
+                    # Format: #include "path/file.itp"
+                    include_path = line.split('"')[1]
+                elif '<' in line and '>' in line:
+                    # Format: #include <path/file.itp>  
+                    include_path = line.split('<')[1].split('>')[0]
+                else:
+                    continue
+                
+                # Construct full path
+                if os.path.isabs(include_path):
+                    full_path = include_path
+                else:
+                    full_path = os.path.join(topology_dir, include_path)
+                
+                if os.path.exists(full_path):
+                    itp_files.append(full_path)
+                    if logger:
+                        logger.debug(f"Found .itp file: {include_path}")
+                else:
+                    if logger:
+                        logger.debug(f"Referenced .itp file not found: {include_path}")
+        
+        return itp_files
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error extracting .itp includes: {str(e)}")
+        return []
+
+def parse_itp_file_comprehensive(itp_path, logger=None):
+    """
+    Parse an .itp file to extract both molecule name and residue names.
+    
+    Parameters:
+    - itp_path (str): Path to the .itp file
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - dict: Contains 'molecule_name' and 'residue_names' (set), or None if parsing fails
+    """
+    try:
+        with open(itp_path, 'r') as f:
+            content = f.read()
+        
+        molecule_name = None
+        residue_names = set()
+        in_moleculetype_section = False
+        in_atoms_section = False
+        
+        for line in content.split('\n'):
+            line = line.strip()
+            
+            # Check for [ moleculetype ] section
+            if line.startswith('[ moleculetype ]'):
+                in_moleculetype_section = True
+                in_atoms_section = False
+                continue
+            elif line.startswith('[ atoms ]'):
+                in_moleculetype_section = False
+                in_atoms_section = True
+                continue
+            elif line.startswith('['):
+                # Entering a different section
+                in_moleculetype_section = False
+                in_atoms_section = False
+                continue
+            
+            # Parse molecule name from [ moleculetype ] section
+            if in_moleculetype_section and line and not line.startswith(';'):
+                # Format: molecule_name    nrexcl
+                # Example: PROA         3
+                parts = line.split()
+                if len(parts) >= 1 and not parts[0].startswith(';'):
+                    molecule_name = parts[0]
+                    if logger:
+                        logger.debug(f"Found molecule name '{molecule_name}' in {os.path.basename(itp_path)}")
+            
+            # Parse residue names from [ atoms ] section
+            elif in_atoms_section and line and not line.startswith(';'):
+                # Format: nr type resnr residu atom cgnr charge mass
+                # Example: 1    NH3    1    LYS    N    1    -0.300000    14.0070
+                parts = line.split()
+                if len(parts) >= 4:
+                    try:
+                        residue_name = parts[3]  # 4th column is residue name
+                        residue_names.add(residue_name)
+                    except (IndexError, ValueError):
+                        continue
+        
+        if molecule_name and residue_names:
+            if logger:
+                logger.debug(f"Molecule '{molecule_name}' contains {len(residue_names)} unique residue types: {', '.join(sorted(residue_names))}")
+            return {
+                'molecule_name': molecule_name,
+                'residue_names': residue_names
+            }
+        else:
+            if logger:
+                logger.debug(f"Could not extract complete information from {itp_path}: molecule_name={molecule_name}, residues={len(residue_names)}")
+            return None
+        
+    except Exception as e:
+        if logger:
+            logger.debug(f"Error parsing .itp file {itp_path}: {str(e)}")
+        return None
+
+def parse_molecules_section(top_content, logger=None):
+    """
+    Parse the [ molecules ] section to get molecule order and counts.
+    
+    Returns:
+    - list: List of tuples (molecule_name, count) in order
+    """
+    molecules = []
+    
+    try:
+        in_molecules_section = False
+        
+        for line in top_content.split('\n'):
+            line = line.strip()
+            
+            if line.startswith('[ molecules ]'):
+                in_molecules_section = True
+                continue
+            elif line.startswith('[') and in_molecules_section:
+                # End of molecules section
+                break
+            elif in_molecules_section and line and not line.startswith(';'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        mol_name = parts[0]
+                        mol_count = int(parts[1])
+                        molecules.append((mol_name, mol_count))
+                    except (ValueError, IndexError):
+                        continue
+        
+        if logger:
+            logger.debug(f"Found {len(molecules)} molecule types in [ molecules ] section")
+        
+        return molecules
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error parsing [ molecules ] section: {str(e)}")
+        return []
+
+def map_residues_by_names(system, sorted_resindices, topology_info, logger=None):
+    """
+    Map residues to molecule types by matching residue names from the structure
+    to residue names found in .itp files.
+    
+    Returns:
+    - dict: Mapping of residue index to molecule name
+    """
+    residue_to_molecule = {}
+    itp_residues = topology_info['itp_residues']
+    molecules_order = topology_info['molecules']
+    
+    try:
+        # Get residue names from the structure
+        structure_residues = {}  # res_idx -> residue_name
+        for res_idx in sorted_resindices:
+            residue = system.select(f'resindex {res_idx}')
+            if residue is not None and len(residue) > 0:
+                res_name = residue.getResnames()[0]
+                structure_residues[res_idx] = res_name
+        
+        if logger:
+            unique_res_names = set(structure_residues.values())
+            logger.debug(f"Structure contains {len(unique_res_names)} unique residue types: {', '.join(sorted(unique_res_names))}")
+        
+        # Match residues to molecules based on residue names
+        # Process molecules in the order they appear in [ molecules ] section
+        assigned_residues = set()
+        
+        for mol_name, mol_count in molecules_order:
+            if mol_name not in itp_residues:
+                if logger:
+                    logger.warning(f"No .itp residue information found for molecule '{mol_name}'")
+                continue
+            
+            mol_residue_names = itp_residues[mol_name]
+            
+            # Find all structure residues that match this molecule type
+            matching_residues = []
+            for res_idx, res_name in structure_residues.items():
+                if res_idx not in assigned_residues and res_name in mol_residue_names:
+                    matching_residues.append(res_idx)
+            
+            # Sort matching residues to maintain order
+            matching_residues.sort()
+            
+            # Assign the expected number of residues per molecule instance
+            residues_per_instance = len(matching_residues) // mol_count if mol_count > 0 else len(matching_residues)
+            
+            if residues_per_instance * mol_count != len(matching_residues):
+                if logger:
+                    logger.warning(f"Molecule '{mol_name}': expected {mol_count} instances, but residue count ({len(matching_residues)}) doesn't divide evenly")
+                    logger.warning(f"Using {residues_per_instance} residues per instance")
+            
+            # Assign residues to molecule instances
+            for instance in range(mol_count):
+                start_idx = instance * residues_per_instance
+                end_idx = start_idx + residues_per_instance
+                
+                for res_idx in matching_residues[start_idx:end_idx]:
+                    residue_to_molecule[res_idx] = mol_name
+                    assigned_residues.add(res_idx)
+            
+            if logger:
+                assigned_count = min(len(matching_residues), residues_per_instance * mol_count)
+                logger.debug(f"Assigned {assigned_count} residues to molecule '{mol_name}' ({mol_count} instances)")
+        
+        # Handle any unassigned residues
+        unassigned = set(sorted_resindices) - assigned_residues
+        if unassigned:
+            if logger:
+                unassigned_names = [structure_residues.get(idx, 'Unknown') for idx in sorted(unassigned)]
+                logger.warning(f"Could not assign {len(unassigned)} residues to molecules: {', '.join(set(unassigned_names))}")
+            
+            # Assign unassigned residues to 'Other'
+            for res_idx in unassigned:
+                residue_to_molecule[res_idx] = 'Other'
+        
+        return residue_to_molecule
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error mapping residues by names: {str(e)}")
+        return {}
+
+def assign_chain_ids_from_molecule_mapping(residue_to_molecule, molecules_order, logger=None):
+    """
+    Assign chain IDs based on molecule mapping, respecting molecule instance order.
+    
+    Returns:
+    - dict: Mapping of residue index to chain ID
+    """
+    chain_assignments = {}
+    
+    try:
+        # Create chain ID generator
+        chain_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        chain_idx = 0
+        
+        # Group residues by molecule type and assign chains per instance
+        for mol_name, mol_count in molecules_order:
+            # Get all residues for this molecule type
+            mol_residues = [res_idx for res_idx, mol in residue_to_molecule.items() if mol == mol_name]
+            mol_residues.sort()
+            
+            if not mol_residues:
+                continue
+            
+            # Calculate residues per instance
+            residues_per_instance = len(mol_residues) // mol_count if mol_count > 0 else len(mol_residues)
+            
+            # Assign chain IDs to each instance
+            for instance in range(mol_count):
+                if chain_idx < len(chain_letters):
+                    chain_id = chain_letters[chain_idx]
+                else:
+                    # Use double letters for chains beyond Z
+                    first_letter_idx = (chain_idx - 26) // 26
+                    second_letter_idx = (chain_idx - 26) % 26
+                    chain_id = chain_letters[first_letter_idx] + chain_letters[second_letter_idx]
+                
+                # Assign this chain ID to residues in this instance
+                start_idx = instance * residues_per_instance
+                end_idx = start_idx + residues_per_instance
+                
+                for res_idx in mol_residues[start_idx:end_idx]:
+                    chain_assignments[res_idx] = chain_id
+                
+                chain_idx += 1
+        
+        # Handle 'Other' residues (assign to separate chain)
+        other_residues = [res_idx for res_idx, mol in residue_to_molecule.items() if mol == 'Other']
+        if other_residues:
+            if chain_idx < len(chain_letters):
+                other_chain_id = chain_letters[chain_idx]
+            else:
+                first_letter_idx = (chain_idx - 26) // 26
+                second_letter_idx = (chain_idx - 26) % 26
+                other_chain_id = chain_letters[first_letter_idx] + chain_letters[second_letter_idx]
+            
+            for res_idx in other_residues:
+                chain_assignments[res_idx] = other_chain_id
+        
+        return chain_assignments
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error assigning chain IDs from molecule mapping: {str(e)}")
+        return {}
 
 def parse_topology_molecules(content, logger=None):
     """
@@ -1486,37 +1902,6 @@ def map_residues_to_molecules(system, molecule_info, all_resindices, logger=None
             logger.warning(f"Failed to map residues to molecules: {str(e)}")
         return {}
 
-def assign_chain_ids_from_molecules(residue_to_molecule, logger=None):
-    """
-    Assign chain IDs based on molecule assignments.
-    
-    Returns:
-    - dict: Mapping of residue index to chain ID
-    """
-    chain_assignments = {}
-    molecule_to_chain = {}
-    current_chain_idx = 0
-    
-    # Group molecules by type and assign chain IDs
-    for res_idx, mol_name in residue_to_molecule.items():
-        
-        # Determine chain ID for this molecule type
-        if mol_name not in molecule_to_chain:
-            # Assign chain based on molecule type
-            if is_water_molecule(mol_name):
-                chain_id = 'W'  # Water
-            elif is_ion_molecule(mol_name):
-                chain_id = 'I'  # Ions
-            else:
-                # Regular chains (proteins, nucleic acids, ligands, etc.)
-                chain_id = chr(ord('A') + current_chain_idx % 26)
-                current_chain_idx += 1
-            
-            molecule_to_chain[mol_name] = chain_id
-        
-        chain_assignments[res_idx] = molecule_to_chain[mol_name]
-    
-    return chain_assignments
 
 def is_water_molecule(mol_name):
     """Check if molecule name indicates water."""
@@ -1553,8 +1938,11 @@ def detect_chains_from_sequence_breaks(system, logger=None):
         # Count different molecule types to determine if we can confidently assign chains
         protein_count = sum(1 for name in residue_names if is_protein_residue(name))
         nucleic_count = sum(1 for name in residue_names if is_nucleic_residue(name))
-        water_count = sum(1 for name in residue_names if name in ['SOL', 'WAT', 'TIP3', 'TIP4', 'SPC'])
-        ion_count = sum(1 for name in residue_names if name in ['NA', 'CL', 'K', 'MG', 'CA', 'ZN'])
+        
+        # Enhanced water/solvent detection for potentially truncated names from GRO conversion
+        water_count = sum(1 for name in residue_names if is_water_residue(name))
+        ion_count = sum(1 for name in residue_names if is_ion_residue(name))
+        
         other_count = len(residue_names) - protein_count - nucleic_count - water_count - ion_count
         
         # Only proceed if we have clear molecular boundaries or sequence breaks
@@ -1593,9 +1981,9 @@ def detect_chains_from_sequence_breaks(system, logger=None):
                 current_chain = chr(ord('A') + chain_counter % 26)
             
             # Assign chains based on molecule type
-            if res_name in ['SOL', 'WAT', 'TIP3', 'TIP4', 'SPC']:
+            if is_water_residue(res_name):
                 chain_assignments[res_idx] = 'W'  # Water chain
-            elif res_name in ['NA', 'CL', 'K', 'MG', 'CA', 'ZN']:
+            elif is_ion_residue(res_name):
                 chain_assignments[res_idx] = 'I'  # Ion chain
             else:
                 chain_assignments[res_idx] = current_chain
@@ -1615,6 +2003,25 @@ def detect_chains_from_sequence_breaks(system, logger=None):
         if logger:
             logger.warning(f"Sequence break detection failed: {str(e)}")
         return None
+
+def is_water_residue(res_name):
+    """Check if residue is water, including potentially truncated names from GRO conversion."""
+    water_names = {
+        'SOL', 'WAT', 'H2O',  # Standard water names
+        'TIP3', 'TIP4', 'TIP5', 'TIP',  # TIP water models (including truncated)
+        'SPC', 'SPCE',  # SPC water models
+        'OPC', 'OPC3'   # OPC water models
+    }
+    return res_name.upper() in water_names
+
+def is_ion_residue(res_name):
+    """Check if residue is an ion, including common ion names."""
+    ion_names = {
+        'NA', 'CL', 'K', 'MG', 'CA', 'ZN', 'FE',  # Common ions
+        'NA+', 'CL-', 'K+', 'MG2+', 'CA2+', 'ZN2+',  # With charges
+        'SOD', 'CLA', 'POT', 'MAG', 'CAL'  # Alternative names
+    }
+    return res_name.upper() in ion_names
 
 def is_protein_residue(res_name):
     """Check if residue is a standard protein residue."""
@@ -3226,7 +3633,9 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         # Detect and assign chain IDs if missing
         topology_file = os.path.join(out_folder, 'topol_dry.top') if top else None
         try:
-            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+            # Pass the original input format to help with chain ID detection
+            original_format = 'gro' if input_ext == '.gro' else 'pdb'
+            detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger, original_format)
         except ValueError as e:
             logger.warning(f"Chain ID assignment failed: {str(e)}")
             logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")
@@ -3257,7 +3666,9 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             # Detect and assign chain IDs if missing
             topology_file = os.path.join(out_folder, 'topol_dry.top')
             try:
-                detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger)
+                # Pass the original input format to help with chain ID detection
+                original_format = 'gro' if input_ext == '.gro' else 'pdb'
+                detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger, original_format)
             except ValueError as e:
                 logger.warning(f"Chain ID assignment failed: {str(e)}")
                 logger.warning("Proceeding with existing chain IDs in PDB file. Analysis may be less accurate for multi-chain systems.")

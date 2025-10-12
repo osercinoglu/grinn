@@ -133,7 +133,8 @@ RUN mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
     tqdm \
     dash \
     dash-bootstrap-components \
-    plotly
+    plotly \
+    biotite 
 
 # Install dash-molstar
 RUN conda run -n grinn-env pip install dash-molstar

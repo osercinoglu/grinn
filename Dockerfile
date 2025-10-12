@@ -24,74 +24,101 @@ ARG GROMACS_VERSION=2024.1
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Validate GROMACS version (exclude 2020.7 which needs special handling)
-RUN GROMACS_MAJOR=$(echo "${GROMACS_VERSION}" | cut -d. -f1) && \
-    GROMACS_MINOR=$(echo "${GROMACS_VERSION}" | cut -d. -f2) && \
-    if [ "${GROMACS_MAJOR}" = "2020" ]; then \
-        echo "❌ GROMACS 2020.7 requires Ubuntu 20.04 and special handling"; \
-        echo "Please use the legacy Dockerfile: Dockerfile.gromacs-2020.7"; \
-        exit 1; \
-    elif [ "${GROMACS_MAJOR}" -lt "2021" ]; then \
-        echo "❌ Unsupported GROMACS version: ${GROMACS_VERSION}"; \
-        echo "Supported versions: 2021.7, 2022.x, 2023.x, 2024.x, 2025.x"; \
-        exit 1; \
-    fi && \
-    echo "✅ Building GROMACS ${GROMACS_VERSION} on Ubuntu 22.04"
-
-# Install build dependencies (common for all versions)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    wget \
-    libfftw3-dev \
-    libopenmpi-dev \
-    libhwloc-dev \
-    libblas-dev \
-    liblapack-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-# Conditional CMake installation based on GROMACS version
-# GROMACS 2025+ requires modern CMake 3.28+
-RUN GROMACS_MAJOR=$(echo "${GROMACS_VERSION}" | cut -d. -f1) && \
-    if [ "${GROMACS_MAJOR}" -ge "2025" ]; then \
-        echo "📦 Installing modern CMake 3.28+ for GROMACS ${GROMACS_VERSION}..." && \
-        apt-get update && \
-        apt-get install -y gnupg && \
-        wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
-        echo 'deb https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null && \
-        apt-get update && \
-        apt-get install -y cmake && \
-        rm -rf /var/lib/apt/lists/* && \
-        cmake --version; \
+# Validate GROMACS version (exclude 2020.7 which needs special handling, allow NONE for dashboard-only)
+RUN if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo "📊 Building dashboard-only image (no GROMACS compilation)"; \
     else \
-        echo "📦 Installing system CMake for GROMACS ${GROMACS_VERSION}..." && \
-        apt-get update && \
-        apt-get install -y cmake && \
-        rm -rf /var/lib/apt/lists/* && \
-        cmake --version; \
+        GROMACS_MAJOR=$(echo "${GROMACS_VERSION}" | cut -d. -f1) && \
+        GROMACS_MINOR=$(echo "${GROMACS_VERSION}" | cut -d. -f2) && \
+        if [ "${GROMACS_MAJOR}" = "2020" ]; then \
+            echo "❌ GROMACS 2020.7 requires Ubuntu 20.04 and special handling"; \
+            echo "Please use the legacy Dockerfile: Dockerfile.gromacs-2020.7"; \
+            exit 1; \
+        elif [ "${GROMACS_MAJOR}" -lt "2021" ]; then \
+            echo "❌ Unsupported GROMACS version: ${GROMACS_VERSION}"; \
+            echo "Supported versions: 2021.7, 2022.x, 2023.x, 2024.x, 2025.x, or NONE for dashboard-only"; \
+            exit 1; \
+        fi && \
+        echo "✅ Building GROMACS ${GROMACS_VERSION} on Ubuntu 22.04"; \
     fi
 
-# Download and build GROMACS
+# Install build dependencies (only if building GROMACS)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 Installing GROMACS build dependencies..."; \
+        apt-get update && apt-get install -y \
+            build-essential \
+            wget \
+            libfftw3-dev \
+            libopenmpi-dev \
+            libhwloc-dev \
+            libblas-dev \
+            liblapack-dev \
+            pkg-config \
+            && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "📦 Skipping GROMACS build dependencies (dashboard-only mode)"; \
+        apt-get update && apt-get install -y \
+            wget \
+            curl \
+            && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+# Conditional CMake installation based on GROMACS version (skip for dashboard-only)
+# GROMACS 2025+ requires modern CMake 3.28+
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        GROMACS_MAJOR=$(echo "${GROMACS_VERSION}" | cut -d. -f1) && \
+        if [ "${GROMACS_MAJOR}" -ge "2025" ]; then \
+            echo "📦 Installing modern CMake 3.28+ for GROMACS ${GROMACS_VERSION}..." && \
+            apt-get update && \
+            apt-get install -y gnupg && \
+            wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null && \
+            echo 'deb https://apt.kitware.com/ubuntu/ jammy main' | tee /etc/apt/sources.list.d/kitware.list >/dev/null && \
+            apt-get update && \
+            apt-get install -y cmake && \
+            rm -rf /var/lib/apt/lists/* && \
+            cmake --version; \
+        else \
+            echo "📦 Installing system CMake for GROMACS ${GROMACS_VERSION}..." && \
+            apt-get update && \
+            apt-get install -y cmake && \
+            rm -rf /var/lib/apt/lists/* && \
+            cmake --version; \
+        fi; \
+    else \
+        echo "📦 Skipping CMake installation (dashboard-only mode)"; \
+    fi
+
+# Download and build GROMACS (skip for dashboard-only mode)
 WORKDIR /tmp/gromacs-build
 
-RUN echo "🔬 Building GROMACS version: ${GROMACS_VERSION}" && \
-    wget ftp://ftp.gromacs.org/gromacs/gromacs-${GROMACS_VERSION}.tar.gz && \
-    tar xfz gromacs-${GROMACS_VERSION}.tar.gz && \
-    cd gromacs-${GROMACS_VERSION} && \
-    mkdir build && \
-    cd build && \
-    cmake .. \
-        -DGMX_BUILD_OWN_FFTW=ON \
-        -DGMX_GPU=OFF \
-        -DGMX_MPI=OFF \
-        -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DGMX_USE_OPENCL=OFF && \
-    make -j$(nproc) && \
-    make install && \
-    # Cleanup build artifacts to reduce layer size
-    cd / && rm -rf /tmp/gromacs-build && \
-    echo "✅ GROMACS ${GROMACS_VERSION} built successfully"
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "🔬 Building GROMACS version: ${GROMACS_VERSION}" && \
+        wget ftp://ftp.gromacs.org/gromacs/gromacs-${GROMACS_VERSION}.tar.gz && \
+        tar xfz gromacs-${GROMACS_VERSION}.tar.gz && \
+        cd gromacs-${GROMACS_VERSION} && \
+        mkdir build && \
+        cd build && \
+        cmake .. \
+            -DGMX_BUILD_OWN_FFTW=ON \
+            -DGMX_GPU=OFF \
+            -DGMX_MPI=OFF \
+            -DCMAKE_INSTALL_PREFIX=/usr/local/gromacs \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGMX_USE_OPENCL=OFF && \
+        make -j$(nproc) && \
+        make install && \
+        # Cleanup build artifacts to reduce layer size
+        cd / && rm -rf /tmp/gromacs-build && \
+        echo "✅ GROMACS ${GROMACS_VERSION} built successfully"; \
+    else \
+        echo "📊 Skipping GROMACS build (dashboard-only mode)" && \
+        cd / && rm -rf /tmp/gromacs-build && \
+        mkdir -p /usr/local/gromacs/bin && \
+        echo "#!/bin/bash" > /usr/local/gromacs/bin/gmx && \
+        echo 'echo "❌ GROMACS not available in dashboard-only mode"' >> /usr/local/gromacs/bin/gmx && \
+        echo 'exit 1' >> /usr/local/gromacs/bin/gmx && \
+        chmod +x /usr/local/gromacs/bin/gmx; \
+    fi
 
 # ============================================================================
 # STAGE 2: Python Environment (cached independently of gRINN code changes)
@@ -106,19 +133,31 @@ ARG GROMACS_VERSION=2024.1
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
-    libfftw3-3 \
-    libopenmpi3 \
-    libhwloc15 \
-    libblas3 \
-    liblapack3 \
-    wget \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime dependencies (conditional on GROMACS vs dashboard-only)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 Installing full runtime dependencies (with GROMACS support)..."; \
+        apt-get update && apt-get install -y \
+            python3 \
+            python3-pip \
+            python3-dev \
+            libfftw3-3 \
+            libopenmpi3 \
+            libhwloc15 \
+            libblas3 \
+            liblapack3 \
+            wget \
+            curl \
+            && rm -rf /var/lib/apt/lists/*; \
+    else \
+        echo "📦 Installing minimal runtime dependencies (dashboard-only)..."; \
+        apt-get update && apt-get install -y \
+            python3 \
+            python3-pip \
+            python3-dev \
+            wget \
+            curl \
+            && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Create symlink for python
 RUN ln -s /usr/bin/python3 /usr/bin/python
@@ -150,32 +189,59 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
 # Install mamba for faster package installation
 RUN conda install -y -c conda-forge mamba
 
-# Create conda environment with all gRINN dependencies
-RUN mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
-    python=3.10 \
-    pdbfixer \
-    prody \
-    numpy \
-    scipy \
-    pyprind \
-    pandas \
-    mdtraj \
-    openmm \
-    panedr \
-    gromacswrapper \
-    networkx \
-    tqdm \
-    dash \
-    dash-bootstrap-components \
-    plotly
+# Create conda environment (conditional dependencies based on mode)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 Creating full gRINN environment with GROMACS support..."; \
+        mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
+            python=3.10 \
+            pdbfixer \
+            prody \
+            numpy \
+            scipy \
+            pyprind \
+            pandas \
+            mdtraj \
+            openmm \
+            panedr \
+            gromacswrapper \
+            networkx \
+            tqdm \
+            dash \
+            dash-bootstrap-components \
+            plotly \
+            biotite; \
+    else \
+        echo "📦 Creating dashboard-only environment..."; \
+        mamba create -y -n grinn-env -c conda-forge -c plotly \
+            python=3.10 \
+            numpy \
+            scipy \
+            pandas \
+            networkx \
+            tqdm \
+            dash \
+            dash-bootstrap-components \
+            plotly; \
+    fi
 
 # Install dash-molstar for 3D visualization
 RUN conda run -n grinn-env pip install dash-molstar
 
-# Copy GROMACS installation from builder stage
+# Copy GROMACS installation from builder stage (create empty dir for dashboard-only)
+RUN if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo "📦 Creating placeholder GROMACS directory (dashboard-only mode)"; \
+        mkdir -p /usr/local/gromacs/bin; \
+    fi
+
+# Copy GROMACS installation (will copy empty dir for dashboard-only)
 COPY --from=gromacs-builder /usr/local/gromacs /usr/local/gromacs
 
-# Set GROMACS environment
+# Set GROMACS environment (conditional)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo 'export PATH="/usr/local/gromacs/bin:$PATH"' >> /etc/environment && \
+        echo 'export LD_LIBRARY_PATH="/usr/local/gromacs/lib:$LD_LIBRARY_PATH"' >> /etc/environment; \
+    fi
+
 ENV PATH="/usr/local/gromacs/bin:$PATH"
 ENV LD_LIBRARY_PATH="/usr/local/gromacs/lib:$LD_LIBRARY_PATH"
 
@@ -209,40 +275,84 @@ ENV GMXRC_PATH=/usr/local/gromacs/bin/GMXRC
 # Activate conda env and source GMXRC for all future RUN/CMD
 SHELL ["/bin/bash", "-c"]
 
-# Set up GromacsWrapper config
-RUN conda run -n grinn-env python -c "import gromacs; gromacs.config.setup()"
+# Set up GromacsWrapper config (only if GROMACS is available)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 Setting up GromacsWrapper..."; \
+        conda run -n grinn-env python -c "import gromacs; gromacs.config.setup()"; \
+    else \
+        echo "📦 Skipping GromacsWrapper setup (dashboard-only mode)"; \
+    fi
 
-# Copy MDP files (these change less frequently)
+# Copy MDP files (only if building full gRINN)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 MDP files will be copied for full gRINN build"; \
+    else \
+        mkdir -p ./mdp_files; \
+        echo "📦 Created empty MDP directory (dashboard-only mode)"; \
+    fi
+
 COPY ${GRINN_PREFIX}mdp_files ./mdp_files
 
-# Copy gRINN source code and dashboard (these change more frequently)
+# Copy source code conditionally
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "📦 Full gRINN workflow will be available"; \
+    else \
+        echo "📦 Dashboard-only mode - workflow disabled"; \
+    fi
+
 COPY ${GRINN_PREFIX}grinn_workflow.py ./
 COPY ${GRINN_PREFIX}gRINN_Dashboard ./gRINN_Dashboard
 
-# Make grinn_workflow.py executable
-RUN chmod +x grinn_workflow.py
+# Make grinn_workflow.py executable (but add check for dashboard-only mode)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        chmod +x grinn_workflow.py; \
+    else \
+        echo '#!/bin/bash' > grinn_workflow.py && \
+        echo 'echo "❌ gRINN workflow not available in dashboard-only mode"' >> grinn_workflow.py && \
+        echo 'echo "This image was built for dashboard functionality only"' >> grinn_workflow.py && \
+        echo 'echo "Use: docker run -p 8051:8051 <image> dashboard <results_folder>"' >> grinn_workflow.py && \
+        echo 'exit 1' >> grinn_workflow.py && \
+        chmod +x grinn_workflow.py; \
+    fi
 
 # Create sophisticated entrypoint script
 RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
     echo '# Function to show usage' >> /app/entrypoint.sh && \
     echo 'show_usage() {' >> /app/entrypoint.sh && \
-    echo '    echo "gRINN Docker Container - GROMACS ${GROMACS_VERSION}"' >> /app/entrypoint.sh && \
-    echo '    echo ""' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run [docker-options] grinn:gromacs-${GROMACS_VERSION} <mode> [mode-options]"' >> /app/entrypoint.sh && \
-    echo '    echo ""' >> /app/entrypoint.sh && \
-    echo '    echo "Available modes:"' >> /app/entrypoint.sh && \
-    echo '    echo "  workflow <input.pdb> <output_dir> [options]  - Run gRINN workflow analysis"' >> /app/entrypoint.sh && \
-    echo '    echo "  dashboard <results_folder>                  - Launch interactive dashboard"' >> /app/entrypoint.sh && \
-    echo '    echo "  gmx <gmx_command> [gmx_options]             - Run GROMACS commands"' >> /app/entrypoint.sh && \
-    echo '    echo "  bash                                        - Start interactive bash session"' >> /app/entrypoint.sh && \
-    echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh && \
-    echo '    echo ""' >> /app/entrypoint.sh && \
-    echo '    echo "Examples:"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} workflow /data/protein.pdb /data/results"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn:gromacs-${GROMACS_VERSION} dashboard /data/results"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} gmx --version"' >> /app/entrypoint.sh && \
-    echo '    echo "  docker run -it grinn:gromacs-${GROMACS_VERSION} bash"' >> /app/entrypoint.sh && \
+    if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo '    echo "gRINN Dashboard Container (Dashboard-Only Mode)"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run [docker-options] grinn-dashboard:latest <mode> [mode-options]"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "Available modes:"' >> /app/entrypoint.sh; \
+        echo '    echo "  dashboard <results_folder>                  - Launch interactive dashboard"' >> /app/entrypoint.sh; \
+        echo '    echo "  bash                                        - Start interactive bash session"' >> /app/entrypoint.sh; \
+        echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "Examples:"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn-dashboard:latest dashboard /data/results"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -it grinn-dashboard:latest bash"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "Note: This is a dashboard-only image. For full gRINN workflow, use grinn:gromacs-VERSION"' >> /app/entrypoint.sh; \
+    else \
+        echo '    echo "gRINN Docker Container - GROMACS ${GROMACS_VERSION}"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run [docker-options] grinn:gromacs-${GROMACS_VERSION} <mode> [mode-options]"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "Available modes:"' >> /app/entrypoint.sh; \
+        echo '    echo "  workflow <input.pdb> <output_dir> [options]  - Run gRINN workflow analysis"' >> /app/entrypoint.sh; \
+        echo '    echo "  dashboard <results_folder>                  - Launch interactive dashboard"' >> /app/entrypoint.sh; \
+        echo '    echo "  gmx <gmx_command> [gmx_options]             - Run GROMACS commands"' >> /app/entrypoint.sh; \
+        echo '    echo "  bash                                        - Start interactive bash session"' >> /app/entrypoint.sh; \
+        echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh; \
+        echo '    echo ""' >> /app/entrypoint.sh; \
+        echo '    echo "Examples:"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} workflow /data/protein.pdb /data/results"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn:gromacs-${GROMACS_VERSION} dashboard /data/results"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} gmx --version"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -it grinn:gromacs-${GROMACS_VERSION} bash"' >> /app/entrypoint.sh; \
+    fi && \
     echo '}' >> /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
     echo '# Source GROMACS environment' >> /app/entrypoint.sh && \
@@ -251,13 +361,20 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '# Handle different execution modes' >> /app/entrypoint.sh && \
     echo 'case "$1" in' >> /app/entrypoint.sh && \
     echo '    "workflow")' >> /app/entrypoint.sh && \
-    echo '        shift' >> /app/entrypoint.sh && \
-    echo '        echo "🧬 Starting gRINN Workflow Analysis with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh && \
-    echo '        echo "Arguments: $@"' >> /app/entrypoint.sh && \
-    echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
-    echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
-    echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
-    echo '        stdbuf -oL -eL conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh && \
+    if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo '        echo "❌ gRINN workflow not available in dashboard-only mode"' >> /app/entrypoint.sh; \
+        echo '        echo "This image was built for dashboard functionality only."' >> /app/entrypoint.sh; \
+        echo '        echo "For full gRINN workflow, use: grinn:gromacs-VERSION"' >> /app/entrypoint.sh; \
+        echo '        exit 1' >> /app/entrypoint.sh; \
+    else \
+        echo '        shift' >> /app/entrypoint.sh; \
+        echo '        echo "🧬 Starting gRINN Workflow Analysis with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh; \
+        echo '        echo "Arguments: $@"' >> /app/entrypoint.sh; \
+        echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh; \
+        echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh; \
+        echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh; \
+        echo '        stdbuf -oL -eL conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh; \
+    fi && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
@@ -270,14 +387,25 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '        stdbuf -oL -eL conda run -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "gmx")' >> /app/entrypoint.sh && \
-    echo '        shift' >> /app/entrypoint.sh && \
-    echo '        echo "⚗️  Running GROMACS ${GROMACS_VERSION} command: gmx $@"' >> /app/entrypoint.sh && \
-    echo '        # Enable real-time output for GROMACS commands' >> /app/entrypoint.sh && \
-    echo '        stdbuf -oL -eL gmx "$@"' >> /app/entrypoint.sh && \
+    if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo '        echo "❌ GROMACS not available in dashboard-only mode"' >> /app/entrypoint.sh; \
+        echo '        echo "This image was built for dashboard functionality only."' >> /app/entrypoint.sh; \
+        echo '        echo "For GROMACS commands, use: grinn:gromacs-VERSION"' >> /app/entrypoint.sh; \
+        echo '        exit 1' >> /app/entrypoint.sh; \
+    else \
+        echo '        shift' >> /app/entrypoint.sh; \
+        echo '        echo "⚗️  Running GROMACS ${GROMACS_VERSION} command: gmx $@"' >> /app/entrypoint.sh; \
+        echo '        # Enable real-time output for GROMACS commands' >> /app/entrypoint.sh; \
+        echo '        stdbuf -oL -eL gmx "$@"' >> /app/entrypoint.sh; \
+    fi && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "bash")' >> /app/entrypoint.sh && \
     echo '        echo "🐚 Starting interactive bash session..."' >> /app/entrypoint.sh && \
-    echo '        echo "GROMACS ${GROMACS_VERSION} environment is already sourced"' >> /app/entrypoint.sh && \
+    if [ "${GROMACS_VERSION}" = "NONE" ]; then \
+        echo '        echo "Dashboard-only mode - no GROMACS available"' >> /app/entrypoint.sh; \
+    else \
+        echo '        echo "GROMACS ${GROMACS_VERSION} environment is already sourced"' >> /app/entrypoint.sh; \
+    fi && \
     echo '        echo "Conda environment: grinn-env"' >> /app/entrypoint.sh && \
     echo '        echo "To activate conda env: conda activate grinn-env"' >> /app/entrypoint.sh && \
     echo '        exec /bin/bash' >> /app/entrypoint.sh && \
@@ -300,8 +428,13 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo 'esac' >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh
 
-# Verify GROMACS installation
-RUN gmx --version
+# Verify GROMACS installation (only if available)
+RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
+        echo "🔬 Verifying GROMACS installation..."; \
+        gmx --version; \
+    else \
+        echo "📊 Dashboard-only mode - no GROMACS to verify"; \
+    fi
 
 # Expose port for dashboard
 EXPOSE 8051
