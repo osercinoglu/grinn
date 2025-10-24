@@ -709,8 +709,8 @@ def handle_missing_topology_flexible(structure_file, out_folder, traj=None, tpr_
         if logger:
             logger.error("Failed to create topology file through any available method")
             logger.error("Available options:")
-            logger.error("  1. Provide a topology file directly (--top)")
-            logger.error("  2. Provide a TPR file for parameter extraction (--tpr_file)")
+            logger.error("  1. Provide a topology file directly with --top")
+            logger.error("  2. Use --ensemble_mode for multi-model PDB files")
             logger.error("  3. Ensure structure file is compatible with pdb2gmx")
             logger.error("  4. Check force field and water model specifications")
         
@@ -2905,9 +2905,13 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
                      nt=1, skip=1, noconsole_handler=False,
                      create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False],
                      force_field='amber99sb-ildn', water_model='tip3p', recreate_topology=False,
-                     tpr_file=None):
+                     ensemble_mode=False):
     """
     Test and validate inputs for the gRINN workflow.
+    
+    Supports two input modes:
+    1. Trajectory Mode: structure (PDB) + trajectory (XTC) + topology (TOP)
+    2. Ensemble Mode: multi-model PDB file (topology generated automatically)
     
     Returns:
     - (bool, list): (is_valid, list_of_errors)
@@ -2915,52 +2919,85 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     errors = []
     warnings = []
     
-    # Test required arguments - structure_file is optional if TPR file is provided
-    has_structure_source = structure_file or tpr_file
+    # Validate structure file is provided and exists
+    if not structure_file:
+        errors.append("ERROR: Structure file (PDB) is required")
+        return False, errors
     
-    if not has_structure_source:
-        errors.append("ERROR: Either structure_file or --tpr_file must be provided")
-        errors.append("  Use structure_file (PDB/GRO) for normal workflow")
-        errors.append("  Use --tpr_file when only TPR+trajectory files are available")
+    if not os.path.exists(structure_file):
+        errors.append(f"ERROR: Structure file '{structure_file}' does not exist")
+        return False, errors
     
-    # Validate structure file if provided
-    if structure_file:
-        if not os.path.exists(structure_file):
-            errors.append(f"ERROR: Structure file '{structure_file}' does not exist")
-        else:
-            # Check file extension and validate format
-            file_ext = os.path.splitext(structure_file)[1].lower()
-            if file_ext not in ['.pdb', '.gro']:
-                warnings.append(f"WARNING: Structure file '{structure_file}' has unsupported extension. Supported: .pdb, .gro")
-            
-            # Try to parse the structure file to validate format
-            try:
-                structure = parse_structure_file(structure_file)
-                if structure is None:
-                    errors.append(f"ERROR: Could not parse structure file '{structure_file}'")
-            except Exception as e:
-                errors.append(f"ERROR: Failed to parse structure file '{structure_file}': {str(e)}")
+    # Validate structure file is PDB format
+    if not structure_file.lower().endswith('.pdb'):
+        errors.append(f"ERROR: Structure file must be in PDB format, got: {structure_file}")
+        errors.append("  Only PDB format is supported")
     
-    # Validate TPR file if provided (alternative structure source)
-    if tpr_file:
-        if not os.path.exists(tpr_file):
-            errors.append(f"ERROR: TPR file '{tpr_file}' does not exist")
-        elif not tpr_file.endswith('.tpr'):
-            warnings.append(f"WARNING: TPR file '{tpr_file}' does not have .tpr extension")
+    # Try to parse the structure file
+    try:
+        structure = parse_structure_file(structure_file)
+        if structure is None:
+            errors.append(f"ERROR: Could not parse structure file '{structure_file}'")
+    except Exception as e:
+        errors.append(f"ERROR: Failed to parse structure file '{structure_file}': {str(e)}")
     
+    # Validate output folder
     if not out_folder:
         errors.append("ERROR: Output folder path is required")
     
-    # Test optional file arguments
-    if top and not os.path.exists(top):
-        errors.append(f"ERROR: Topology file '{top}' does not exist")
+    # Validate input mode
+    if ensemble_mode:
+        # Ensemble mode validation
+        warnings.append("INFO: Conformational Ensemble Mode")
+        warnings.append("  Input: Multi-model PDB file")
+        warnings.append("  Topology will be generated automatically")
+        
+        # Check if PDB has multiple models
+        try:
+            traj_test = md.load(structure_file)
+            n_models = traj_test.n_frames
+            warnings.append(f"  Found {n_models} models in PDB file")
+            
+            if n_models < 2:
+                warnings.append("  WARNING: PDB contains only 1 model")
+                warnings.append("  Consider using trajectory mode instead")
+        except Exception as e:
+            errors.append(f"ERROR: Could not load PDB as trajectory: {str(e)}")
+            errors.append("  Ensure PDB file contains MODEL/ENDMDL entries for ensemble mode")
+        
+        # In ensemble mode, traj and top should not be provided
+        if traj:
+            errors.append("ERROR: --traj should not be provided in ensemble mode")
+            errors.append("  Trajectory will be generated from PDB models")
+        if top:
+            errors.append("ERROR: --top should not be provided in ensemble mode")
+            errors.append("  Topology will be generated automatically")
     
-    if traj:
-        if not os.path.exists(traj):
-            errors.append(f"ERROR: Trajectory file '{traj}' does not exist")
-        elif not traj.endswith(('.xtc', '.trr', '.dcd')):
-            warnings.append(f"WARNING: Trajectory file '{traj}' has unusual extension")
+    else:
+        # Trajectory mode validation
+        if not traj or not top:
+            errors.append("ERROR: Trajectory mode requires both --traj and --top")
+            errors.append("  Provide: --traj <file.xtc> --top <file.top>")
+            errors.append("  OR use --ensemble_mode for multi-model PDB")
+        else:
+            warnings.append("INFO: Pre-computed Trajectory Mode")
+            warnings.append(f"  Structure: {structure_file}")
+            warnings.append(f"  Trajectory: {traj}")
+            warnings.append(f"  Topology: {top}")
+            
+            # Validate trajectory file
+            if not os.path.exists(traj):
+                errors.append(f"ERROR: Trajectory file '{traj}' does not exist")
+            elif not traj.lower().endswith('.xtc'):
+                errors.append(f"ERROR: Only XTC trajectory format is supported, got: {traj}")
+            
+            # Validate topology file
+            if not os.path.exists(top):
+                errors.append(f"ERROR: Topology file '{top}' does not exist")
+            elif not top.lower().endswith('.top'):
+                errors.append(f"ERROR: Only TOP topology format is supported, got: {top}")
     
+    # Validate force field folder if provided
     if ff_folder and not os.path.exists(ff_folder):
         errors.append(f"ERROR: Force field folder '{ff_folder}' does not exist")
     
@@ -2996,8 +3033,8 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
             except (TypeError, ValueError):
                 errors.append(f"ERROR: PEN cutoff must be numeric, got {cutoff} at position {i}")
     
-    # Test selections (only if structure file is available)
-    if (source_sel or target_sel) and structure_file:
+    # Test selections
+    if (source_sel or target_sel) and structure_file and os.path.exists(structure_file):
         try:
             sys = parse_structure_file(structure_file)
             
@@ -3017,22 +3054,9 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
                 except Exception as e:
                     errors.append(f"ERROR: Invalid target_sel syntax: {str(e)}")
         except Exception as e:
-            warnings.append(f"WARNING: Could not parse structure file for selection validation: {str(e)}")
-    elif (source_sel or target_sel) and not structure_file:
-        warnings.append("WARNING: Cannot validate selections without structure file - will validate after TPR extraction")
+            warnings.append(f"WARNING: Could not validate selections: {str(e)}")
     
-    # Test logical combinations and topology requirements
-    has_topology_method = any([top, tpr_file, (not traj and structure_file)])  # Can get topology from these sources
-    
-    # Special case: TPR + trajectory without structure file
-    if tpr_file and traj and not structure_file:
-        warnings.append("INFO: TPR+trajectory mode - structure will be extracted from TPR file")
-        has_topology_method = True  # TPR contains topology information
-    
-    if traj and not has_topology_method:
-        errors.append("ERROR: Trajectory file provided but no topology source available")
-        errors.append("  Please provide one of: --top (topology file), --tpr_file (TPR file), or allow simulation to generate topology")
-    
+    # Validate logical combinations
     if nointeraction and create_pen:
         errors.append("ERROR: Cannot create PEN without calculating interactions (nointeraction=True)")
     
@@ -3051,36 +3075,9 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     if water_model and water_model not in valid_water_models:
         warnings.append(f"WARNING: Water model '{water_model}' not in common list: {valid_water_models}")
     
-    # Validate file combinations for topology recreation
-    if recreate_topology and not structure_file and not tpr_file:
-        errors.append("ERROR: Cannot recreate topology without structure file or TPR file")
-    
-    # Inform about topology handling approach
-    if tpr_file and os.path.exists(tpr_file):
-        if structure_file:
-            warnings.append("INFO: Both TPR and structure file provided - TPR parameters will be used if topology recreation is needed")
-        else:
-            warnings.append("INFO: TPR-only mode - structure will be extracted and parameters detected from TPR")
-    elif traj and not top and not tpr_file and structure_file:
-        warnings.append("INFO: Structure+trajectory mode - topology will be recreated")
-        warnings.append(f"  Using force field: {force_field}, water model: {water_model}")
-    elif recreate_topology:
-        warnings.append("INFO: Topology recreation requested")
-        if structure_file:
-            warnings.append(f"  Using structure file with force field: {force_field}, water model: {water_model}")
-        elif tpr_file:
-            warnings.append(f"  Will extract structure from TPR and use detected/specified parameters")
-    
-    # Validate critical file combinations
-    if not structure_file and not tpr_file:
-        errors.append("ERROR: Must provide either structure_file or --tpr_file")
-    
-    if tpr_file and not traj and not structure_file:
-        warnings.append("WARNING: TPR file provided without trajectory - limited analysis possible")
-    
     # Test GROMACS functionality
     print("\nTesting GROMACS functionality...")
-    gromacs_errors = test_gromacs_functionality(structure_file, top, traj, ff_folder, tpr_file)
+    gromacs_errors = test_gromacs_functionality(structure_file, top, traj, ff_folder, tpr_file=None)
     errors.extend(gromacs_errors)
     
     # Print results
@@ -3444,7 +3441,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
                        nt=1, skip=1, noconsole_handler=False, create_pen=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
-                       recreate_topology=False, tpr_file=None):
+                       recreate_topology=False, ensemble_mode=False):
     
     # If test_only flag is set, just validate inputs and exit
     if test_only:
@@ -3452,7 +3449,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, 
             traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
             noconsole_handler, create_pen, pen_cutoffs, pen_include_covalents,
-            force_field, water_model, recreate_topology, tpr_file
+            force_field, water_model, recreate_topology, ensemble_mode
         )
         if not is_valid:
             print("\n❌ Workflow cannot proceed due to errors.")
@@ -3532,28 +3529,108 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
     logger.info('gRINN workflow was called as follows: ')
     logger.info(' '.join(sys.argv))
 
-    # Handle the case where structure file is missing but TPR file is available
-    if not structure_file and tpr_file:
-        logger.info('No structure file provided, but TPR file available.')
-        logger.info('Extracting structure from TPR file...')
-        
-        # Extract structure from TPR file
-        extracted_structure = os.path.join(out_folder, 'structure_from_tpr.pdb')
-        if extract_structure_from_tpr(tpr_file, extracted_structure, logger):
-            structure_file = extracted_structure
-            logger.info(f'Structure successfully extracted from TPR: {structure_file}')
-        else:
-            logger.error('Failed to extract structure from TPR file')
-            logger.error('Cannot proceed without structure information')
-            raise ValueError("Could not extract structure from TPR file")
-    
-    # Validate that we have a structure file at this point
+    # Validate that we have a structure file
     if not structure_file:
-        logger.error('No structure file available after processing')
-        logger.error('Please provide either:')
-        logger.error('  1. A structure file (PDB or GRO)')
-        logger.error('  2. A TPR file with --tpr_file parameter')
-        raise ValueError("No structure source available")
+        logger.error('No structure file provided')
+        logger.error('Please provide a PDB structure file')
+        raise ValueError("No structure file available")
+    
+    # Validate structure file exists
+    if not os.path.exists(structure_file):
+        logger.error(f'Structure file not found: {structure_file}')
+        raise ValueError(f"Structure file not found: {structure_file}")
+    
+    # Check if structure file is PDB format (required)
+    if not structure_file.lower().endswith('.pdb'):
+        logger.error('Structure file must be in PDB format')
+        logger.error(f'Got: {structure_file}')
+        raise ValueError("Only PDB format is supported for structure files")
+    
+    # Handle ensemble mode: multi-model PDB to XTC conversion
+    if ensemble_mode:
+        logger.info('=' * 60)
+        logger.info('CONFORMATIONAL ENSEMBLE MODE')
+        logger.info('=' * 60)
+        logger.info('Input: Multi-model PDB file')
+        logger.info('Creating XTC trajectory from PDB models...')
+        
+        # Convert multi-model PDB to XTC trajectory
+        ensemble_xtc = os.path.join(out_folder, 'ensemble_trajectory.xtc')
+        ensemble_pdb = os.path.join(out_folder, 'ensemble_reference.pdb')
+        
+        try:
+            # Load the multi-model PDB
+            trajectory = md.load(structure_file)
+            n_models = trajectory.n_frames
+            
+            logger.info(f'Found {n_models} models in PDB file')
+            
+            if n_models < 2:
+                logger.warning('PDB file contains only 1 model - ensemble mode may not be appropriate')
+                logger.warning('Consider using trajectory mode instead')
+            
+            # Save the first frame as reference structure
+            trajectory[0].save_pdb(ensemble_pdb)
+            logger.info(f'Saved reference structure: {ensemble_pdb}')
+            
+            # Save all frames as XTC trajectory
+            trajectory.save_xtc(ensemble_xtc)
+            logger.info(f'Created XTC trajectory with {n_models} frames: {ensemble_xtc}')
+            
+            # Update structure_file and traj for the workflow
+            structure_file = ensemble_pdb
+            traj = ensemble_xtc
+            
+            logger.info('Ensemble mode setup complete')
+            logger.info(f'  Reference structure: {structure_file}')
+            logger.info(f'  Trajectory: {traj}')
+            
+        except Exception as e:
+            logger.error(f'Failed to process ensemble PDB file: {str(e)}')
+            logger.error('Please ensure the PDB file contains multiple MODEL entries')
+            raise ValueError(f"Ensemble PDB processing failed: {str(e)}")
+    
+    # Validate input mode consistency
+    logger.info('=' * 60)
+    logger.info('INPUT MODE VALIDATION')
+    logger.info('=' * 60)
+    
+    if ensemble_mode:
+        logger.info('Mode: Conformational Ensemble')
+        logger.info(f'  Structure: {structure_file}')
+        logger.info(f'  Trajectory: {traj} (generated from ensemble)')
+        logger.info('  Topology: Will be generated')
+    elif traj and top:
+        logger.info('Mode: Pre-computed Trajectory')
+        logger.info(f'  Structure: {structure_file}')
+        logger.info(f'  Trajectory: {traj}')
+        logger.info(f'  Topology: {top}')
+        
+        # Validate trajectory file
+        if not os.path.exists(traj):
+            logger.error(f'Trajectory file not found: {traj}')
+            raise ValueError(f"Trajectory file not found: {traj}")
+        
+        if not traj.lower().endswith('.xtc'):
+            logger.error('Only XTC trajectory format is supported')
+            logger.error(f'Got: {traj}')
+            raise ValueError("Only XTC format is supported for trajectory files")
+        
+        # Validate topology file
+        if not os.path.exists(top):
+            logger.error(f'Topology file not found: {top}')
+            raise ValueError(f"Topology file not found: {top}")
+        
+        if not top.lower().endswith('.top'):
+            logger.error('Only TOP topology format is supported')
+            logger.error(f'Got: {top}')
+            raise ValueError("Only TOP format is supported for topology files")
+    else:
+        logger.error('Invalid input combination')
+        logger.error('Please use one of:')
+        logger.error('  1. Trajectory mode: --traj <file.xtc> --top <file.top>')
+        logger.error('  2. Ensemble mode: --ensemble_mode (with multi-model PDB)')
+        raise ValueError("Invalid input mode - must provide either trajectory+topology or use ensemble mode")
 
     # If a force field folder is provided
     if ff_folder:
@@ -3568,18 +3645,23 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         shutil.copytree(ff_folder, os.path.join(out_folder, ff_folder_basename), dirs_exist_ok=True)
 
     # Handle topology file with flexible approach for missing topology scenarios
-    topology_result = handle_missing_topology_flexible(
-        structure_file=structure_file,
-        out_folder=out_folder,
-        traj=traj,
-        tpr_file=tpr_file,
-        top=top,
-        force_field=force_field,
-        water_model=water_model,
-        ff_folder=ff_folder,
-        recreate_topology=recreate_topology,
-        logger=logger
-    )
+    # In ensemble mode or trajectory mode without topology, create topology
+    if ensemble_mode or (not top and traj):
+        topology_result = handle_missing_topology_flexible(
+            structure_file=structure_file,
+            out_folder=out_folder,
+            traj=traj,
+            tpr_file=None,  # TPR files not supported in new workflow
+            top=top,
+            force_field=force_field,
+            water_model=water_model,
+            ff_folder=ff_folder,
+            recreate_topology=recreate_topology,
+            logger=logger
+        )
+    else:
+        # Topology provided
+        topology_result = {'topology_available': False, 'topology_created': False, 'method_used': None}
     
     # Handle existing topology file case
     if top and not recreate_topology:
@@ -3608,10 +3690,10 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         else:
             logger.error('Could not create or find topology file for trajectory analysis')
             logger.error('Please provide one of:')
-            logger.error('  1. A topology file (--top)')
-            logger.error('  2. A TPR file (--tpr_file)')  
-            logger.error('  3. Compatible structure file for pdb2gmx')
-            logger.error('  4. Correct force field and water model parameters')
+            logger.error('  1. A topology file with --top')
+            logger.error('  2. Use --ensemble_mode for multi-model PDB')
+            logger.error('  3. Ensure structure file is compatible with pdb2gmx')
+            logger.error('  4. Check force field and water model parameters')
     else:
         logger.info(f'Topology handling completed via method: {topology_result["method_used"]}')
         if topology_result['topology_created']:
@@ -3746,10 +3828,22 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         logger.removeHandler(handler)
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Run gRINN workflow")
-    parser.add_argument("structure_file", type=str, nargs='?', help="Input structure file (PDB or GRO format). Optional if --tpr_file is provided.")
+    parser = argparse.ArgumentParser(
+        description="Run gRINN workflow",
+        epilog="""
+Input Modes:
+  1. Trajectory Mode: Provide structure (PDB), trajectory (XTC), and topology (TOP) files
+     Example: grinn_workflow.py structure.pdb output/ --traj trajectory.xtc --top topology.top
+  
+  2. Conformational Ensemble Mode: Provide multi-model PDB file (topology will be generated)
+     Example: grinn_workflow.py ensemble.pdb output/ --ensemble_mode
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument("structure_file", type=str, help="Input structure file (PDB format). Can be single structure or multi-model ensemble.")
     parser.add_argument("out_folder", type=str, help="Output folder")
-    parser.add_argument("--nofixpdb", action="store_true", help="Fix PDB file using pdbfixer")
+    parser.add_argument("--nofixpdb", action="store_true", help="Skip PDB fixing with pdbfixer")
     parser.add_argument("--initpairfiltercutoff", type=float, default=10, help="Initial pair filter cutoff (default is 10)")
     parser.add_argument("--nointeraction", action="store_true", help="Do not calculate interaction energies")
     parser.add_argument("--gpu", action="store_true", help="Use GPU for non-bonded interactions in GROMACS commands")
@@ -3761,8 +3855,13 @@ def parse_args():
     parser.add_argument("--skip", type=int, default=1, help="Skip every nth frame in trajectory analysis (default is 1, no skipping)")
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
-    parser.add_argument('--top', type=str, help='Topology file (.top)')
-    parser.add_argument('--traj', type=str, help='Trajectory file')
+    
+    # Input mode arguments
+    parser.add_argument('--ensemble_mode', action='store_true',
+                       help='Conformational ensemble mode: input PDB contains multiple models. XTC trajectory will be generated from models.')
+    parser.add_argument('--top', type=str, help='Topology file (.top) - REQUIRED for trajectory mode')
+    parser.add_argument('--traj', type=str, help='Trajectory file (.xtc) - REQUIRED for trajectory mode')
+    
     # Topology recreation arguments
     parser.add_argument('--force_field', type=str, default='amber99sb-ildn', 
                        help='Force field to use for topology recreation (default: amber99sb-ildn). Common options: amber99sb-ildn, charmm27, oplsaa, gromos96')
@@ -3770,17 +3869,20 @@ def parse_args():
                        help='Water model to use for topology recreation (default: tip3p). Common options: tip3p, tip4p, spc, spce')
     parser.add_argument('--recreate_topology', action='store_true',
                        help='Force recreation of topology file even if one exists')
-    parser.add_argument('--tpr_file', type=str, help='TPR file for cases where only TPR+trajectory are available')
+    
     # PEN-specific arguments
     parser.add_argument('--create_pen', action='store_true', help='Create Protein Energy Networks (PENs) and calculate betweenness centralities')
     parser.add_argument('--pen_cutoffs', nargs='+', type=float, default=[1.0], help='List of intEnCutoff values for PEN construction')
     parser.add_argument('--pen_include_covalents', nargs='+', type=lambda x: (str(x).lower() == 'true'), default=[True, False], help='Whether to include covalent bonds in PENs (True/False, can be multiple)')
+    
     # Add test-only flag
     parser.add_argument("--test-only", action="store_true", 
                        help="Only test input validity and GROMACS compatibility without running the workflow")
+    
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(0)
+    
     return parser.parse_args()
 
 def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
@@ -3991,7 +4093,7 @@ def main():
         force_field=args.force_field,
         water_model=args.water_model,
         recreate_topology=args.recreate_topology,
-        tpr_file=getattr(args, 'tpr_file', None)
+        ensemble_mode=args.ensemble_mode
     )
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ import re
 import sys
 import argparse
 from dash import Dash, dcc, html, dash_table, Input, Output, State, no_update, ctx
+from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.graph_objects as go
@@ -117,22 +118,44 @@ def main():
         existing_cols_to_drop = [col for col in cols2drop if col in df.columns]
         other_cols_to_drop = [col for col in ['res1', 'res2'] if col in df.columns]
         
+        # Create a copy to avoid modifying original data
+        df_copy = df.copy()
+        
         long_df = (
-            df
-            .drop(columns=existing_cols_to_drop + other_cols_to_drop)
+            df_copy
+            .drop(columns=existing_cols_to_drop + other_cols_to_drop, errors='ignore')
             .melt(id_vars=['Pair'], var_name='Frame', value_name='Energy')
         )
         long_df['Energy'] = pd.to_numeric(long_df['Energy'], errors='coerce')
         long_df = long_df[long_df['Energy'].notna()].copy()
+        
+        # Ensure we have data before continuing
+        if long_df.empty:
+            print(f"Warning: No valid energy data for {energy_type}")
+            continue
+            
         long_df['EnergyType'] = energy_type
         energy_long[energy_type] = long_df
+
+    # Verify we have at least Total energy data
+    if 'Total' not in energy_long or energy_long['Total'].empty:
+        print("Error: No valid Total energy data found!")
+        sys.exit(1)
 
     # Keep the original for compatibility
     total_long = energy_long['Total']
 
     # Determine frame range
-    df_frames = pd.to_numeric(total_long['Frame'], errors='coerce').dropna().astype(int)
-    frame_min, frame_max = int(df_frames.min()), int(df_frames.max())
+    try:
+        df_frames = pd.to_numeric(total_long['Frame'], errors='coerce').dropna().astype(int)
+        if df_frames.empty:
+            print("Error: No valid frame numbers found in data!")
+            sys.exit(1)
+        frame_min, frame_max = int(df_frames.min()), int(df_frames.max())
+        print(f"Frame range: {frame_min} to {frame_max}")
+    except Exception as e:
+        print(f"Error determining frame range: {e}")
+        sys.exit(1)
 
     # Residue list - sort by residue number to maintain protein sequence order
     def sort_residues_by_sequence(residues):
@@ -157,20 +180,29 @@ def main():
     # Simple network cache for faster UI responsiveness
 
     # Molecular visualization setup
-    cartoon = Representation(type='cartoon', color='uniform')
-    cartoon.set_color_params({'value': 0xD3D3D3})
-    chainA = molstar_helper.get_targets(chain='A')
-    component = molstar_helper.create_component(label='Protein', targets=[chainA], representation=cartoon)
-    topo = molstar_helper.parse_molecule(pdb_path, component=component)
-    
-    # Handle trajectory loading
-    if traj_xtc:
-        coords = molstar_helper.parse_coordinate(traj_xtc)
-        def get_full_trajectory():
-            return molstar_helper.get_trajectory(topo, coords)
-        initial_traj = get_full_trajectory()
-    else:
-        # Use static structure only
+    try:
+        cartoon = Representation(type='cartoon', color='uniform')
+        cartoon.set_color_params({'value': 0xD3D3D3})
+        chainA = molstar_helper.get_targets(chain='A')
+        component = molstar_helper.create_component(label='Protein', targets=[chainA], representation=cartoon)
+        topo = molstar_helper.parse_molecule(pdb_path, component=component)
+        
+        # Handle trajectory loading
+        if traj_xtc:
+            coords = molstar_helper.parse_coordinate(traj_xtc)
+            def get_full_trajectory():
+                return molstar_helper.get_trajectory(topo, coords)
+            initial_traj = get_full_trajectory()
+            print(f"Loaded trajectory from {traj_xtc}")
+        else:
+            # Use static structure only
+            initial_traj = topo
+            print("Using static structure (no trajectory file)")
+    except Exception as e:
+        print(f"Error setting up molecular viewer: {e}")
+        print("Dashboard will continue without 3D viewer functionality")
+        # Create a minimal fallback
+        topo = molstar_helper.parse_molecule(pdb_path)
         initial_traj = topo
 
     # Build graph helper - optimized for speed
@@ -190,11 +222,15 @@ def main():
         # Add edges based on energy cutoff
         edges_added = 0
         for _, row in df_f.iterrows():
-            r1, r2 = row['Pair'].split('-')
-            e = row['Energy']
-            if abs(e) >= cutoff:
-                G.add_edge(r1, r2, weight=abs(e))
-                edges_added += 1
+            try:
+                r1, r2 = row['Pair'].split('-')
+                e = row['Energy']
+                if abs(e) >= cutoff:
+                    G.add_edge(r1, r2, weight=abs(e))
+                    edges_added += 1
+            except Exception as e:
+                # Skip malformed pairs
+                continue
         
         # Add covalent bonds if requested
         if include_cov and 'include' in str(include_cov):
@@ -202,6 +238,7 @@ def main():
             for i in range(len(first_res_list) - 1):
                 if not G.has_edge(first_res_list[i], first_res_list[i+1]):
                     G.add_edge(first_res_list[i], first_res_list[i+1], weight=0.0)
+                    covalent_added += 1
         
         return G
 
@@ -217,16 +254,42 @@ def main():
             return last_network_data['deg'], last_network_data['btw'], last_network_data['clo']
         
         # Compute new network data
-        G = build_graph(frame, include_cov, cutoff)
-        deg = dict(G.degree())
-        btw = nx.betweenness_centrality(G)
-        clo = nx.closeness_centrality(G)
-        
-        # Cache the results
-        last_network_params = cache_key
-        last_network_data = {'deg': deg, 'btw': btw, 'clo': clo}
-        
-        return deg, btw, clo
+        try:
+            G = build_graph(frame, include_cov, cutoff)
+            
+            # Check if graph has nodes
+            if G.number_of_nodes() == 0:
+                print(f"Warning: Empty graph for frame {frame}")
+                deg = {}
+                btw = {}
+                clo = {}
+            else:
+                deg = dict(G.degree())
+                
+                # Betweenness and closeness require connected components
+                if G.number_of_edges() == 0:
+                    # No edges - all centralities are 0
+                    btw = {node: 0.0 for node in G.nodes()}
+                    clo = {node: 0.0 for node in G.nodes()}
+                else:
+                    try:
+                        btw = nx.betweenness_centrality(G)
+                        clo = nx.closeness_centrality(G)
+                    except Exception as e:
+                        print(f"Error computing centrality: {e}")
+                        btw = {node: 0.0 for node in G.nodes()}
+                        clo = {node: 0.0 for node in G.nodes()}
+            
+            # Cache the results
+            last_network_params = cache_key
+            last_network_data = {'deg': deg, 'btw': btw, 'clo': clo}
+            
+            return deg, btw, clo
+            
+        except Exception as e:
+            print(f"Error in get_cached_network_data: {e}")
+            # Return empty dicts to avoid crashing
+            return {}, {}, {}
 
     # App layout
     app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -801,7 +864,8 @@ def main():
         Input('first_residue_table','selected_rows'),
         Input('second_residue_table','selected_rows'),
         Input('main-tabs','value'),
-        State('second_residue_table','data')
+        State('second_residue_table','data'),
+        prevent_initial_call=True
     )
     def update_molecular_selection(sel1, sel2, active_tab, second_data):
         seldata = no_update
@@ -821,12 +885,29 @@ def main():
             first = first_res_list[sel1[0]]
             second = second_data[sel2[0]]['Residue']
             
-            r1,c1=first.split('_')[0][3:],first.split('_')[1]
-            r2,c2=second.split('_')[0][3:],second.split('_')[1]
-            t1=molstar_helper.get_targets(c1,r1); t2=molstar_helper.get_targets(c2,r2)
-            seldata=molstar_helper.get_selection([t1,t2],select=True,add=False)
-            focusdata=molstar_helper.get_focus([t1,t2],analyse=True)
-        except:
+            # Parse residue names (e.g., "GLY290_A" -> chain "A", resnum "290")
+            first_parts = first.split('_')
+            second_parts = second.split('_')
+            
+            if len(first_parts) < 2 or len(second_parts) < 2:
+                return seldata, focusdata
+            
+            # Extract residue number from format like "GLY290"
+            r1_match = re.findall(r'\d+', first_parts[0])
+            r2_match = re.findall(r'\d+', second_parts[0])
+            
+            if not r1_match or not r2_match:
+                return seldata, focusdata
+            
+            r1, c1 = r1_match[0], first_parts[1]
+            r2, c2 = r2_match[0], second_parts[1]
+            
+            t1 = molstar_helper.get_targets(c1, r1)
+            t2 = molstar_helper.get_targets(c2, r2)
+            seldata = molstar_helper.get_selection([t1, t2], select=True, add=False)
+            focusdata = molstar_helper.get_focus([t1, t2], analyse=True)
+        except Exception as e:
+            print(f"Error in molecular selection: {e}")
             pass
         
         return seldata, focusdata
@@ -836,7 +917,7 @@ def main():
         Output('viewer','selection', allow_duplicate=True),
         Output('viewer','focus', allow_duplicate=True),
         Input('matrix_heatmap','clickData'),
-        Input('main-tabs','value'),
+        State('main-tabs','value'),
         prevent_initial_call=True
     )
     def update_molecular_selection_from_heatmap(clickData, active_tab):
@@ -867,8 +948,6 @@ def main():
                         chain = parts[1] if len(parts) > 1 else 'A'
                         
                         # Extract residue number from the end of res_part
-                        # Find the last sequence of digits
-                        import re
                         match = re.search(r'(\d+)$', res_part)
                         if match:
                             res_num = match.group(1)
@@ -881,7 +960,6 @@ def main():
                         return chain, res_num
                     else:
                         # Try to parse without underscore - assume format like "ALA123"
-                        import re
                         match = re.search(r'([A-Za-z]+)(\d+)', res_name)
                         if match:
                             res_num = match.group(2)
@@ -914,8 +992,8 @@ def main():
         except Exception as e:
             print(f"❌ Error processing heatmap click: {e}")
             print(f"Click data: {clickData}")
-            # Return empty objects to avoid errors but don't crash
-            return {}, {}
+            # Return no_update to avoid errors
+            return no_update, no_update
         
         return seldata, focusdata
 
@@ -1147,7 +1225,8 @@ def main():
         [Input('update_network_btn','n_clicks'),
          Input('frame_slider','value')],
         [State('include_covalent_edges','value'),
-         State('energy_cutoff','value')]
+         State('energy_cutoff','value')],
+        prevent_initial_call=False
     )
     def update_network(n_clicks, frame, include_cov, cutoff):
         # Use default values if not provided
@@ -1157,6 +1236,14 @@ def main():
             cutoff = 1.0
         if include_cov is None:
             include_cov = ['include']
+        
+        # Only update network if button was clicked, not just frame slider change
+        # This prevents expensive network recalculation on every frame change
+        if ctx.triggered:
+            trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            if trigger_id == 'frame_slider' and n_clicks == 0:
+                # Don't update network on frame change unless button was clicked at least once
+                raise PreventUpdate
             
         # Use simple cached network data for fast response
         deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
@@ -1225,16 +1312,27 @@ def main():
     @app.callback(
         Output('paths_table','data'),
         Input('find_paths_btn','n_clicks'),
-        Input('frame_slider','value'),
-        Input('include_covalent_edges','value'),
-        Input('energy_cutoff','value'),
+        State('frame_slider','value'),
+        State('include_covalent_edges','value'),
+        State('energy_cutoff','value'),
         State('source_residue','value'),
-        State('target_residue','value')
+        State('target_residue','value'),
+        prevent_initial_call=True
     )
     def find_paths(n_clicks, frame, include_cov, cutoff, source, target):
-        if n_clicks < 1 or not source or not target or source == target:
+        if n_clicks is None or n_clicks < 1 or not source or not target or source == target:
             return []
+        
+        # Use default values if not provided
+        if frame is None:
+            frame = frame_min
+        if cutoff is None:
+            cutoff = 1.0
+        if include_cov is None:
+            include_cov = ['include']
+            
         G = build_graph(frame, include_cov, cutoff)
+        
         try:
             paths_gen = nx.shortest_simple_paths(G, source, target, weight='weight')
             out = []
@@ -1244,7 +1342,14 @@ def main():
                 length = sum(G[u][v]['weight'] for u, v in zip(path[:-1], path[1:]))
                 out.append({'Path': '-'.join(path), 'Length': round(length, 6)})
             return out
-        except:
+        except nx.NetworkXNoPath:
+            print(f"No path found between {source} and {target}")
+            return []
+        except nx.NodeNotFound as e:
+            print(f"Node not found in graph: {e}")
+            return []
+        except Exception as e:
+            print(f"Error finding paths: {e}")
             return []
 
     print(f"🍀 gRINN Dashboard starting...")
