@@ -13,6 +13,7 @@ from dash_molstar.utils.representations import Representation
 import networkx as nx
 import numpy as np
 from prody import parsePDB
+from tqdm import tqdm
 
 # Import the sophisticated network construction function from the main workflow
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -81,13 +82,17 @@ def main():
     data_dir, pdb_path, total_csv, vdw_csv, elec_csv, traj_xtc = setup_data_paths(args.results_folder)
     
     # Load and transform interaction energy data
+    print("\n" + "="*60)
+    print("🍀 gRINN Dashboard Initialization")
+    print("="*60)
     try:
+        print("\n[1/5] Loading energy data files...")
         total_df = pd.read_csv(total_csv)
         vdw_df = pd.read_csv(vdw_csv)
         elec_df = pd.read_csv(elec_csv)
-        print(f"Successfully loaded energy data from {data_dir}")
+        print(f"      ✓ Loaded data from {data_dir}")
     except Exception as e:
-        print(f"Error loading energy data: {e}")
+        print(f"      ✗ Error loading energy data: {e}")
         sys.exit(1)
 
     # Keep original wide-format data for proper network construction
@@ -102,6 +107,8 @@ def main():
         'Electrostatic': elec_df
     }
 
+    print("\n[2/5] Processing energy data...")
+    # PERFORMANCE OPTIMIZATION: Create Pair column efficiently
     total_df['Pair'] = total_df['res1'] + '-' + total_df['res2']
     vdw_df['Pair'] = vdw_df['res1'] + '-' + vdw_df['res2']
     elec_df['Pair'] = elec_df['res1'] + '-' + elec_df['res2']
@@ -139,11 +146,35 @@ def main():
 
     # Verify we have at least Total energy data
     if 'Total' not in energy_long or energy_long['Total'].empty:
-        print("Error: No valid Total energy data found!")
+        print("      ✗ Error: No valid Total energy data found!")
         sys.exit(1)
+    
+    print("      ✓ Processed energy data successfully")
 
     # Keep the original for compatibility
     total_long = energy_long['Total']
+    
+    print("\n[3/5] Optimizing data structures for fast access...")
+    # PERFORMANCE OPTIMIZATION: Convert Frame columns to string once
+    for energy_type in energy_long.keys():
+        energy_long[energy_type]['Frame'] = energy_long[energy_type]['Frame'].astype(str)
+    
+    # Update total_long reference
+    total_long = energy_long['Total']
+    
+    # AGGRESSIVE PERFORMANCE OPTIMIZATION: Pre-index data by frame for instant lookups
+    frame_indexed_data = {}
+    print("      Indexing frames for instant lookup...")
+    for energy_type in tqdm(energy_long.keys(), desc="      Progress", ncols=70):
+        frame_indexed_data[energy_type] = {}
+        for frame_str in energy_long[energy_type]['Frame'].unique():
+            frame_data = energy_long[energy_type][energy_long[energy_type]['Frame'] == frame_str]
+            # Store as dict for O(1) lookups
+            frame_indexed_data[energy_type][frame_str] = {
+                'pairs': frame_data['Pair'].values,
+                'energies': frame_data['Energy'].values
+            }
+    print("      ✓ Frame indexing complete")
 
     # Determine frame range
     try:
@@ -158,28 +189,68 @@ def main():
         sys.exit(1)
 
     # Residue list - sort by residue number to maintain protein sequence order
+    # PERFORMANCE OPTIMIZATION: Cache residue number extraction
+    _residue_number_cache = {}
+    
+    def extract_residue_number(res_name):
+        """Extract residue number with caching for performance"""
+        if res_name in _residue_number_cache:
+            return _residue_number_cache[res_name]
+        
+        try:
+            # Extract number from residue name like 'GLY290_A'
+            parts = res_name.split('_')
+            if len(parts) >= 2:
+                # Get the number part from the first part (e.g., '290' from 'GLY290')
+                number = re.findall(r'\d+', parts[0])
+                if number:
+                    result = int(number[0])
+                    _residue_number_cache[res_name] = result
+                    return result
+            _residue_number_cache[res_name] = 0
+            return 0
+        except:
+            _residue_number_cache[res_name] = 0
+            return 0
+    
     def sort_residues_by_sequence(residues):
         """Sort residues by their sequence number extracted from residue names like GLY290_A"""
-        def extract_residue_number(res_name):
-            try:
-                # Extract number from residue name like 'GLY290_A'
-                parts = res_name.split('_')
-                if len(parts) >= 2:
-                    # Get the number part from the first part (e.g., '290' from 'GLY290')
-                    number = re.findall(r'\d+', parts[0])
-                    if number:
-                        return int(number[0])
-                return 0
-            except:
-                return 0
-        
         return sorted(residues, key=extract_residue_number)
 
     first_res_list = sort_residues_by_sequence(total_df['res1'].unique())
+    
+    # PERFORMANCE OPTIMIZATION: Cache sorted residue list for frequent lookups
+    _sorted_residues_cache = {}
+    
+    # PERFORMANCE OPTIMIZATION: Pre-compute only average energies for bar charts
+    print("\n[4/5] Pre-computing average energies for residue pairs...")
+    _pairwise_avg_energies = {}
+    
+    for first in tqdm(first_res_list, desc="      Progress", ncols=70):
+        _pairwise_avg_energies[first] = {}
+        filt = total_df[(total_df['res1']==first)|(total_df['res2']==first)]
+        others = [r for r in pd.concat([filt['res1'],filt['res2']]).unique() if r!=first]
+        
+        for second in others:
+            p1, p2 = f"{first}-{second}", f"{second}-{first}"
+            _pairwise_avg_energies[first][second] = {}
+            
+            for energy_type in ['Total', 'VdW', 'Electrostatic']:
+                df_pair = energy_long[energy_type][
+                    (energy_long[energy_type]['Pair']==p1) | 
+                    (energy_long[energy_type]['Pair']==p2)
+                ]
+                
+                # Store average only
+                avg_energy = round(df_pair['Energy'].mean(), 3) if not df_pair.empty else 0.0
+                _pairwise_avg_energies[first][second][energy_type] = avg_energy
+    
+    print("      ✓ Average energies computed")
 
     # Simple network cache for faster UI responsiveness
 
     # Molecular visualization setup
+    print("\n[5/5] Setting up molecular viewer...")
     try:
         cartoon = Representation(type='cartoon', color='uniform')
         cartoon.set_color_params({'value': 0xD3D3D3})
@@ -193,14 +264,14 @@ def main():
             def get_full_trajectory():
                 return molstar_helper.get_trajectory(topo, coords)
             initial_traj = get_full_trajectory()
-            print(f"Loaded trajectory from {traj_xtc}")
+            print(f"      ✓ Loaded trajectory from {traj_xtc}")
         else:
             # Use static structure only
             initial_traj = topo
-            print("Using static structure (no trajectory file)")
+            print("      ✓ Using static structure (no trajectory file)")
     except Exception as e:
-        print(f"Error setting up molecular viewer: {e}")
-        print("Dashboard will continue without 3D viewer functionality")
+        print(f"      ⚠ Warning: Error setting up molecular viewer: {e}")
+        print("      Dashboard will continue without 3D viewer functionality")
         # Create a minimal fallback
         topo = molstar_helper.parse_molecule(pdb_path)
         initial_traj = topo
@@ -208,42 +279,44 @@ def main():
     # Build graph helper - optimized for speed
     def build_graph(frame, include_cov, cutoff):
         """
-        Build a protein energy network using the simplified method for better performance.
+        Build a protein energy network using indexed data for instant access.
         """
         
-        # Use the simplified method for speed
-        df_f = total_long[total_long['Frame'].astype(str) == str(frame)]
+        # AGGRESSIVE OPTIMIZATION: Use pre-indexed data instead of DataFrame filtering
+        frame_str = str(frame)
         G = nx.Graph()
         
         # Add all residues as nodes
-        for res in first_res_list:
-            G.add_node(res)
+        G.add_nodes_from(first_res_list)
         
-        # Add edges based on energy cutoff
-        edges_added = 0
-        for _, row in df_f.iterrows():
-            try:
-                r1, r2 = row['Pair'].split('-')
-                e = row['Energy']
-                if abs(e) >= cutoff:
-                    G.add_edge(r1, r2, weight=abs(e))
-                    edges_added += 1
-            except Exception as e:
-                # Skip malformed pairs
-                continue
+        # Get pre-indexed data for this frame (O(1) lookup)
+        if frame_str in frame_indexed_data['Total']:
+            pairs = frame_indexed_data['Total'][frame_str]['pairs']
+            energies = frame_indexed_data['Total'][frame_str]['energies']
+            
+            # Filter by cutoff and create edges (no DataFrame operations)
+            edges = []
+            for pair, energy in zip(pairs, energies):
+                if abs(energy) >= cutoff:
+                    r1, r2 = pair.split('-', 1)  # split only once
+                    edges.append((r1, r2, abs(energy)))
+            
+            if edges:
+                G.add_weighted_edges_from(edges)
         
         # Add covalent bonds if requested
         if include_cov and 'include' in str(include_cov):
-            covalent_added = 0
-            for i in range(len(first_res_list) - 1):
-                if not G.has_edge(first_res_list[i], first_res_list[i+1]):
-                    G.add_edge(first_res_list[i], first_res_list[i+1], weight=0.0)
-                    covalent_added += 1
+            # PERFORMANCE OPTIMIZATION: Create edges in batch
+            covalent_edges = [(first_res_list[i], first_res_list[i+1], 0.0) 
+                             for i in range(len(first_res_list) - 1) 
+                             if not G.has_edge(first_res_list[i], first_res_list[i+1])]
+            if covalent_edges:
+                G.add_weighted_edges_from(covalent_edges)
         
         return G
 
     def get_cached_network_data(frame, include_cov, cutoff):
-        """Get network data with simple caching to avoid recomputation."""
+        """Get network data with caching and fast approximate centrality for large graphs."""
         global last_network_params, last_network_data
         
         # Create cache key
@@ -273,7 +346,16 @@ def main():
                     clo = {node: 0.0 for node in G.nodes()}
                 else:
                     try:
-                        btw = nx.betweenness_centrality(G)
+                        # AGGRESSIVE OPTIMIZATION: Use approximate algorithms for large graphs
+                        num_nodes = G.number_of_nodes()
+                        if num_nodes > 100:
+                            # Use approximate betweenness with sampling for faster computation
+                            k = min(50, num_nodes // 2)  # Sample subset of nodes
+                            btw = nx.betweenness_centrality(G, k=k, normalized=True)
+                        else:
+                            btw = nx.betweenness_centrality(G)
+                        
+                        # Closeness is fast, compute normally
                         clo = nx.closeness_centrality(G)
                     except Exception as e:
                         print(f"Error computing centrality: {e}")
@@ -292,7 +374,13 @@ def main():
             return {}, {}, {}
 
     # App layout
-    app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+    # AGGRESSIVE OPTIMIZATION: Configure app for maximum performance
+    app = Dash(
+        __name__, 
+        external_stylesheets=[dbc.themes.BOOTSTRAP],
+        suppress_callback_exceptions=True,  # Faster callback registration
+        compress=True  # Enable compression for faster data transfer
+    )
 
     # Soft, harmonious color palette with low contrast and close color relationships
     soft_palette = {
@@ -719,23 +807,29 @@ def main():
         
         first = first_res_list[sel1[0]]
         
-        # Always update second table when first residue is selected
-        filt = total_df[(total_df['res1']==first)|(total_df['res2']==first)]
-        others = [r for r in pd.concat([filt['res1'],filt['res2']]).unique() if r!=first]
-        # Sort the interacting residues by sequence order
-        others_sorted = sort_residues_by_sequence(others)
+        # PERFORMANCE OPTIMIZATION: Cache filtering results
+        cache_key = f"pairwise_{first}"
+        if cache_key not in _sorted_residues_cache:
+            # Always update second table when first residue is selected
+            filt = total_df[(total_df['res1']==first)|(total_df['res2']==first)]
+            others = [r for r in pd.concat([filt['res1'],filt['res2']]).unique() if r!=first]
+            # Sort the interacting residues by sequence order
+            others_sorted = sort_residues_by_sequence(others)
+            _sorted_residues_cache[cache_key] = others_sorted
+        else:
+            others_sorted = _sorted_residues_cache[cache_key]
+        
         table = [{'Residue': r} for r in others_sorted]
         
         # Create bar chart for average energies
         if others_sorted:
             bar_data = {'Residue': [], 'Total': [], 'VdW': [], 'Electrostatic': []}
+            # AGGRESSIVE OPTIMIZATION: Use pre-computed average energies
             for r in others_sorted:
-                p1, p2 = f"{first}-{r}", f"{r}-{first}"
                 bar_data['Residue'].append(r)
                 
                 for energy_type in ['Total', 'VdW', 'Electrostatic']:
-                    vals = energy_long[energy_type][(energy_long[energy_type]['Pair']==p1)|(energy_long[energy_type]['Pair']==p2)]['Energy']
-                    ie = round(vals.mean(), 3) if not vals.empty else 0
+                    ie = _pairwise_avg_energies.get(first, {}).get(r, {}).get(energy_type, 0)
                     bar_data[energy_type].append(ie)
             
             bar_fig = go.Figure()
@@ -770,7 +864,9 @@ def main():
                     bordercolor='#B5C5B5',
                     borderwidth=1
                 ),
-                margin=dict(l=80, r=20, t=40, b=80)
+                margin=dict(l=80, r=20, t=40, b=80),
+                # AGGRESSIVE OPTIMIZATION: Disable animations
+                transition={'duration': 0}
             )
         
         # Check if first residue table was the trigger - if so, clear second table selection
@@ -799,20 +895,29 @@ def main():
         figures = {}
         for energy_type, config in energy_configs.items():
             fig = go.Figure()
+            
+            # Use DataFrame directly - filtering is fast enough with indexed data
             df_line = energy_long[energy_type][(energy_long[energy_type]['Pair']==p1)|(energy_long[energy_type]['Pair']==p2)]
             
             if not df_line.empty:
+                # Convert to numpy for faster plotting
+                frames = df_line['Frame'].values
+                energies = df_line['Energy'].values
+                
                 fig.add_trace(go.Scatter(
-                    x=df_line['Frame'],
-                    y=df_line['Energy'],
+                    x=frames,
+                    y=energies,
                     mode='lines+markers',
                     marker=dict(size=4, opacity=0.7, color=config['color']),
                     line=dict(color=config['color'], width=2),
                     name=energy_type
                 ))
                 
-                if selected_frame in df_line['Frame'].astype(int).values:
-                    e0 = df_line[df_line['Frame'].astype(int)==selected_frame]['Energy'].values[0]
+                # Find current frame value (frames are strings)
+                frame_str = str(selected_frame)
+                if frame_str in frames:
+                    idx = np.where(frames == frame_str)[0][0]
+                    e0 = energies[idx]
                     fig.add_trace(go.Scatter(
                         x=[selected_frame],
                         y=[e0],
@@ -832,7 +937,9 @@ def main():
                 font=dict(family='Roboto, sans-serif', size=10, color='#4A5A4A'),
                 title_font=dict(family='Roboto, sans-serif', size=12, color='#4A5A4A'),
                 margin=dict(l=60, r=10, t=40, b=40),
-                showlegend=False
+                showlegend=False,
+                # AGGRESSIVE OPTIMIZATION: Disable animations for instant updates
+                transition={'duration': 0}
             )
             figures[energy_type] = fig
         
@@ -1156,35 +1263,35 @@ def main():
         if df.empty:
             return go.Figure()
         
-        # Get all residues and sort them by sequence order
-        all_residues = set(df['res1']).union(df['res2'])
-        residues = sort_residues_by_sequence(all_residues)
+        # PERFORMANCE OPTIMIZATION: Cache residue sorting
+        cache_key = f"matrix_{energy_type}"
+        if cache_key not in _sorted_residues_cache:
+            all_residues = set(df['res1']).union(df['res2'])
+            residues = sort_residues_by_sequence(all_residues)
+            _sorted_residues_cache[cache_key] = residues
+        else:
+            residues = _sorted_residues_cache[cache_key]
         
-        # Create matrix with proper indexing
-        matrix_df = pd.DataFrame(float('nan'), index=residues, columns=residues)
+        # AGGRESSIVE OPTIMIZATION: Use numpy array instead of DataFrame for faster operations
+        n = len(residues)
+        res_to_idx = {res: i for i, res in enumerate(residues)}
+        matrix = np.zeros((n, n), dtype=np.float32)
         
-        # Fill the matrix with energy values
-        for _, row in df.iterrows():
-            if row['res1'] in residues and row['res2'] in residues:
-                energy_val = float(row['energy'])
-                matrix_df.loc[row['res1'], row['res2']] = energy_val
-                matrix_df.loc[row['res2'], row['res1']] = energy_val
-        
-        # Set diagonal to 0 (self-interactions)
-        for res in residues:
-            matrix_df.loc[res, res] = 0.0
-        
-        # Fill remaining NaN values with 0
-        matrix_df = matrix_df.fillna(0.0)
+        # Fill matrix using numpy indexing (much faster than DataFrame.loc)
+        for res1, res2, energy_val in zip(df['res1'], df['res2'], df['energy']):
+            if res1 in res_to_idx and res2 in res_to_idx:
+                i, j = res_to_idx[res1], res_to_idx[res2]
+                matrix[i, j] = energy_val
+                matrix[j, i] = energy_val  # Symmetric
         
         # Use symmetric range based on slider value
         zmin, zmax = -range_value, range_value
         
-        # Create the heatmap
+        # Create the heatmap using numpy array directly
         fig = go.Figure(data=go.Heatmap(
-            z=matrix_df.values,
-            x=matrix_df.columns.tolist(),
-            y=matrix_df.index.tolist(),
+            z=matrix,
+            x=residues,
+            y=residues,
             colorscale='RdBu_r',
             zmid=0,
             zmin=zmin,
@@ -1213,7 +1320,9 @@ def main():
             title_font=dict(size=16, family='Roboto, sans-serif', color='#4A5A4A'),
             plot_bgcolor='rgba(250,255,250,0.4)',
             paper_bgcolor='rgba(250,255,250,0.4)',
-            height=600
+            height=600,
+            # AGGRESSIVE OPTIMIZATION: Disable animations for instant updates
+            transition={'duration': 0}
         )
         return fig
 
@@ -1237,26 +1346,19 @@ def main():
         if include_cov is None:
             include_cov = ['include']
         
-        # Only update network if button was clicked, not just frame slider change
-        # This prevents expensive network recalculation on every frame change
-        if ctx.triggered:
-            trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-            if trigger_id == 'frame_slider' and n_clicks == 0:
-                # Don't update network on frame change unless button was clicked at least once
-                raise PreventUpdate
+        # Network metrics update with both button clicks and frame slider changes
+        # Caching in get_cached_network_data makes this fast enough for real-time updates
             
         # Use simple cached network data for fast response
         deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
         
         def mk(data, title): 
-            # Use the global residue list to ensure consistency
-            residues_sorted = sort_residues_by_sequence(first_res_list)
+            # PERFORMANCE OPTIMIZATION: Use cached sorted residues (first_res_list is already sorted)
+            residues_sorted = first_res_list
             
-            # Create values list in the same order as sorted residues
-            vals = [data.get(res, 0.0) for res in residues_sorted]
-            
-            # Ensure we have valid numeric values
-            vals = [float(v) if v is not None and not pd.isna(v) else 0.0 for v in vals]
+            # AGGRESSIVE OPTIMIZATION: Use numpy for faster array operations
+            vals = np.array([data.get(res, 0.0) for res in residues_sorted], dtype=np.float32)
+            vals = np.nan_to_num(vals, nan=0.0)  # Replace any NaN with 0
             
             fig = go.Figure(go.Bar(
                 x=vals,
@@ -1302,7 +1404,9 @@ def main():
                 bargap=0.02,
                 showlegend=False,
                 hovermode='closest',
-                dragmode=False
+                dragmode=False,
+                # AGGRESSIVE OPTIMIZATION: Disable animations
+                transition={'duration': 0}
             )
             return fig
         
@@ -1355,6 +1459,13 @@ def main():
     print(f"🍀 gRINN Dashboard starting...")
     print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}")
     print(f"🌐 Dashboard: http://0.0.0.0:8051")
+    
+    print("\n" + "="*60)
+    print("✓ Initialization complete!")
+    print("="*60)
+    print("\n🚀 Starting dashboard server...")
+    print("   Open your browser to: http://localhost:8051")
+    print("   Press Ctrl+C to stop the server\n")
     
     app.run(debug=False, host='0.0.0.0', port=8051)
 

@@ -36,6 +36,7 @@ SUPPORTED_VERSIONS=(
 
 # Global flags
 REBUILD_ALL=false
+DASHBOARD_ONLY=false
 NO_CACHE=""
 
 # Function to print colored output
@@ -177,6 +178,7 @@ show_usage() {
     echo "gRINN Docker Build Script"
     echo ""
     echo "Usage: $0 <GROMACS_VERSION> [OPTIONS]"
+    echo "       $0 --dashboard-only [OPTIONS]"
     echo ""
     echo "Supported GROMACS Versions:"
     echo "  2020.7    - Legacy version (Ubuntu 20.04)"
@@ -189,19 +191,23 @@ show_usage() {
     echo "Options:"
     echo "  --no-cache        Build without using Docker cache"
     echo "  --rebuild-all     Rebuild all supported GROMACS versions"
+    echo "  --dashboard-only  Build dashboard-only image (no GROMACS)"
     echo "  --help, -h        Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0 2024.1"
     echo "  $0 2025.2 --no-cache"
     echo "  $0 2020.7"
-    echo "  $0 --rebuild-all             # Build all supported versions"
-    echo "  $0 --rebuild-all --no-cache  # Build all without cache"
+    echo "  $0 --dashboard-only           # Build lightweight dashboard image"
+    echo "  $0 --dashboard-only --no-cache"
+    echo "  $0 --rebuild-all              # Build all supported versions"
+    echo "  $0 --rebuild-all --no-cache   # Build all without cache"
     echo ""
 }
 
 # Parse arguments
 REBUILD_ALL=false
+DASHBOARD_ONLY=false
 
 # Check for special flags first
 if [[ "$1" == "--rebuild-all" ]]; then
@@ -229,10 +235,33 @@ if [[ "$1" == "--rebuild-all" ]]; then
     
     # Execute rebuild all and exit (but don't call it here, set flag instead)
     # The actual function call will happen in main() after all functions are defined
+elif [[ "$1" == "--dashboard-only" ]]; then
+    DASHBOARD_ONLY=true
+    GROMACS_VERSION="NONE"
+    shift
+    
+    # Parse remaining options for dashboard-only
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --no-cache)
+                NO_CACHE="--no-cache"
+                shift
+                ;;
+            --help|-h)
+                show_usage
+                exit 0
+                ;;
+            *)
+                print_error "Unknown option for --dashboard-only: $1"
+                print_info "Valid options: --no-cache, --help"
+                exit 1
+                ;;
+        esac
+    done
 fi
 
-# Only check for missing arguments if we're not doing rebuild-all
-if [[ "$REBUILD_ALL" != "true" ]]; then
+# Only check for missing arguments if we're not doing rebuild-all or dashboard-only
+if [[ "$REBUILD_ALL" != "true" && "$DASHBOARD_ONLY" != "true" ]]; then
     if [ $# -eq 0 ]; then
         print_error "No GROMACS version specified"
         show_usage
@@ -294,6 +323,11 @@ find_grinn_root() {
 
 # Validate GROMACS version format
 validate_version() {
+    # Skip validation for dashboard-only mode
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        return 0
+    fi
+    
     if [[ ! "$GROMACS_VERSION" =~ ^[0-9]{4}\.[0-9]+$ ]]; then
         print_error "Invalid GROMACS version format: $GROMACS_VERSION"
         print_info "Expected format: YYYY.X (e.g., 2024.1, 2025.2)"
@@ -323,7 +357,11 @@ setup_build_context() {
 
 # Select appropriate Dockerfile
 select_dockerfile() {
-    if [[ "$GROMACS_VERSION" == "2020.7" ]]; then
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        DOCKERFILE_PATH="$BUILD_CONTEXT/${GRINN_PREFIX}Dockerfile"
+        IMAGE_TAG="grinn-dashboard:latest"
+        DESCRIPTION="Dashboard-only (no GROMACS, lightweight)"
+    elif [[ "$GROMACS_VERSION" == "2020.7" ]]; then
         DOCKERFILE_PATH="$BUILD_CONTEXT/${GRINN_PREFIX}Dockerfile.gromacs-2020.7"
         IMAGE_TAG="grinn:gromacs-2020.7"
         DESCRIPTION="Legacy GROMACS 2020.7 (Ubuntu 20.04)"
@@ -341,6 +379,11 @@ select_dockerfile() {
 
 # Estimate build time
 estimate_build_time() {
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        ESTIMATED_TIME="3-5 minutes"
+        return 0
+    fi
+    
     local gromacs_major=$(echo "$GROMACS_VERSION" | cut -d. -f1)
     
     if [[ "$GROMACS_VERSION" == "2020.7" ]]; then
@@ -373,8 +416,10 @@ build_image() {
         print_warning "Building without cache (will take longer)"
     fi
     
-    if [[ "$GROMACS_VERSION" != "2020.7" ]]; then
+    if [[ "$GROMACS_VERSION" != "2020.7" && "$GROMACS_VERSION" != "NONE" ]]; then
         BUILD_CMD="$BUILD_CMD --build-arg GROMACS_VERSION=$GROMACS_VERSION"
+    elif [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        BUILD_CMD="$BUILD_CMD --build-arg GROMACS_VERSION=NONE"
     fi
     
     BUILD_CMD="$BUILD_CMD --build-arg GRINN_PREFIX=$GRINN_PREFIX"
@@ -420,32 +465,56 @@ build_image_silent() {
 # Verify the built image
 verify_image() {
     print_info "================================================================"
-    print_info "Verifying GROMACS $GROMACS_VERSION installation..."
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        print_info "Verifying dashboard-only image..."
+    else
+        print_info "Verifying GROMACS $GROMACS_VERSION installation..."
+    fi
     print_info "================================================================"
     
-    if docker run --rm "$IMAGE_TAG" gmx --version | grep -q "$GROMACS_VERSION"; then
-        print_success "GROMACS $GROMACS_VERSION installed correctly"
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        # For dashboard-only, just verify the dashboard command works
+        if docker run --rm "$IMAGE_TAG" dashboard --help > /dev/null 2>&1; then
+            print_success "Dashboard functionality accessible"
+        else
+            print_error "Dashboard verification failed"
+            exit 1
+        fi
     else
-        print_error "GROMACS $GROMACS_VERSION verification failed"
-        exit 1
-    fi
-    
-    if docker run --rm "$IMAGE_TAG" workflow --help > /dev/null 2>&1; then
-        print_success "gRINN workflow accessible"
-    else
-        print_error "gRINN workflow verification failed"
-        exit 1
+        # For full builds, verify GROMACS and workflow
+        if docker run --rm "$IMAGE_TAG" gmx --version | grep -q "$GROMACS_VERSION"; then
+            print_success "GROMACS $GROMACS_VERSION installed correctly"
+        else
+            print_error "GROMACS $GROMACS_VERSION verification failed"
+            exit 1
+        fi
+        
+        if docker run --rm "$IMAGE_TAG" workflow --help > /dev/null 2>&1; then
+            print_success "gRINN workflow accessible"
+        else
+            print_error "gRINN workflow verification failed"
+            exit 1
+        fi
     fi
 }
 
 # Silent version of verify_image for rebuild-all (returns success/failure)
 verify_image_silent() {
-    if docker run --rm "$IMAGE_TAG" gmx --version 2>/dev/null | grep -q "$GROMACS_VERSION"; then
-        if docker run --rm "$IMAGE_TAG" workflow --help >/dev/null 2>&1; then
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        # Dashboard-only verification
+        if docker run --rm "$IMAGE_TAG" dashboard --help >/dev/null 2>&1; then
             return 0
         fi
+        return 1
+    else
+        # Full build verification
+        if docker run --rm "$IMAGE_TAG" gmx --version 2>/dev/null | grep -q "$GROMACS_VERSION"; then
+            if docker run --rm "$IMAGE_TAG" workflow --help >/dev/null 2>&1; then
+                return 0
+            fi
+        fi
+        return 1
     fi
-    return 1
 }
 
 # Show final information
@@ -457,16 +526,31 @@ show_summary() {
     print_info "GROMACS Version: $GROMACS_VERSION"
     print_info "Description: $DESCRIPTION"
     print_info ""
-    print_info "Usage Examples:"
-    print_info "  docker run --rm $IMAGE_TAG gmx --version"
-    print_info "  docker run --rm $IMAGE_TAG workflow --help"
-    print_info "  docker run -p 8051:8051 -v /data:/data $IMAGE_TAG dashboard /data/results"
-    print_info "  docker run -it $IMAGE_TAG bash"
+    
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        print_info "Usage Examples:"
+        print_info "  docker run -p 8051:8051 -v /data:/data $IMAGE_TAG dashboard /data/results"
+        print_info "  docker run -it $IMAGE_TAG bash"
+        print_info ""
+        print_info "Note: This is a dashboard-only image (no GROMACS or workflow)."
+        print_info "      For full gRINN functionality, build with a GROMACS version."
+    else
+        print_info "Usage Examples:"
+        print_info "  docker run --rm $IMAGE_TAG gmx --version"
+        print_info "  docker run --rm $IMAGE_TAG workflow --help"
+        print_info "  docker run -p 8051:8051 -v /data:/data $IMAGE_TAG dashboard /data/results"
+        print_info "  docker run -it $IMAGE_TAG bash"
+    fi
+    
     print_info ""
     print_info "Next steps:"
     print_info "  1. Test the image with your data"
     print_info "  2. Push to registry if needed"
-    print_info "  3. Build additional GROMACS versions"
+    if [[ "$GROMACS_VERSION" == "NONE" ]]; then
+        print_info "  3. Build a full GROMACS version for workflow capabilities"
+    else
+        print_info "  3. Build additional GROMACS versions or dashboard-only"
+    fi
     print_info ""
 }
 

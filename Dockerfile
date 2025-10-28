@@ -132,6 +132,8 @@ ARG GROMACS_VERSION=2024.1
 
 # Prevent interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
+ENV CONDA_ALWAYS_YES=true
+ENV MAMBA_NO_BANNER=1
 
 # Install runtime dependencies (conditional on GROMACS vs dashboard-only)
 RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
@@ -162,70 +164,100 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
 # Create symlink for python
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Install Miniconda
+# Install Miniforge (conda-forge based, no Anaconda ToS issues)
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
-        MINICONDA_ARCH="aarch64"; \
+        MINIFORGE_ARCH="aarch64"; \
     else \
-        MINICONDA_ARCH="x86_64"; \
+        MINIFORGE_ARCH="x86_64"; \
     fi && \
-    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${MINICONDA_ARCH}.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh
+    wget --quiet https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${MINIFORGE_ARCH}.sh -O /tmp/miniforge.sh && \
+    bash /tmp/miniforge.sh -b -p /opt/conda && \
+    rm /tmp/miniforge.sh
 
 ENV PATH=/opt/conda/bin:$PATH
 
-# Configure conda channels
-RUN conda config --set channel_priority strict && \
+# Configure conda to avoid ToS issues and use only open source channels
+RUN conda config --set solver libmamba && \
+    conda config --set remote_read_timeout_secs 120 && \
+    conda config --set always_yes true && \
+    conda config --show-sources
+
+# Set conda to use conda-forge as primary channel and avoid anaconda ToS issues
+RUN conda config --remove channels defaults 2>/dev/null || true && \
     conda config --add channels conda-forge && \
-    conda config --add channels bioconda && \
-    conda config --add channels plotly
+    conda config --set channel_priority strict && \
+    echo "channels:" > ~/.condarc && \
+    echo "  - conda-forge" >> ~/.condarc && \
+    echo "  - bioconda" >> ~/.condarc && \
+    echo "  - plotly" >> ~/.condarc && \
+    echo "channel_priority: strict" >> ~/.condarc
 
-# Accept conda Terms of Service for required channels
-RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
-    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r && \
-    conda tos accept --override-channels --channel conda-forge
-
-# Install mamba for faster package installation
-RUN conda install -y -c conda-forge mamba
+# Install mamba for faster package installation (from conda-forge only)
+RUN echo "📦 Installing mamba..." && \
+    CONDA_ALWAYS_YES=yes conda install -c conda-forge mamba && \
+    echo "✅ Mamba installed successfully" && \
+    mamba --version
 
 # Create conda environment (conditional dependencies based on mode)
 RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
         echo "📦 Creating full gRINN environment with GROMACS support..."; \
-        mamba create -y -n grinn-env -c conda-forge -c bioconda -c plotly \
-            python=3.10 \
+        echo "Debug: Creating base environment..." && \
+        CONDA_ALWAYS_YES=yes mamba create -n grinn-env -c conda-forge python=3.10 && \
+        echo "Debug: Installing core scientific packages..." && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge \
+            numpy \
+            scipy \
+            pandas \
+            networkx \
+            tqdm && \
+        echo "Debug: Installing bio packages..." && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge -c bioconda \
             pdbfixer \
             prody \
-            numpy \
-            scipy \
-            pyprind \
-            pandas \
             mdtraj \
             openmm \
-            panedr \
+            biotite && \
+        echo "Debug: Installing gromacs wrapper..." && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge \
             gromacswrapper \
-            networkx \
-            tqdm \
+            panedr && \
+        echo "Debug: Installing web packages..." && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge -c plotly \
             dash \
             dash-bootstrap-components \
-            plotly \
-            biotite; \
+            plotly && \
+        echo "Debug: Installing remaining packages..." && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge \
+            pyprind; \
     else \
         echo "📦 Creating dashboard-only environment..."; \
-        mamba create -y -n grinn-env -c conda-forge -c plotly \
-            python=3.10 \
+        CONDA_ALWAYS_YES=yes mamba create -n grinn-env -c conda-forge python=3.10 && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge \
             numpy \
             scipy \
             pandas \
             networkx \
             tqdm \
+            pyprind \
+            gromacswrapper \
+            panedr && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge -c bioconda \
+            prody \
+            mdtraj \
+            pdbfixer \
+            openmm && \
+        CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge -c plotly \
             dash \
             dash-bootstrap-components \
             plotly; \
     fi
 
-# Install dash-molstar for 3D visualization
-RUN conda run -n grinn-env pip install dash-molstar
+# Install additional packages via pip (more reliable for some packages)
+RUN echo "📦 Installing additional packages via pip..." && \
+    conda run -n grinn-env pip install --no-cache-dir \
+        dash-molstar && \
+    echo "✅ Pip packages installed successfully"
 
 # Copy GROMACS installation from builder stage (create empty dir for dashboard-only)
 RUN if [ "${GROMACS_VERSION}" = "NONE" ]; then \
@@ -303,15 +335,14 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
 COPY ${GRINN_PREFIX}grinn_workflow.py ./
 COPY ${GRINN_PREFIX}gRINN_Dashboard ./gRINN_Dashboard
 
-# Make grinn_workflow.py executable (but add check for dashboard-only mode)
+# Make grinn_workflow.py executable and add dashboard-only guard
 RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
         chmod +x grinn_workflow.py; \
     else \
-        echo '#!/bin/bash' > grinn_workflow.py && \
-        echo 'echo "❌ gRINN workflow not available in dashboard-only mode"' >> grinn_workflow.py && \
-        echo 'echo "This image was built for dashboard functionality only"' >> grinn_workflow.py && \
-        echo 'echo "Use: docker run -p 8051:8051 <image> dashboard <results_folder>"' >> grinn_workflow.py && \
-        echo 'exit 1' >> grinn_workflow.py && \
+        # For dashboard-only mode, add a runtime guard at the top of main execution
+        # but keep the file importable for dashboard
+        sed -i '1s/^/import sys\n/' grinn_workflow.py && \
+        sed -i '/if __name__ == .__main__./a\    print("❌ gRINN workflow not available in dashboard-only mode")\n    print("This image was built for dashboard functionality only")\n    print("Use: docker run -p 8051:8051 <image> dashboard <results_folder>")\n    sys.exit(1)' grinn_workflow.py && \
         chmod +x grinn_workflow.py; \
     fi
 
@@ -355,8 +386,10 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     fi && \
     echo '}' >> /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
-    echo '# Source GROMACS environment' >> /app/entrypoint.sh && \
-    echo 'source $GMXRC_PATH' >> /app/entrypoint.sh && \
+    echo '# Source GROMACS environment (only if available)' >> /app/entrypoint.sh && \
+    echo 'if [ -f "$GMXRC_PATH" ]; then' >> /app/entrypoint.sh && \
+    echo '    source $GMXRC_PATH' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
     echo '' >> /app/entrypoint.sh && \
     echo '# Handle different execution modes' >> /app/entrypoint.sh && \
     echo 'case "$1" in' >> /app/entrypoint.sh && \

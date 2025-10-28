@@ -26,9 +26,12 @@
 
 **Build:**
 ```bash
-./build-grinn.sh 2024.1  # Linux/Mac
+./build-grinn.sh 2024.1  # Linux/Mac - Full version with GROMACS
+./build-grinn.sh --dashboard-only  # Lightweight dashboard-only (no GROMACS)
 docker build --build-arg GROMACS_VERSION=2024.1 -t grinn:gromacs-2024.1 .  # Windows
 ```
+
+> 💡 **Tip**: Use `--dashboard-only` for a lightweight (~500MB) image that only includes the visualization dashboard, perfect for viewing pre-computed results. See [DASHBOARD-ONLY.md](DASHBOARD-ONLY.md) for details.
 
 **Run Trajectory Mode:**
 ```bash

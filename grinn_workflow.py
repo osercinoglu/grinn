@@ -409,129 +409,6 @@ def auto_detect_and_copy_topology_dependencies(topology_file, out_folder, gromac
             logger.error(error_msg)
         raise RuntimeError(error_msg)
 
-def detect_topology_parameters_from_tpr(tpr_file, logger=None):
-    """
-    Extract topology information from a TPR file using gmx dump.
-    
-    Parameters:
-    - tpr_file (str): Path to the TPR file
-    - logger: Optional logger for output messages
-    
-    Returns:
-    - dict: Dictionary containing detected parameters (force_field, water_model, etc.)
-    """
-    try:
-        if logger:
-            logger.info(f"Analyzing TPR file to detect simulation parameters: {tpr_file}")
-        
-        # Create temporary file for gmx dump output
-        with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False) as tmp_file:
-            tmp_filename = tmp_file.name
-        
-        try:
-            # Use gmx dump to extract information from TPR file
-            gromacs.dump(s=tpr_file, o=tmp_filename)
-            
-            # Parse the dump output to extract relevant information
-            detected_params = {
-                'force_field': None,
-                'water_model': None,
-                'has_water': False,
-                'has_ions': False
-            }
-            
-            with open(tmp_filename, 'r') as f:
-                content = f.read().lower()
-            
-            # Detect force field from common patterns in the dump
-            ff_patterns = {
-                'amber99sb-ildn': ['amber99sb-ildn', 'amber99sb', 'amber'],
-                'charmm27': ['charmm27', 'charmm'],
-                'oplsaa': ['opls-aa', 'oplsaa', 'opls'],
-                'gromos96': ['gromos96', 'gromos'],
-                'amber14sb': ['amber14sb', 'amber14'],
-                'amber03': ['amber03']
-            }
-            
-            for ff_name, patterns in ff_patterns.items():
-                if any(pattern in content for pattern in patterns):
-                    detected_params['force_field'] = ff_name
-                    break
-            
-            # Detect water model
-            water_patterns = {
-                'tip3p': ['tip3p', 'tip 3p'],
-                'tip4p': ['tip4p', 'tip 4p'],
-                'spc': ['spc216', 'spc'],
-                'spce': ['spce', 'spc/e']
-            }
-            
-            for water_name, patterns in water_patterns.items():
-                if any(pattern in content for pattern in patterns):
-                    detected_params['water_model'] = water_name
-                    detected_params['has_water'] = True
-                    break
-            
-            # Check for water molecules
-            if any(water_name in content for water_name in ['sol', 'water', 'h2o']):
-                detected_params['has_water'] = True
-            
-            # Check for ions
-            if any(ion in content for ion in ['na+', 'cl-', 'na', 'cl', 'mg2+', 'ca2+']):
-                detected_params['has_ions'] = True
-            
-            if logger:
-                logger.info(f"TPR analysis results:")
-                logger.info(f"  Force field: {detected_params['force_field'] or 'Could not detect'}")
-                logger.info(f"  Water model: {detected_params['water_model'] or 'Could not detect'}")
-                logger.info(f"  Contains water: {detected_params['has_water']}")
-                logger.info(f"  Contains ions: {detected_params['has_ions']}")
-            
-            return detected_params
-            
-        finally:
-            # Clean up temporary file
-            if os.path.exists(tmp_filename):
-                os.remove(tmp_filename)
-                
-    except Exception as e:
-        if logger:
-            logger.warning(f"Could not analyze TPR file: {str(e)}")
-        return {'force_field': None, 'water_model': None, 'has_water': False, 'has_ions': False}
-
-def extract_structure_from_tpr(tpr_file, output_pdb, logger=None):
-    """
-    Extract structure from TPR file and save as PDB.
-    
-    Parameters:
-    - tpr_file (str): Path to the TPR file
-    - output_pdb (str): Path where to save the extracted structure
-    - logger: Optional logger for output messages
-    
-    Returns:
-    - bool: True if successful, False otherwise
-    """
-    try:
-        if logger:
-            logger.info(f"Extracting structure from TPR file: {tpr_file}")
-        
-        # Use gmx editconf to extract coordinates from TPR file
-        gromacs.editconf(f=tpr_file, o=output_pdb)
-        
-        if os.path.exists(output_pdb):
-            if logger:
-                logger.info(f"Structure successfully extracted to: {output_pdb}")
-            return True
-        else:
-            if logger:
-                logger.error("Failed to extract structure from TPR file")
-            return False
-            
-    except Exception as e:
-        if logger:
-            logger.error(f"Error extracting structure from TPR: {str(e)}")
-        return False
-
 def recreate_topology_file(structure_file, out_folder, force_field, water_model, ff_folder=None, logger=None):
     """
     Recreate topology file using pdb2gmx from structure file.
@@ -610,22 +487,20 @@ def recreate_topology_file(structure_file, out_folder, force_field, water_model,
             logger.error(f"Error in topology recreation: {str(e)}")
         return False
 
-def handle_missing_topology_flexible(structure_file, out_folder, traj=None, tpr_file=None, top=None, 
+def handle_missing_topology_flexible(structure_file, out_folder, traj=None, top=None, 
                                    force_field='amber99sb-ildn', water_model='tip3p', ff_folder=None, 
                                    recreate_topology=False, logger=None):
     """
-    Flexibly handle missing topology files by detecting parameters and recreating topology.
+    Flexibly handle missing topology files by recreating topology from structure.
     
     This function handles various scenarios:
-    1. Only TPR + trajectory available -> extract structure and parameters from TPR
-    2. Only structure + trajectory available -> recreate topology with specified/detected parameters
-    3. Existing topology but user wants to recreate it
+    1. Structure + trajectory available -> recreate topology with specified parameters
+    2. Existing topology but user wants to recreate it
     
     Parameters:
     - structure_file (str): Path to structure file
     - out_folder (str): Output directory
     - traj (str): Optional trajectory file path
-    - tpr_file (str): Optional TPR file path
     - top (str): Optional existing topology file path
     - force_field (str): Force field to use for recreation
     - water_model (str): Water model to use for recreation
@@ -639,8 +514,6 @@ def handle_missing_topology_flexible(structure_file, out_folder, traj=None, tpr_
     result = {
         'topology_available': False,
         'topology_created': False,
-        'structure_extracted': False,
-        'parameters_detected': False,
         'method_used': None
     }
     
@@ -657,42 +530,7 @@ def handle_missing_topology_flexible(structure_file, out_folder, traj=None, tpr_
             result['method_used'] = 'existing'
             return result
         
-        # Case 1: TPR file available - extract structure and parameters
-        if tpr_file and os.path.exists(tpr_file):
-            if logger:
-                logger.info("TPR file available - extracting structure and detecting parameters")
-            
-            # Extract structure from TPR
-            extracted_structure = os.path.join(out_folder, 'structure_from_tpr.pdb')
-            if extract_structure_from_tpr(tpr_file, extracted_structure, logger):
-                result['structure_extracted'] = True
-                
-                # Detect parameters from TPR
-                detected_params = detect_topology_parameters_from_tpr(tpr_file, logger)
-                if detected_params['force_field'] or detected_params['water_model']:
-                    result['parameters_detected'] = True
-                    
-                    # Use detected parameters if available, otherwise use provided ones
-                    ff_to_use = detected_params['force_field'] or force_field
-                    water_to_use = detected_params['water_model'] or water_model
-                    
-                    if logger:
-                        logger.info(f"Using parameters: FF={ff_to_use}, Water={water_to_use}")
-                    
-                    # Recreate topology with detected/provided parameters
-                    if recreate_topology_file(extracted_structure, out_folder, ff_to_use, water_to_use, ff_folder, logger):
-                        result['topology_created'] = True
-                        result['topology_available'] = True
-                        result['method_used'] = 'tpr_extraction'
-                        
-                        # Copy the extracted structure as system_dry.pdb if not already done
-                        system_pdb = os.path.join(out_folder, 'system_dry.pdb')
-                        if not os.path.exists(system_pdb):
-                            shutil.copy(extracted_structure, system_pdb)
-                        
-                        return result
-        
-        # Case 2: Structure file available - recreate topology with provided parameters
+        # Structure file available - recreate topology with provided parameters
         if structure_file and os.path.exists(structure_file):
             if logger:
                 logger.info("Structure file available - recreating topology with specified parameters")
@@ -707,7 +545,7 @@ def handle_missing_topology_flexible(structure_file, out_folder, traj=None, tpr_
         
         # If we get here, topology creation failed
         if logger:
-            logger.error("Failed to create topology file through any available method")
+            logger.error("Failed to create topology file")
             logger.error("Available options:")
             logger.error("  1. Provide a topology file directly with --top")
             logger.error("  2. Use --ensemble_mode for multi-model PDB files")
@@ -3077,7 +2915,7 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     
     # Test GROMACS functionality
     print("\nTesting GROMACS functionality...")
-    gromacs_errors = test_gromacs_functionality(structure_file, top, traj, ff_folder, tpr_file=None)
+    gromacs_errors = test_gromacs_functionality(structure_file, top, traj, ff_folder)
     errors.extend(gromacs_errors)
     
     # Print results
@@ -3313,7 +3151,7 @@ def setup_gromacs_environment(logger=None):
         'version_string': gromacs_info['version_string']
     }
 
-def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=None, tpr_file=None):
+def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=None):
     """
     Test if GROMACS can actually process the input files.
     
@@ -3394,16 +3232,7 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
                 else:
                     errors.append(f"ERROR: GROMACS cannot process topology with PDB: {error_msg}")
         
-        # Test 4: If TPR file provided, test structure extraction
-        if tpr_file and os.path.exists(tpr_file):
-            try:
-                test_pdb_from_tpr = os.path.join(temp_dir, "test_from_tpr.pdb")
-                gromacs.editconf(f=tpr_file, o=test_pdb_from_tpr)
-                print(f"✓ TPR file is valid and structure can be extracted")
-            except Exception as e:
-                errors.append(f"ERROR: Cannot extract structure from TPR file: {str(e)}")
-        
-        # Test 5: If trajectory provided, test with gmx check
+        # Test 4: If trajectory provided, test with gmx check
         if traj and os.path.exists(traj):
             try:
                 # Use gmx check to verify trajectory
@@ -3412,7 +3241,7 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
             except Exception as e:
                 errors.append(f"ERROR: GROMACS cannot read trajectory file: {str(e)}")
         
-        # Test 6: If custom force field provided, check if it has required files
+        # Test 5: If custom force field provided, check if it has required files
         if ff_folder and os.path.exists(ff_folder):
             required_ff_files = ['forcefield.itp', 'aminoacids.rtp']
             missing_ff_files = []
@@ -3651,7 +3480,6 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             structure_file=structure_file,
             out_folder=out_folder,
             traj=traj,
-            tpr_file=None,  # TPR files not supported in new workflow
             top=top,
             force_field=force_field,
             water_model=water_model,
