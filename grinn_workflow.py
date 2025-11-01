@@ -111,6 +111,11 @@ def parse_topology_includes(topology_file, logger=None):
                     
                     # Convert relative paths to absolute paths
                     if not os.path.isabs(include_path):
+                        # Normalize path by removing leading ./ or ../
+                        include_path = os.path.normpath(include_path)
+                        # Remove leading ./ if present
+                        if include_path.startswith('./'):
+                            include_path = include_path[2:]
                         include_path = os.path.join(topology_dir, include_path)
                     
                     include_files.append(include_path)
@@ -2578,6 +2583,98 @@ def create_result_dataframes_optimized(energiesDict, logger):
     
     return df_total, df_elec, df_vdw
 
+def compute_and_save_average_energies(energiesDict, system, outFolder, logger):
+    """
+    Compute average interaction energies for each residue pair and energy type,
+    and save to a single CSV file.
+    
+    Parameters:
+    - energiesDict (dict): Dictionary containing energy data for residue pairs
+    - system: ProDy structure object
+    - outFolder (str): Output folder path
+    - logger (logging.Logger): Logger object
+    """
+    logger.info('Creating average energies table...')
+    
+    # Cache for residue information
+    residue_info_cache = {}
+    
+    def get_residue_info(resindex):
+        """Get cached residue information"""
+        if resindex not in residue_info_cache:
+            sel = system.select(f'resindex {resindex}')
+            residue_info_cache[resindex] = {
+                'chain': sel.getChids()[0],
+                'resnum': sel.getResnums()[0],
+                'resname': sel.getResnames()[0]
+            }
+        return residue_info_cache[resindex]
+    
+    # Prepare data for the table
+    rows = []
+    total_pairs = len(energiesDict)
+    
+    logger.info(f'Processing {total_pairs} residue pairs...')
+    
+    # Progress tracking with tqdm
+    with tqdm.tqdm(total=total_pairs, desc='Computing averages', unit='pair', 
+                   ncols=100, disable=False) as pbar:
+        
+        for i, (pair_key, energies) in enumerate(energiesDict.items()):
+            # Parse pair indices
+            res1_idx, res2_idx = map(int, pair_key.split('-'))
+            
+            # Get residue information
+            res1_info = get_residue_info(res1_idx)
+            res2_info = get_residue_info(res2_idx)
+            
+            # Create residue identifiers
+            res1_id = f"{res1_info['resname']}{res1_info['resnum']}_{res1_info['chain']}"
+            res2_id = f"{res2_info['resname']}{res2_info['resnum']}_{res2_info['chain']}"
+            
+            # Compute averages for each energy type
+            avg_total = np.mean(energies['Total'])
+            avg_elec = np.mean(energies['Elec'])
+            avg_vdw = np.mean(energies['VdW'])
+            
+            # Create row data
+            row = {
+                'Residue_1': res1_id,
+                'Residue_2': res2_id,
+                'Res1_Chain': res1_info['chain'],
+                'Res1_ResNum': res1_info['resnum'],
+                'Res1_ResName': res1_info['resname'],
+                'Res2_Chain': res2_info['chain'],
+                'Res2_ResNum': res2_info['resnum'],
+                'Res2_ResName': res2_info['resname'],
+                'Avg_Total_Energy': avg_total,
+                'Avg_Elec_Energy': avg_elec,
+                'Avg_VdW_Energy': avg_vdw
+            }
+            
+            rows.append(row)
+            pbar.update(1)
+            
+            # Log progress every 10%
+            if (i + 1) % max(1, total_pairs // 10) == 0:
+                progress_pct = ((i + 1) / total_pairs) * 100
+                logger.info(f'Progress: {progress_pct:.1f}% ({i + 1}/{total_pairs} pairs processed)')
+    
+    # Create DataFrame
+    logger.info('Creating DataFrame from computed averages...')
+    df_averages = pd.DataFrame(rows)
+    
+    # Sort by Residue_1 and Residue_2 for better readability
+    df_averages = df_averages.sort_values(['Res1_ResNum', 'Res2_ResNum'])
+    
+    # Save to CSV
+    output_file = os.path.join(outFolder, 'average_interaction_energies.csv')
+    logger.info(f'Saving average energies to {output_file}')
+    df_averages.to_csv(output_file, index=False, float_format='%.6f')
+    
+    logger.info(f'Average energies table saved successfully with {len(df_averages)} residue pairs')
+    logger.info(f'Columns: {", ".join(df_averages.columns)}')
+
 def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger):
     """
     Parse interaction energies from EDR files and save the results.
@@ -2670,6 +2767,10 @@ def parse_interaction_energies(edrFiles, pairsFilteredChunks, outFolder, logger)
         df_elec.to_csv(os.path.join(outFolder, 'energies_intEnElec.csv'), index=False)
         logger.info('Saving results to ' + os.path.join(outFolder, 'energies_intEnVdW.csv'))
         df_vdw.to_csv(os.path.join(outFolder, 'energies_intEnVdW.csv'), index=False)
+
+        # Compute and save average energies table
+        logger.info('Computing average interaction energies for all residue pairs...')
+        compute_and_save_average_energies(energiesDict, system, outFolder, logger)
 
         logger.info('Pickling results...')
 

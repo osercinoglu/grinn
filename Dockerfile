@@ -250,7 +250,8 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
         CONDA_ALWAYS_YES=yes mamba install -n grinn-env -c conda-forge -c plotly \
             dash \
             dash-bootstrap-components \
-            plotly; \
+            plotly \
+            flask-compress; \
     fi
 
 # Install additional packages via pip (more reliable for some packages)
@@ -406,18 +407,18 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
         echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh; \
         echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh; \
         echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh; \
-        echo '        stdbuf -oL -eL conda run -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh; \
+        echo '        conda run --no-capture-output -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh; \
     fi && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "📊 Starting gRINN Dashboard with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh && \
-    echo '        echo "Dashboard will be available at http://localhost:8051"' >> /app/entrypoint.sh && \
+    echo '        echo "Dashboard will be available at http://localhost:8050"' >> /app/entrypoint.sh && \
     echo '        echo "Results folder: $1"' >> /app/entrypoint.sh && \
     echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
     echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
     echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
-    echo '        stdbuf -oL -eL conda run -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
+    echo '        conda run --no-capture-output -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "gmx")' >> /app/entrypoint.sh && \
     if [ "${GROMACS_VERSION}" = "NONE" ]; then \
@@ -470,7 +471,7 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
     fi
 
 # Expose port for dashboard
-EXPOSE 8051
+EXPOSE 8050
 
 # Set entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

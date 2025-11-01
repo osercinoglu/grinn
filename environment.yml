@@ -31,6 +31,7 @@ dependencies:
   - dash
   - dash-bootstrap-components
   - plotly
+  - flask-compress
   
   # pip packages
   - pip

@@ -49,10 +49,11 @@ def setup_data_paths(results_folder):
     total_csv = os.path.join(data_dir, 'energies_intEnTotal.csv')
     vdw_csv = os.path.join(data_dir, 'energies_intEnVdW.csv')
     elec_csv = os.path.join(data_dir, 'energies_intEnElec.csv')
+    avg_csv = os.path.join(data_dir, 'average_interaction_energies.csv')
     traj_xtc = os.path.join(data_dir, 'traj_dry.xtc')
     
     # Check if required files exist
-    required_files = [pdb_path, total_csv, vdw_csv, elec_csv]
+    required_files = [pdb_path, total_csv, vdw_csv, elec_csv, avg_csv]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
@@ -64,6 +65,7 @@ def setup_data_paths(results_folder):
         print("  - energies_intEnTotal.csv")
         print("  - energies_intEnVdW.csv")
         print("  - energies_intEnElec.csv")
+        print("  - average_interaction_energies.csv")
         print("  - traj_dry.xtc (optional, for trajectory visualization)")
         sys.exit(1)
     
@@ -71,7 +73,54 @@ def setup_data_paths(results_folder):
     if not os.path.exists(traj_xtc):
         traj_xtc = None
     
-    return data_dir, pdb_path, total_csv, vdw_csv, elec_csv, traj_xtc
+    return data_dir, pdb_path, total_csv, vdw_csv, elec_csv, avg_csv, traj_xtc
+
+def load_average_energies(avg_csv):
+    """
+    Load pre-computed average energies from CSV file.
+    
+    Parameters:
+    - avg_csv (str): Path to average_interaction_energies.csv
+    
+    Returns:
+    - dict: Nested dictionary with structure {res1: {res2: {'Total': val, 'VdW': val, 'Electrostatic': val}}}
+    """
+    print("\n[4/5] Loading pre-computed average energies...", flush=True)
+    
+    try:
+        df = pd.read_csv(avg_csv)
+        print(f"      ✓ Loaded {len(df)} residue pairs from {os.path.basename(avg_csv)}", flush=True)
+    except Exception as e:
+        print(f"      ✗ Error loading average energies: {e}", flush=True)
+        sys.exit(1)
+    
+    # Build nested dictionary structure for fast lookups
+    _pairwise_avg_energies = {}
+    
+    for _, row in df.iterrows():
+        res1 = row['Residue_1']
+        res2 = row['Residue_2']
+        
+        # Initialize nested dicts if needed
+        if res1 not in _pairwise_avg_energies:
+            _pairwise_avg_energies[res1] = {}
+        if res2 not in _pairwise_avg_energies:
+            _pairwise_avg_energies[res2] = {}
+        
+        # Store both directions for symmetric lookup
+        _pairwise_avg_energies[res1][res2] = {
+            'Total': round(row['Avg_Total_Energy'], 3),
+            'VdW': round(row['Avg_VdW_Energy'], 3),
+            'Electrostatic': round(row['Avg_Elec_Energy'], 3)
+        }
+        _pairwise_avg_energies[res2][res1] = {
+            'Total': round(row['Avg_Total_Energy'], 3),
+            'VdW': round(row['Avg_VdW_Energy'], 3),
+            'Electrostatic': round(row['Avg_Elec_Energy'], 3)
+        }
+    
+    print(f"      ✓ Average energies loaded for {len(_pairwise_avg_energies)} residues", flush=True)
+    return _pairwise_avg_energies
 
 def main():
     """Main function to setup and run the dashboard"""
@@ -79,20 +128,20 @@ def main():
     args = parse_arguments()
     
     # Setup data paths
-    data_dir, pdb_path, total_csv, vdw_csv, elec_csv, traj_xtc = setup_data_paths(args.results_folder)
+    data_dir, pdb_path, total_csv, vdw_csv, elec_csv, avg_csv, traj_xtc = setup_data_paths(args.results_folder)
     
     # Load and transform interaction energy data
-    print("\n" + "="*60)
-    print("🍀 gRINN Dashboard Initialization")
-    print("="*60)
+    print("\n" + "="*60, flush=True)
+    print("🍀 gRINN Dashboard Initialization", flush=True)
+    print("="*60, flush=True)
     try:
-        print("\n[1/5] Loading energy data files...")
+        print("\n[1/5] Loading energy data files...", flush=True)
         total_df = pd.read_csv(total_csv)
         vdw_df = pd.read_csv(vdw_csv)
         elec_df = pd.read_csv(elec_csv)
-        print(f"      ✓ Loaded data from {data_dir}")
+        print(f"      ✓ Loaded data from {data_dir}", flush=True)
     except Exception as e:
-        print(f"      ✗ Error loading energy data: {e}")
+        print(f"      ✗ Error loading energy data: {e}", flush=True)
         sys.exit(1)
 
     # Keep original wide-format data for proper network construction
@@ -107,7 +156,7 @@ def main():
         'Electrostatic': elec_df
     }
 
-    print("\n[2/5] Processing energy data...")
+    print("\n[2/5] Processing energy data...", flush=True)
     # PERFORMANCE OPTIMIZATION: Create Pair column efficiently
     total_df['Pair'] = total_df['res1'] + '-' + total_df['res2']
     vdw_df['Pair'] = vdw_df['res1'] + '-' + vdw_df['res2']
@@ -149,12 +198,12 @@ def main():
         print("      ✗ Error: No valid Total energy data found!")
         sys.exit(1)
     
-    print("      ✓ Processed energy data successfully")
+    print("      ✓ Processed energy data successfully", flush=True)
 
     # Keep the original for compatibility
     total_long = energy_long['Total']
     
-    print("\n[3/5] Optimizing data structures for fast access...")
+    print("\n[3/5] Optimizing data structures for fast access...", flush=True)
     # PERFORMANCE OPTIMIZATION: Convert Frame columns to string once
     for energy_type in energy_long.keys():
         energy_long[energy_type]['Frame'] = energy_long[energy_type]['Frame'].astype(str)
@@ -164,7 +213,7 @@ def main():
     
     # AGGRESSIVE PERFORMANCE OPTIMIZATION: Pre-index data by frame for instant lookups
     frame_indexed_data = {}
-    print("      Indexing frames for instant lookup...")
+    print("      Indexing frames for instant lookup...", flush=True)
     for energy_type in tqdm(energy_long.keys(), desc="      Progress", ncols=70):
         frame_indexed_data[energy_type] = {}
         for frame_str in energy_long[energy_type]['Frame'].unique():
@@ -174,15 +223,16 @@ def main():
                 'pairs': frame_data['Pair'].values,
                 'energies': frame_data['Energy'].values
             }
-    print("      ✓ Frame indexing complete")
+    print("      ✓ Frame indexing complete", flush=True)
 
     # Determine frame range
     try:
         df_frames = pd.to_numeric(total_long['Frame'], errors='coerce').dropna().astype(int)
         if df_frames.empty:
-            print("Error: No valid frame numbers found in data!")
+            print("Error: No valid frame numbers found in data!", flush=True)
             sys.exit(1)
         frame_min, frame_max = int(df_frames.min()), int(df_frames.max())
+        print(f"      Frame range: {frame_min} to {frame_max}", flush=True)
         print(f"Frame range: {frame_min} to {frame_max}")
     except Exception as e:
         print(f"Error determining frame range: {e}")
@@ -222,35 +272,13 @@ def main():
     # PERFORMANCE OPTIMIZATION: Cache sorted residue list for frequent lookups
     _sorted_residues_cache = {}
     
-    # PERFORMANCE OPTIMIZATION: Pre-compute only average energies for bar charts
-    print("\n[4/5] Pre-computing average energies for residue pairs...")
-    _pairwise_avg_energies = {}
-    
-    for first in tqdm(first_res_list, desc="      Progress", ncols=70):
-        _pairwise_avg_energies[first] = {}
-        filt = total_df[(total_df['res1']==first)|(total_df['res2']==first)]
-        others = [r for r in pd.concat([filt['res1'],filt['res2']]).unique() if r!=first]
-        
-        for second in others:
-            p1, p2 = f"{first}-{second}", f"{second}-{first}"
-            _pairwise_avg_energies[first][second] = {}
-            
-            for energy_type in ['Total', 'VdW', 'Electrostatic']:
-                df_pair = energy_long[energy_type][
-                    (energy_long[energy_type]['Pair']==p1) | 
-                    (energy_long[energy_type]['Pair']==p2)
-                ]
-                
-                # Store average only
-                avg_energy = round(df_pair['Energy'].mean(), 3) if not df_pair.empty else 0.0
-                _pairwise_avg_energies[first][second][energy_type] = avg_energy
-    
-    print("      ✓ Average energies computed")
+    # Load pre-computed average energies from CSV
+    _pairwise_avg_energies = load_average_energies(avg_csv)
 
     # Simple network cache for faster UI responsiveness
 
     # Molecular visualization setup
-    print("\n[5/5] Setting up molecular viewer...")
+    print("\n[5/5] Setting up molecular viewer...", flush=True)
     try:
         cartoon = Representation(type='cartoon', color='uniform')
         cartoon.set_color_params({'value': 0xD3D3D3})
@@ -264,14 +292,14 @@ def main():
             def get_full_trajectory():
                 return molstar_helper.get_trajectory(topo, coords)
             initial_traj = get_full_trajectory()
-            print(f"      ✓ Loaded trajectory from {traj_xtc}")
+            print(f"      ✓ Loaded trajectory from {traj_xtc}", flush=True)
         else:
             # Use static structure only
             initial_traj = topo
-            print("      ✓ Using static structure (no trajectory file)")
+            print("      ✓ Using static structure (no trajectory file)", flush=True)
     except Exception as e:
-        print(f"      ⚠ Warning: Error setting up molecular viewer: {e}")
-        print("      Dashboard will continue without 3D viewer functionality")
+        print(f"      ⚠ Warning: Error setting up molecular viewer: {e}", flush=True)
+        print("      Dashboard will continue without 3D viewer functionality", flush=True)
         # Create a minimal fallback
         topo = molstar_helper.parse_molecule(pdb_path)
         initial_traj = topo
@@ -1456,18 +1484,18 @@ def main():
             print(f"Error finding paths: {e}")
             return []
 
-    print(f"🍀 gRINN Dashboard starting...")
-    print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}")
-    print(f"🌐 Dashboard: http://0.0.0.0:8051")
+    print(f"🍀 gRINN Dashboard starting...", flush=True)
+    print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}", flush=True)
+    print(f"🌐 Dashboard: http://0.0.0.0:8050", flush=True)
     
-    print("\n" + "="*60)
-    print("✓ Initialization complete!")
-    print("="*60)
-    print("\n🚀 Starting dashboard server...")
-    print("   Open your browser to: http://localhost:8051")
-    print("   Press Ctrl+C to stop the server\n")
+    print("\n" + "="*60, flush=True)
+    print("✓ Initialization complete!", flush=True)
+    print("="*60, flush=True)
+    print("\n🚀 Starting dashboard server...", flush=True)
+    print("   Open your browser to: http://localhost:8050", flush=True)
+    print("   Press Ctrl+C to stop the server\n", flush=True)
     
-    app.run(debug=False, host='0.0.0.0', port=8051)
+    app.run(debug=False, host='0.0.0.0', port=8050)
 
 if __name__ == '__main__':
     main()
