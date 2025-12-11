@@ -19,24 +19,6 @@ body {
     letter-spacing: 1px;
 }
 
-.main-title::before {
-    content: "🍀";
-    position: absolute;
-    left: -60px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 2rem;
-}
-
-.main-title::after {
-    content: "🍀";
-    position: absolute;
-    right: -60px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 2rem;
-}
-
 .panel {
     background: rgba(255,255,255,0.9);
     border: 3px solid #B5C5B5;

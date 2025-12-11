@@ -23,6 +23,11 @@ from grinn_workflow import getRibeiroOrtizNetwork
 last_network_params = None
 last_network_data = None
 
+# Global cache for pre-computed network metrics
+# Structure: {(include_cov, cutoff): {'degree': {frame: {res: val}}, 'betweenness': {...}, 'closeness': {...}}}
+precomputed_metrics_cache = None
+default_network_params = (['include'], 1.0)  # Default: include covalent, cutoff=1.0
+
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='gRINN Dashboard - Interactive visualization of protein interaction energies')
@@ -53,7 +58,7 @@ def setup_data_paths(results_folder):
     traj_xtc = os.path.join(data_dir, 'traj_dry.xtc')
     
     # Check if required files exist
-    required_files = [pdb_path, total_csv, vdw_csv, elec_csv, avg_csv]
+    required_files = [pdb_path, total_csv, vdw_csv, elec_csv]
     missing_files = [f for f in required_files if not os.path.exists(f)]
     
     if missing_files:
@@ -65,13 +70,15 @@ def setup_data_paths(results_folder):
         print("  - energies_intEnTotal.csv")
         print("  - energies_intEnVdW.csv")
         print("  - energies_intEnElec.csv")
-        print("  - average_interaction_energies.csv")
+        print("  - average_interaction_energies.csv (optional)")
         print("  - traj_dry.xtc (optional, for trajectory visualization)")
         sys.exit(1)
     
-    # Check if trajectory file exists (optional)
+    # Check if optional files exist
     if not os.path.exists(traj_xtc):
         traj_xtc = None
+    if not os.path.exists(avg_csv):
+        avg_csv = None
     
     return data_dir, pdb_path, total_csv, vdw_csv, elec_csv, avg_csv, traj_xtc
 
@@ -238,42 +245,67 @@ def main():
         print(f"Error determining frame range: {e}")
         sys.exit(1)
 
-    # Residue list - sort by residue number to maintain protein sequence order
-    # PERFORMANCE OPTIMIZATION: Cache residue number extraction
-    _residue_number_cache = {}
+    # Residue list - sort by chain first, then residue number to maintain protein sequence order
+    # PERFORMANCE OPTIMIZATION: Cache residue sort key extraction
+    _residue_sort_key_cache = {}  # Fresh cache for new sorting approach
     
-    def extract_residue_number(res_name):
-        """Extract residue number with caching for performance"""
-        if res_name in _residue_number_cache:
-            return _residue_number_cache[res_name]
+    def extract_residue_sort_key(res_name):
+        """Extract (chain, residue_number) tuple for sorting residues like 'ALA390_X'"""
+        # Don't use cache during initial setup to ensure fresh parsing
         
         try:
-            # Extract number from residue name like 'GLY290_A'
+            # Extract from residue name like 'ALA390_X' -> chain='X', resnum=390
             parts = res_name.split('_')
             if len(parts) >= 2:
-                # Get the number part from the first part (e.g., '290' from 'GLY290')
-                number = re.findall(r'\d+', parts[0])
-                if number:
-                    result = int(number[0])
-                    _residue_number_cache[res_name] = result
+                resnum_part = parts[0]  # e.g., 'ALA390'
+                chain = parts[1]  # e.g., 'X'
+                
+                # Extract residue number
+                numbers = re.findall(r'\d+', resnum_part)
+                if numbers:
+                    resnum = int(numbers[0])
+                    result = (chain, resnum)  # Sort by chain first, then number
                     return result
-            _residue_number_cache[res_name] = 0
-            return 0
-        except:
-            _residue_number_cache[res_name] = 0
-            return 0
+                else:
+                    # Debug: print why parsing failed
+                    print(f"[DEBUG] No number found in resnum_part: '{resnum_part}' from '{res_name}'")
+            else:
+                # Debug: print malformed name
+                print(f"[DEBUG] Malformed residue name (no underscore): '{res_name}'")
+            
+            # Fallback for malformed names
+            return ('ZZZ', 99999)  # Sort malformed names to the end
+        except Exception as e:
+            print(f"[DEBUG] Exception parsing '{res_name}': {e}")
+            import traceback
+            traceback.print_exc()
+            return ('ZZZ', 99999)
     
     def sort_residues_by_sequence(residues):
-        """Sort residues by their sequence number extracted from residue names like GLY290_A"""
-        return sorted(residues, key=extract_residue_number)
+        """Sort residues by chain first, then by residue number within each chain"""
+        return sorted(residues, key=extract_residue_sort_key)
 
-    first_res_list = sort_residues_by_sequence(total_df['res1'].unique())
+    # Get all unique residues from both res1 and res2 columns
+    all_residues = set(total_df['res1'].unique()).union(set(total_df['res2'].unique()))
+    first_res_list = sort_residues_by_sequence(all_residues)
+    
+    # Debug: Print first few residues to verify sorting
+    print(f"\n[DEBUG] First 20 residues in sorted order:")
+    for i, res in enumerate(first_res_list[:20]):
+        sort_key = extract_residue_sort_key(res)
+        print(f"  {i+1}. {res} -> chain='{sort_key[0]}', resnum={sort_key[1]}")
+    if len(first_res_list) > 20:
+        print(f"  ... and {len(first_res_list) - 20} more residues")
     
     # PERFORMANCE OPTIMIZATION: Cache sorted residue list for frequent lookups
     _sorted_residues_cache = {}
     
-    # Load pre-computed average energies from CSV
-    _pairwise_avg_energies = load_average_energies(avg_csv)
+    # Load pre-computed average energies from CSV (if available)
+    if avg_csv is not None:
+        _pairwise_avg_energies = load_average_energies(avg_csv)
+    else:
+        print("[4/5] Skipping average energies (file not found)", flush=True)
+        _pairwise_avg_energies = {}
 
     # Simple network cache for faster UI responsiveness
 
@@ -304,10 +336,193 @@ def main():
         topo = molstar_helper.parse_molecule(pdb_path)
         initial_traj = topo
 
+    # Load trajectory coordinates for 3D network visualization
+    print("\n[6/6] Loading trajectory coordinates for 3D network visualization...", flush=True)
+    trajectory_coords = {}
+    try:
+        if traj_xtc:
+            # Use MDTraj to load trajectory (supports XTC format)
+            import mdtraj as md
+            
+            print(f"      Loading trajectory with MDTraj...", flush=True)
+            traj = md.load(traj_xtc, top=pdb_path)
+            n_frames = traj.n_frames
+            
+            print(f"      Loaded {n_frames} frames from trajectory", flush=True)
+            
+            # Create mapping of residue names to MDTraj residue objects
+            residue_map = {}
+            for res_name in first_res_list:
+                # Parse residue name format like 'GLY290_A' -> resnum=290, chain='A'
+                parts = res_name.split('_')
+                if len(parts) >= 2:
+                    resnum_part = parts[0]
+                    chain_id = parts[1] if len(parts) > 1 else 'A'
+                    
+                    # Extract residue number
+                    resnum_match = re.findall(r'\d+', resnum_part)
+                    if resnum_match:
+                        resnum = int(resnum_match[0])
+                        
+                        # Find the residue in the topology
+                        # MDTraj uses 0-based indexing, but PDB uses 1-based
+                        for residue in traj.topology.residues:
+                            if residue.resSeq == resnum and residue.chain.chain_id == chain_id:
+                                residue_map[res_name] = residue
+                                break
+            
+            print(f"      Mapped {len(residue_map)} residues to topology", flush=True)
+            
+            # Extract coordinates for each frame
+            print(f"      Calculating center of mass for each frame...", flush=True)
+            for frame_idx in tqdm(range(frame_min, min(frame_max + 1, n_frames)), 
+                                 desc="      Progress", ncols=70):
+                frame_coords = {}
+                
+                for res_name, residue in residue_map.items():
+                    # Get atom indices for this residue
+                    atom_indices = [atom.index for atom in residue.atoms]
+                    
+                    if len(atom_indices) > 0:
+                        # Get coordinates for this frame (in nanometers, convert to Angstroms)
+                        coords_nm = traj.xyz[frame_idx, atom_indices, :]  # Shape: (n_atoms, 3)
+                        coords_angstrom = coords_nm * 10.0  # Convert nm to Angstrom
+                        
+                        # Get masses for the atoms
+                        masses = np.array([atom.element.mass for atom in residue.atoms])
+                        
+                        # Calculate center of mass
+                        total_mass = np.sum(masses)
+                        if total_mass > 0:
+                            com = np.sum(coords_angstrom * masses[:, np.newaxis], axis=0) / total_mass
+                            frame_coords[res_name] = com.tolist()
+                        else:
+                            # Fallback to geometric center
+                            com = np.mean(coords_angstrom, axis=0)
+                            frame_coords[res_name] = com.tolist()
+                
+                trajectory_coords[frame_idx] = frame_coords
+            
+            print(f"      ✓ Loaded center of mass coordinates for {len(trajectory_coords)} frames", flush=True)
+        else:
+            # Use static structure coordinates (no trajectory available)
+            print("      Using static structure coordinates from PDB", flush=True)
+            
+            # Load PDB as a single-frame trajectory
+            import mdtraj as md
+            pdb_traj = md.load(pdb_path)
+            
+            # Create mapping of residue names to MDTraj residue objects
+            residue_map = {}
+            for res_name in first_res_list:
+                parts = res_name.split('_')
+                if len(parts) >= 2:
+                    resnum_part = parts[0]
+                    chain_id = parts[1] if len(parts) > 1 else 'A'
+                    
+                    resnum_match = re.findall(r'\d+', resnum_part)
+                    if resnum_match:
+                        resnum = int(resnum_match[0])
+                        
+                        for residue in pdb_traj.topology.residues:
+                            if residue.resSeq == resnum and residue.chain.chain_id == chain_id:
+                                residue_map[res_name] = residue
+                                break
+            
+            # Calculate center of mass for each residue in static structure
+            static_coords = {}
+            for res_name, residue in residue_map.items():
+                atom_indices = [atom.index for atom in residue.atoms]
+                
+                if len(atom_indices) > 0:
+                    # Get coordinates (convert nm to Angstrom)
+                    coords_nm = pdb_traj.xyz[0, atom_indices, :]
+                    coords_angstrom = coords_nm * 10.0
+                    
+                    # Get masses
+                    masses = np.array([atom.element.mass for atom in residue.atoms])
+                    
+                    # Calculate center of mass
+                    total_mass = np.sum(masses)
+                    if total_mass > 0:
+                        com = np.sum(coords_angstrom * masses[:, np.newaxis], axis=0) / total_mass
+                        static_coords[res_name] = com.tolist()
+                    else:
+                        com = np.mean(coords_angstrom, axis=0)
+                        static_coords[res_name] = com.tolist()
+            
+            # Use same coordinates for all frames
+            for frame_idx in range(frame_min, frame_max + 1):
+                trajectory_coords[frame_idx] = static_coords.copy()
+            
+            print(f"      ✓ Loaded static center of mass coordinates for {len(static_coords)} residues", flush=True)
+    except Exception as e:
+        print(f"      ⚠ Warning: Could not load trajectory coordinates: {e}", flush=True)
+        print(f"      Error details: {type(e).__name__}", flush=True)
+        import traceback
+        traceback.print_exc()
+        print("      3D network visualization will use default positions", flush=True)
+        trajectory_coords = {}
+
+    def precompute_network_metrics(include_cov, cutoff):
+        """
+        Pre-compute network metrics for all frames with given network parameters.
+        This dramatically speeds up the dashboard by computing once at startup.
+        """
+        global precomputed_metrics_cache
+        
+        print(f"\n[5/5] Pre-computing network metrics (include_cov={include_cov}, cutoff={cutoff})...", flush=True)
+        
+        cache_key = (str(include_cov), cutoff)
+        metrics = {
+            'degree': {},
+            'betweenness': {},
+            'closeness': {}
+        }
+        
+        for frame in tqdm(range(frame_min, frame_max + 1), desc="      Computing metrics", ncols=70):
+            G = build_graph(frame, include_cov, cutoff)
+            
+            if G.number_of_nodes() == 0:
+                # Empty graph
+                metrics['degree'][frame] = {}
+                metrics['betweenness'][frame] = {}
+                metrics['closeness'][frame] = {}
+            else:
+                # Degree centrality
+                metrics['degree'][frame] = dict(G.degree())
+                
+                # Betweenness and closeness
+                if G.number_of_edges() == 0:
+                    metrics['betweenness'][frame] = {node: 0.0 for node in G.nodes()}
+                    metrics['closeness'][frame] = {node: 0.0 for node in G.nodes()}
+                else:
+                    try:
+                        num_nodes = G.number_of_nodes()
+                        if num_nodes > 100:
+                            # Use approximate betweenness for large graphs
+                            k = min(50, num_nodes // 2)
+                            metrics['betweenness'][frame] = nx.betweenness_centrality(G, k=k, normalized=True)
+                        else:
+                            metrics['betweenness'][frame] = nx.betweenness_centrality(G)
+                        
+                        metrics['closeness'][frame] = nx.closeness_centrality(G)
+                    except Exception as e:
+                        print(f"\n      Warning: Error computing centrality for frame {frame}: {e}", flush=True)
+                        metrics['betweenness'][frame] = {node: 0.0 for node in G.nodes()}
+                        metrics['closeness'][frame] = {node: 0.0 for node in G.nodes()}
+        
+        precomputed_metrics_cache = {cache_key: metrics}
+        print(f"      ✓ Pre-computed metrics for {frame_max - frame_min + 1} frames", flush=True)
+        print("="*60, flush=True)
+        print("✓ Dashboard initialization complete!", flush=True)
+        print("="*60 + "\n", flush=True)
+
     # Build graph helper - optimized for speed
     def build_graph(frame, include_cov, cutoff):
         """
-        Build a protein energy network using indexed data for instant access.
+        Build a protein energy network using Ribeiro-Ortiz methodology.
+        Matches getRibeiroOrtizNetwork from grinn_workflow.py
         """
         
         # AGGRESSIVE OPTIMIZATION: Use pre-indexed data instead of DataFrame filtering
@@ -322,24 +537,45 @@ def main():
             pairs = frame_indexed_data['Total'][frame_str]['pairs']
             energies = frame_indexed_data['Total'][frame_str]['energies']
             
-            # Filter by cutoff and create edges (no DataFrame operations)
-            edges = []
-            for pair, energy in zip(pairs, energies):
-                if abs(energy) >= cutoff:
-                    r1, r2 = pair.split('-', 1)  # split only once
-                    edges.append((r1, r2, abs(energy)))
+            # Following Ribeiro-Ortiz methodology:
+            # 1. Only use negative (attractive) energies
+            # 2. Normalize by maximum absolute value
+            # 3. Clip to [0, 0.99]
+            # 4. Set weight=normalized_energy, distance=1-weight
             
-            if edges:
-                G.add_weighted_edges_from(edges)
+            # First pass: collect all negative energies for normalization
+            neg_energies = []
+            valid_pairs = []
+            for pair, energy in zip(pairs, energies):
+                if energy < 0 and abs(energy) >= cutoff:
+                    neg_energies.append(abs(energy))
+                    valid_pairs.append((pair, energy))
+            
+            # Normalize by maximum absolute value
+            if neg_energies:
+                max_abs = max(neg_energies)
+                edges = []
+                for pair, energy in valid_pairs:
+                    r1, r2 = pair.split('-', 1)
+                    # Normalize: weight = abs(energy) / max_abs, clipped to [0, 0.99]
+                    normalized_weight = min(abs(energy) / max_abs, 0.99)
+                    # Distance = 1 - weight (as per Ribeiro-Ortiz)
+                    distance = 1.0 - normalized_weight
+                    edges.append((r1, r2, {'weight': normalized_weight, 'distance': distance}))
+                
+                if edges:
+                    G.add_edges_from(edges)
         
         # Add covalent bonds if requested
         if include_cov and 'include' in str(include_cov):
             # PERFORMANCE OPTIMIZATION: Create edges in batch
-            covalent_edges = [(first_res_list[i], first_res_list[i+1], 0.0) 
-                             for i in range(len(first_res_list) - 1) 
-                             if not G.has_edge(first_res_list[i], first_res_list[i+1])]
+            covalent_edges = []
+            for i in range(len(first_res_list) - 1):
+                if not G.has_edge(first_res_list[i], first_res_list[i+1]):
+                    # Covalent bonds get neutral weight (0.0) and distance (1.0)
+                    covalent_edges.append((first_res_list[i], first_res_list[i+1], {'weight': 0.0, 'distance': 1.0}))
             if covalent_edges:
-                G.add_weighted_edges_from(covalent_edges)
+                G.add_edges_from(covalent_edges)
         
         return G
 
@@ -401,6 +637,9 @@ def main():
             # Return empty dicts to avoid crashing
             return {}, {}, {}
 
+    # Pre-compute network metrics with default parameters for fast dashboard startup
+    precompute_network_metrics(default_network_params[0], default_network_params[1])
+
     # App layout
     # AGGRESSIVE OPTIMIZATION: Configure app for maximum performance
     app = Dash(
@@ -435,26 +674,36 @@ def main():
     app.layout = dbc.Container([
         dbc.Row([
             dbc.Col([
-                html.H1("🍀 gRINN Workflow Results 🍀",
-                        className="main-title",
-                        style={
-                            'textAlign': 'center',
-                            'color': soft_palette['primary'],
-                            'fontFamily': 'Roboto, sans-serif',
-                            'fontWeight': '700',
-                            'fontSize': '2.5rem',
-                            'margin': '20px 0',
-                            'textShadow': '1px 1px 2px rgba(0,0,0,0.1)',
-                            'letterSpacing': '1px'
-                        }),
-                html.P(f"📁 Data source: {data_dir}",
-                       style={
-                           'textAlign': 'center',
-                           'color': soft_palette['text'],
-                           'fontFamily': 'Roboto, sans-serif',
-                           'fontSize': '1rem',
-                           'margin': '0 0 20px 0'
-                       })
+                html.Div(style={
+                    'display': 'flex',
+                    'alignItems': 'center',
+                    'justifyContent': 'space-between',
+                    'margin': '10px 0 15px 0'
+                }, children=[
+                    html.H1("gRINN Workflow Results",
+                            className="main-title",
+                            style={
+                                'color': soft_palette['primary'],
+                                'fontFamily': 'Roboto, sans-serif',
+                                'fontWeight': '700',
+                                'fontSize': '2rem',
+                                'margin': '0',
+                                'textShadow': '1px 1px 2px rgba(0,0,0,0.1)',
+                                'letterSpacing': '1px',
+                                'flex': '0 0 auto'
+                            }),
+                    html.P(f"📁 {data_dir}",
+                           style={
+                               'textAlign': 'center',
+                               'color': soft_palette['text'],
+                               'fontFamily': 'Roboto, sans-serif',
+                               'fontSize': '0.9rem',
+                               'margin': '0',
+                               'flex': '1',
+                               'paddingLeft': '20px',
+                               'paddingRight': '20px'
+                           })
+                ])
             ], width=12)
         ]),
         dbc.Row([
@@ -465,7 +714,8 @@ def main():
                         dcc.Tabs(id='main-tabs', value='tab-pairwise', 
                                  style={
                                      'fontFamily': 'Roboto, sans-serif',
-                                     'fontWeight': '500'
+                                     'fontWeight': '500',
+                                     'height': '35px'
                                  },
                                  colors={
                                      'border': soft_palette['border'],
@@ -479,8 +729,8 @@ def main():
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardHeader([
-                                            html.H6("🎯 Select First Residue", className="text-white text-center mb-0", style={'fontSize': '14px'})
-                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '8px'}),
+                                            html.H6("🎯 Select First Residue", className="text-white text-center mb-0", style={'fontSize': '13px'})
+                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '6px'}),
                                         dbc.CardBody([
                                             dash_table.DataTable(
                                                 id='first_residue_table',
@@ -522,8 +772,8 @@ def main():
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardHeader([
-                                            html.H6("🎯 Select Second Residue", className="text-white text-center mb-0", style={'fontSize': '14px'})
-                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '8px'}),
+                                            html.H6("🎯 Select Second Residue", className="text-white text-center mb-0", style={'fontSize': '13px'})
+                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '6px'}),
                                         dbc.CardBody([
                                             dash_table.DataTable(
                                                 id='second_residue_table',
@@ -565,8 +815,8 @@ def main():
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardHeader([
-                                            html.H6("📊 Average Energies", className="text-white text-center mb-0", style={'fontSize': '14px'})
-                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '8px'}),
+                                            html.H6("📊 Average Energies", className="text-white text-center mb-0", style={'fontSize': '13px'})
+                                        ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '6px'}),
                                         dbc.CardBody([
                                             dcc.Graph(
                                                 id='energy_bar_chart',
@@ -664,7 +914,7 @@ def main():
                             'margin': '10px',
                             'border': f'2px solid {soft_palette["accent"]}'
                         }, children=[
-                            # Controls
+                            # General Network Settings (moved from Network Metrics tab)
                             html.Div(style={
                                 'display': 'flex', 
                                 'alignItems': 'center', 
@@ -721,37 +971,218 @@ def main():
                                                'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
                                            })
                             ]),
-                            # Network visualization
-                            html.Div(style={
-                                'display': 'flex', 
-                                'gap': '15px',
-                                'padding': '10px',
-                                'height': '75vh'
-                            }, children=[
-                                # Degree Centrality
-                                html.Div(className='network-plot-wrapper', style={'flex': '1'}, children=[
-                                    dcc.Graph(
-                                        id='degree_centrality', 
-                                        config={'displayModeBar': False, 'responsive': False, 'scrollZoom': False},
-                                        style={'width': '100%', 'height': '100%'}
-                                    )
+                            
+                            # Sub-tabs for Network Metrics and Shortest Path Analysis
+                            dcc.Tabs(id='network-sub-tabs', value='tab-network-metrics', 
+                                     style={'height': '35px'},
+                                     children=[
+                                # Network Metrics Sub-tab
+                                dcc.Tab(label='📊 Network Metrics', value='tab-network-metrics', children=[
+                                    html.Div(style={'padding': '10px'}, children=[
+                                        # Metric selector
+                                        html.Div(style={'marginBottom': '10px'}, children=[
+                                            html.Label("Select Metric:", style={
+                                                'fontWeight': 'bold',
+                                                'color': soft_palette['primary'],
+                                                'marginBottom': '5px',
+                                                'display': 'block',
+                                                'fontSize': '14px'
+                                            }),
+                                            dcc.RadioItems(
+                                                id='metric_selector',
+                                                options=[
+                                                    {'label': ' Degree Centrality', 'value': 'degree'},
+                                                    {'label': ' Betweenness Centrality', 'value': 'betweenness'},
+                                                    {'label': ' Closeness Centrality', 'value': 'closeness'}
+                                                ],
+                                                value='degree',
+                                                inline=True,
+                                                style={
+                                                    'fontSize': '14px',
+                                                    'display': 'flex',
+                                                    'gap': '30px'
+                                                },
+                                                labelStyle={
+                                                    'display': 'flex',
+                                                    'alignItems': 'center',
+                                                    'cursor': 'pointer'
+                                                }
+                                            )
+                                        ]),
+                                        
+                                        # Residue filter selector
+                                        html.Div(style={'marginBottom': '10px'}, children=[
+                                            html.Label("Filter Residues (leave empty for all):", style={
+                                                'fontWeight': 'bold',
+                                                'color': soft_palette['primary'],
+                                                'marginBottom': '5px',
+                                                'display': 'block',
+                                                'fontSize': '14px'
+                                            }),
+                                            html.Div(style={'display': 'flex', 'gap': '10px', 'alignItems': 'center'}, children=[
+                                                dcc.Dropdown(
+                                                    id='selected_residues_dropdown',
+                                                    options=[{'label': res, 'value': res} for res in first_res_list],
+                                                    value=[],  # Empty = show all
+                                                    multi=True,
+                                                    placeholder="Search and select residues to analyze (multi-select)",
+                                                    searchable=True,
+                                                    style={'flex': '1'}
+                                                ),
+                                                html.Button('Reset to All', 
+                                                    id='reset_residues_btn',
+                                                    n_clicks=0,
+                                                    style={
+                                                        'backgroundColor': soft_palette['accent'],
+                                                        'color': 'white',
+                                                        'border': 'none',
+                                                        'padding': '8px 16px',
+                                                        'borderRadius': '8px',
+                                                        'cursor': 'pointer',
+                                                        'fontWeight': 'bold',
+                                                        'fontSize': '13px',
+                                                        'whiteSpace': 'nowrap'
+                                                    })
+                                            ])
+                                        ]),
+                                        
+                                        # Heatmap
+                                        html.Div(children=[
+                                            dcc.Graph(
+                                                id='network_metrics_heatmap',
+                                                config={'displayModeBar': True, 'displaylogo': False},
+                                                style={'width': '100%', 'height': '70vh'}
+                                            )
+                                        ])
+                                    ])
                                 ]),
-                                # Betweenness Centrality
-                                html.Div(className='network-plot-wrapper', style={'flex': '1'}, children=[
-                                    dcc.Graph(
-                                        id='betweenness_centrality', 
-                                        config={'displayModeBar': False, 'responsive': False, 'scrollZoom': False},
-                                        style={'width': '100%', 'height': '100%'}
-                                    )
-                                ]),
-                                # Closeness Centrality
-                                html.Div(className='network-plot-wrapper', style={'flex': '1'}, children=[
-                                    dcc.Graph(
-                                        id='closeness_centrality', 
-                                        config={'displayModeBar': False, 'responsive': False, 'scrollZoom': False},
-                                        style={'width': '100%', 'height': '100%'}
-                                    )
+                                
+                                # Shortest Path Analysis Sub-tab (renamed from Network Visualization)
+                                dcc.Tab(label='🛤️ Shortest Path Analysis', value='tab-shortest-path', children=[
+                                    html.Div(style={'padding': '10px'}, children=[
+                                        # Source and Target Selection
+                                        html.Div(style={
+                                            'display': 'flex',
+                                            'gap': '20px',
+                                            'marginBottom': '10px',
+                                            'alignItems': 'flex-end'
+                                        }, children=[
+                                            html.Div(style={'flex': '1'}, children=[
+                                                html.Label("🎯 Source Residue:", style={
+                                                    'fontWeight': 'bold',
+                                                    'color': soft_palette['primary'],
+                                                    'marginBottom': '5px',
+                                                    'display': 'block'
+                                                }),
+                                                dcc.Dropdown(
+                                                    id='source_residue_dropdown',
+                                                    options=[{'label': res, 'value': res} for res in first_res_list],
+                                                    value=first_res_list[0] if first_res_list else None,
+                                                    placeholder="Select source residue",
+                                                    searchable=True,
+                                                    style={'width': '100%'}
+                                                )
+                                            ]),
+                                            html.Div(style={'flex': '1'}, children=[
+                                                html.Label("🎯 Target Residue:", style={
+                                                    'fontWeight': 'bold',
+                                                    'color': soft_palette['primary'],
+                                                    'marginBottom': '5px',
+                                                    'display': 'block'
+                                                }),
+                                                dcc.Dropdown(
+                                                    id='target_residue_dropdown',
+                                                    options=[{'label': res, 'value': res} for res in first_res_list],
+                                                    value=first_res_list[min(10, len(first_res_list)-1)] if len(first_res_list) > 1 else (first_res_list[0] if first_res_list else None),
+                                                    placeholder="Select target residue",
+                                                    searchable=True,
+                                                    style={'width': '100%'}
+                                                )
+                                            ]),
+                                            html.Div(children=[
+                                                html.Button('🔍 Find Shortest Paths', 
+                                                    id='find_paths_btn',
+                                                    n_clicks=0,
+                                                    style={
+                                                        'backgroundColor': soft_palette['primary'],
+                                                        'color': 'white',
+                                                        'border': 'none',
+                                                        'padding': '10px 20px',
+                                                        'borderRadius': '8px',
+                                                        'cursor': 'pointer',
+                                                        'fontWeight': 'bold',
+                                                        'fontSize': '14px',
+                                                        'boxShadow': '0 2px 8px rgba(0,0,0,0.2)'
+                                                    })
+                                            ])
+                                        ]),
+                                        
+                                        # Status message
+                                        html.Div(id='path_status_message', style={
+                                            'marginBottom': '8px',
+                                            'padding': '8px',
+                                            'borderRadius': '5px',
+                                            'fontWeight': 'bold'
+                                        }),
+                                        
+                                        # Results table
+                                        html.Div(children=[
+                                            html.Label("📊 Shortest Paths (Ctrl+Click for multi-select):", style={
+                                                'fontWeight': 'bold',
+                                                'color': soft_palette['primary'],
+                                                'marginBottom': '5px',
+                                                'display': 'block'
+                                            }),
+                                            dash_table.DataTable(
+                                                id='shortest_paths_table',
+                                                columns=[
+                                                    {'name': 'Path', 'id': 'path'},
+                                                    {'name': 'Length (Distance)', 'id': 'length'},
+                                                    {'name': 'Hops', 'id': 'hops'}
+                                                ],
+                                                data=[],
+                                                row_selectable='multi',
+                                                selected_rows=[],
+                                                style_table={
+                                                    'overflowY': 'auto',
+                                                    'maxHeight': '400px',
+                                                    'border': f'2px solid {soft_palette["border"]}',
+                                                    'borderRadius': '10px'
+                                                },
+                                                style_cell={
+                                                    'textAlign': 'left',
+                                                    'padding': '10px',
+                                                    'fontFamily': 'Roboto, sans-serif',
+                                                    'fontSize': '13px',
+                                                    'backgroundColor': 'rgba(248,255,248,0.6)',
+                                                    'cursor': 'pointer'
+                                                },
+                                                style_data={
+                                                    'cursor': 'pointer'
+                                                },
+                                                style_header={
+                                                    'backgroundColor': soft_palette['primary'],
+                                                    'color': 'white',
+                                                    'fontWeight': 'bold',
+                                                    'border': 'none'
+                                                },
+                                                style_data_conditional=[
+                                                    {
+                                                        'if': {'state': 'selected'},
+                                                        'backgroundColor': 'rgba(124, 152, 133, 0.3)',
+                                                        'border': f'1px solid {soft_palette["primary"]}'
+                                                    },
+                                                    {
+                                                        'if': {'state': 'active'},
+                                                        'backgroundColor': 'rgba(124, 152, 133, 0.15)',
+                                                        'border': f'1px solid {soft_palette["primary"]}'
+                                                    }
+                                                ]
+                                            )
+                                        ])
+                                    ])
                                 ])
+
                             ])
                         ])
                     ])
@@ -759,23 +1190,45 @@ def main():
             ])
         ], style={'padding': '20px', 'backgroundColor': 'rgba(255,255,255,0.95)', 'borderRadius': '15px', 'border': f'3px solid {soft_palette["border"]}', 'boxShadow': '0 8px 32px rgba(0,0,0,0.1)'})
         ], width=8),
-        # Right Panel: 3D Viewer
+        # Right Panel: 3D Viewer with tabs
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
-                    html.H3("🧬 3D Molecular Viewer", className="text-center mb-0", style={'color': soft_palette['primary']})
+                    html.H3("🧬 3D Viewer", className="text-center mb-0", style={'color': soft_palette['primary']})
                 ]),
                 dbc.CardBody([
-                    dbc.Card([
-                        dbc.CardBody([
-                            dash_molstar.MolstarViewer(
-                                id='viewer', 
-                                data=initial_traj, 
-                                layout={'modelIndex': frame_min}, 
-                                style={'width': '100%','height':'65vh'}
-                            )
+                    # Tabbed selector for 3D views
+                    dcc.Tabs(id='viewer-tabs', value='tab-structure-viewer', children=[
+                        # 3D Structure Viewer Tab
+                        dcc.Tab(label='🧬 Structure Viewer', value='tab-structure-viewer', children=[
+                            dbc.Card([
+                                dbc.CardBody([
+                                    dash_molstar.MolstarViewer(
+                                        id='viewer', 
+                                        data=initial_traj, 
+                                        layout={'modelIndex': frame_min}, 
+                                        style={'width': '100%','height':'65vh'}
+                                    )
+                                ])
+                            ], style={'border': f'3px solid {soft_palette["border"]}', 'borderRadius': '10px', 'backgroundColor': 'rgba(250,255,250,0.4)', 'marginTop': '10px'})
+                        ]),
+                        
+                        # 3D Network Visualization Tab
+                        dcc.Tab(label='🌐 Network Visualization', value='tab-network-viewer', children=[
+                            html.Div(style={'padding': '10px'}, children=[
+                                # 3D Force Graph container
+                                html.Div(id='network-3d-container', style={
+                                    'width': '100%',
+                                    'height': '65vh',
+                                    'border': f'2px solid {soft_palette["border"]}',
+                                    'borderRadius': '10px',
+                                    'backgroundColor': 'rgba(255,255,255,0.9)',
+                                    'position': 'relative',
+                                    'marginTop': '10px'
+                                })
+                            ])
                         ])
-                    ], style={'border': f'3px solid {soft_palette["border"]}', 'borderRadius': '10px', 'backgroundColor': 'rgba(250,255,250,0.4)'}),
+                    ]),
                     dbc.Card([
                         dbc.CardHeader([
                             html.Label("🎬 Frame:", className="text-white mb-0", style={'fontSize': '16px'})
@@ -873,7 +1326,7 @@ def main():
                 ))
             
             bar_fig.update_layout(
-                title="🍀 Average Interaction Energies",
+                title="Average Interaction Energies",
                 xaxis_title='Energy (kcal/mol)',
                 yaxis_title='Residue',
                 barmode='group',
@@ -1291,14 +1744,9 @@ def main():
         if df.empty:
             return go.Figure()
         
-        # PERFORMANCE OPTIMIZATION: Cache residue sorting
-        cache_key = f"matrix_{energy_type}"
-        if cache_key not in _sorted_residues_cache:
-            all_residues = set(df['res1']).union(df['res2'])
-            residues = sort_residues_by_sequence(all_residues)
-            _sorted_residues_cache[cache_key] = residues
-        else:
-            residues = _sorted_residues_cache[cache_key]
+        # Get residues that actually appear in this frame's data and sort them
+        all_residues_in_frame = set(df['res1']).union(df['res2'])
+        residues = sort_residues_by_sequence(all_residues_in_frame)
         
         # AGGRESSIVE OPTIMIZATION: Use numpy array instead of DataFrame for faster operations
         n = len(residues)
@@ -1341,8 +1789,17 @@ def main():
             title=f'{energy_type} Interaction Energy Matrix (Frame {frame_value})<br><sub>💡 Click on any cell to zoom into the residue pair in the molecular viewer</sub>',
             xaxis_title='🧬 Residue',
             yaxis_title='🧬 Residue',
-            xaxis={'tickangle': 45, 'automargin': True},
-            yaxis={'automargin': True},
+            xaxis={
+                'tickangle': 45, 
+                'automargin': True,
+                'categoryorder': 'array',
+                'categoryarray': residues
+            },
+            yaxis={
+                'automargin': True,
+                'categoryorder': 'array',
+                'categoryarray': residues
+            },
             margin=dict(l=80, r=50, t=100, b=100),
             font=dict(size=10, family='Roboto, sans-serif', color='#4A5A4A'),
             title_font=dict(size=16, family='Roboto, sans-serif', color='#4A5A4A'),
@@ -1354,91 +1811,148 @@ def main():
         )
         return fig
 
-    # Network Metrics - trigger on button click OR on initial load
+    # Reset residues selection callback
     @app.callback(
-        Output('degree_centrality','figure'),
-        Output('betweenness_centrality','figure'),
-        Output('closeness_centrality','figure'),
-        [Input('update_network_btn','n_clicks'),
-         Input('frame_slider','value')],
-        [State('include_covalent_edges','value'),
-         State('energy_cutoff','value')],
+        Output('selected_residues_dropdown', 'value'),
+        [Input('reset_residues_btn', 'n_clicks')],
+        prevent_initial_call=True
+    )
+    def reset_residue_selection(n_clicks):
+        """Reset the residue selection to show all residues."""
+        return []
+
+    # Network Metrics - trigger on button click OR on initial load
+    # Network Metrics Heatmap - responsive to metric selector, frame slider, network settings, and residue selection
+    @app.callback(
+        Output('network_metrics_heatmap', 'figure'),
+        [Input('metric_selector', 'value'),
+         Input('frame_slider', 'value'),
+         Input('update_network_btn', 'n_clicks'),
+         Input('selected_residues_dropdown', 'value')],
+        [State('include_covalent_edges', 'value'),
+         State('energy_cutoff', 'value')],
         prevent_initial_call=False
     )
-    def update_network(n_clicks, frame, include_cov, cutoff):
+    def update_network_metrics_heatmap(metric, current_frame, n_clicks, selected_residues, include_cov, cutoff):
+        """Generate heatmap showing network metrics across all frames and residues."""
+        global precomputed_metrics_cache
+        
+        print(f"[CALLBACK TRIGGERED] metric={metric}, current_frame={current_frame}, n_clicks={n_clicks}, selected_residues={len(selected_residues) if selected_residues else 0}", flush=True)
+        
         # Use default values if not provided
-        if frame is None:
-            frame = frame_min
+        if current_frame is None:
+            current_frame = frame_min
         if cutoff is None:
             cutoff = 1.0
         if include_cov is None:
             include_cov = ['include']
+        if metric is None:
+            metric = 'degree'
+        if selected_residues is None or len(selected_residues) == 0:
+            selected_residues = first_res_list  # Show all if none selected
         
-        # Network metrics update with both button clicks and frame slider changes
-        # Caching in get_cached_network_data makes this fast enough for real-time updates
-            
-        # Use simple cached network data for fast response
-        deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
+        # Check if we need to recompute (network settings changed)
+        cache_key = (str(include_cov), cutoff)
         
-        def mk(data, title): 
-            # PERFORMANCE OPTIMIZATION: Use cached sorted residues (first_res_list is already sorted)
-            residues_sorted = first_res_list
-            
-            # AGGRESSIVE OPTIMIZATION: Use numpy for faster array operations
-            vals = np.array([data.get(res, 0.0) for res in residues_sorted], dtype=np.float32)
-            vals = np.nan_to_num(vals, nan=0.0)  # Replace any NaN with 0
-            
-            fig = go.Figure(go.Bar(
-                x=vals,
-                y=residues_sorted,
-                orientation='h',
-                marker=dict(
-                    color=vals,
-                    colorscale='Greens',
-                    line=dict(color='#B5C5B5', width=1)
-                ),
-                name=title
-            ))
-            
-            # Calculate height based on number of residues
-            num_residues = len(residues_sorted)
-            fixed_height_per_residue = 24
-            
-            fig.update_layout(
-                title=f'🍀 {title}',
-                margin=dict(l=100, r=10, t=40, b=20),
-                font=dict(family='Roboto, sans-serif', size=8, color='#4A5A4A'),
-                title_font=dict(size=12, family='Roboto, sans-serif', color='#4A5A4A'),
-                plot_bgcolor='rgba(240,255,240,0.3)',
-                paper_bgcolor='rgba(255,255,255,0.9)',
-                height=num_residues * fixed_height_per_residue + 80,
-                width=220,
-                autosize=False,
-                xaxis=dict(
-                    title='',
-                    tickfont=dict(color='#4A5A4A', size=8),
-                    gridcolor='rgba(180, 180, 180, 0.3)',
-                    showgrid=True,
-                    zeroline=True,
-                    fixedrange=True
-                ),
-                yaxis=dict(
-                    title='',
-                    tickfont=dict(color='#4A5A4A', size=8),
-                    categoryorder='array',
-                    categoryarray=residues_sorted,
-                    fixedrange=True
-                ),
-                bargap=0.02,
-                showlegend=False,
-                hovermode='closest',
-                dragmode=False,
-                # AGGRESSIVE OPTIMIZATION: Disable animations
-                transition={'duration': 0}
-            )
-            return fig
+        # Check if Update Network button was clicked (triggers recomputation)
+        triggered_id = ctx.triggered_id if ctx.triggered_id else None
         
-        return mk(deg, 'Degree'), mk(btw, 'Betweenness centrality'), mk(clo, 'Closeness centrality')
+        if (precomputed_metrics_cache is None or 
+            cache_key not in precomputed_metrics_cache or 
+            triggered_id == 'update_network_btn'):
+            # Recompute metrics with new network settings
+            print(f"[Network Metrics Heatmap] Recomputing metrics with new network settings (include_cov={include_cov}, cutoff={cutoff})", flush=True)
+            precompute_network_metrics(include_cov, cutoff)
+        
+        # Use pre-computed data
+        print(f"[Network Metrics Heatmap] Using pre-computed {metric} data for {len(selected_residues)} residues", flush=True)
+        metrics_data = precomputed_metrics_cache[cache_key][metric]
+        
+        # Build heatmap data from pre-computed metrics, filtered by selected residues
+        all_frames_data = []
+        for frame in range(frame_min, frame_max + 1):
+            data = metrics_data.get(frame, {})
+            frame_values = [data.get(res, 0.0) for res in selected_residues]
+            all_frames_data.append(frame_values)
+        
+        # Convert to numpy array (residues x frames)
+        heatmap_data = np.array(all_frames_data).T  # Transpose to get residues as rows
+        heatmap_data = np.nan_to_num(heatmap_data, nan=0.0)
+        
+        print(f"[Network Metrics Heatmap] Data shape: {heatmap_data.shape}", flush=True)
+        print(f"[Network Metrics Heatmap] Data range: [{np.min(heatmap_data):.4f}, {np.max(heatmap_data):.4f}]", flush=True)
+        print(f"[Network Metrics Heatmap] Non-zero values: {np.count_nonzero(heatmap_data)}", flush=True)
+        
+        # Create frame labels
+        frame_labels = [str(f) for f in range(frame_min, frame_max + 1)]
+        
+        # Residue labels (filtered)
+        # Metric titles
+        metric_titles = {
+            'degree': 'Degree Centrality',
+            'betweenness': 'Betweenness Centrality',
+            'closeness': 'Closeness Centrality'
+        }
+        
+        # Create heatmap with white-to-blue colorscale
+        fig = go.Figure(data=go.Heatmap(
+            z=heatmap_data,
+            x=frame_labels,
+            y=selected_residues,
+            colorscale=[
+                [0, 'white'],
+                [0.5, 'rgb(173, 216, 230)'],  # Light blue
+                [1, 'rgb(70, 130, 180)']      # Steel blue (matches theme)
+            ],
+            colorbar=dict(
+                title=dict(
+                    text=metric_titles[metric],
+                    side='right',
+                    font=dict(size=12)
+                ),
+                thickness=15,
+                len=0.7
+            ),
+            hovertemplate='<b>%{{y}}</b><br>Frame: %{{x}}<br>{}: %{{z:.4f}}<extra></extra>'.format(metric_titles[metric])
+        ))
+        
+        # Add vertical line to highlight current frame
+        frame_idx = current_frame - frame_min
+        fig.add_shape(
+            type='rect',
+            x0=frame_idx - 0.5,
+            x1=frame_idx + 0.5,
+            y0=-0.5,
+            y1=len(selected_residues) - 0.5,
+            line=dict(color='red', width=2),
+            fillcolor='rgba(0,0,0,0)'
+        )
+        
+        fig.update_layout(
+            title=dict(
+                text=f'{metric_titles[metric]} Across Frames',
+                font=dict(size=16, color=soft_palette['primary'], family='Roboto, sans-serif')
+            ),
+            xaxis=dict(
+                title='Frame',
+                tickfont=dict(size=10),
+                side='bottom',
+                showgrid=False
+            ),
+            yaxis=dict(
+                title='Residue',
+                tickfont=dict(size=8),
+                showgrid=False,
+                autorange=True
+            ),
+            plot_bgcolor='white',
+            paper_bgcolor='rgba(255,255,255,0.9)',
+            margin=dict(l=100, r=100, t=60, b=60),
+            font=dict(family='Roboto, sans-serif', color='#4A5A4A')
+        )
+        
+        return fig
+
 
     # Shortest Paths
     @app.callback(
@@ -1484,7 +1998,535 @@ def main():
             print(f"Error finding paths: {e}")
             return []
 
-    print(f"🍀 gRINN Dashboard starting...", flush=True)
+    # 3D Network Visualization callback
+    @app.callback(
+        Output('network-3d-container', 'children'),
+        [Input('frame_slider', 'value'),
+         Input('update_network_btn', 'n_clicks'),
+         Input('shortest_paths_table', 'selected_rows'),
+         Input('metric_selector', 'value'),
+         Input('selected_residues_dropdown', 'value')],
+        [State('include_covalent_edges', 'value'),
+         State('energy_cutoff', 'value'),
+         State('shortest_paths_table', 'data')],
+        prevent_initial_call=False
+    )
+    def update_3d_network(frame, n_clicks, selected_path_rows, metric, selected_residues, include_cov, cutoff, path_table_data):
+        """Update 3D force graph network visualization based on frame and network parameters."""
+        global precomputed_metrics_cache
+        
+        print(f"\n{'='*60}", flush=True)
+        print(f"[3D NETWORK CALLBACK] FIRED!", flush=True)
+        print(f"  frame={frame}, n_clicks={n_clicks}, metric={metric}", flush=True)
+        print(f"  selected_residues={len(selected_residues) if selected_residues else 0}", flush=True)
+        print(f"  include_cov={include_cov}, cutoff={cutoff}", flush=True)
+        print(f"{'='*60}\n", flush=True)
+        
+        try:
+            # Use default values if not provided
+            if frame is None:
+                frame = frame_min
+            if cutoff is None:
+                cutoff = 1.0
+            if include_cov is None:
+                include_cov = ['include']
+            if metric is None:
+                metric = 'degree'
+            if selected_residues is None or len(selected_residues) == 0:
+                selected_residues = []  # Empty means no special highlighting
+            
+            print(f"[3D Network] Updating for frame {frame}, cutoff {cutoff}, metric {metric}", flush=True)
+            
+            # Convert selected residues to set for fast lookup
+            selected_set = set(selected_residues) if selected_residues else set()
+            
+            # Get metric data for node sizing
+            cache_key = (str(include_cov), cutoff)
+            if precomputed_metrics_cache and cache_key in precomputed_metrics_cache:
+                metric_data = precomputed_metrics_cache[cache_key][metric].get(frame, {})
+            else:
+                # Fallback: compute on the fly
+                deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
+                metric_data = {'degree': deg, 'betweenness': btw, 'closeness': clo}[metric]
+            
+            print(f"[3D Network] Got metric data for {len(metric_data)} nodes", flush=True)
+            
+            # Build network graph for current frame
+            G = build_graph(frame, include_cov, cutoff)
+            
+            print(f"[3D Network] Graph has {G.number_of_nodes()} nodes, {G.number_of_edges()} edges", flush=True)
+            print(f"[3D Network] trajectory_coords has {len(trajectory_coords)} frames", flush=True)
+            if frame in trajectory_coords:
+                print(f"[3D Network] Frame {frame} has coords for {len(trajectory_coords[frame])} residues", flush=True)
+            else:
+                print(f"[3D Network] WARNING: No coordinates for frame {frame}", flush=True)
+            
+            # Prepare nodes data
+            nodes = []
+            nodes_with_coords = 0
+            
+            # Get metric values and calculate scaling
+            metric_values = [metric_data.get(node, 0.0) for node in G.nodes()]
+            max_metric = max(metric_values) if metric_values else 1.0
+            
+            # Use aggressive scaling to maximize visual differences
+            print(f"[3D Network] Metric range: [{min(metric_values):.4f}, {max_metric:.4f}]", flush=True)
+            
+            for node in G.nodes():
+                raw_value = metric_data.get(node, 0.0)
+                
+                # Aggressive scaling strategies to emphasize differences
+                if metric == 'degree':
+                    # Degree: linear scaling with large multiplier
+                    # Even small degree differences become very visible
+                    node_size = 0.2 + raw_value * 0.5
+                elif metric == 'betweenness':
+                    # Betweenness: square root scaling with huge multiplier
+                    # Central nodes (high betweenness) will be dramatically larger
+                    node_size = 0.2 + (raw_value ** 0.5) * 50.0
+                else:  # closeness
+                    # Closeness: power scaling with large multiplier
+                    # More central nodes have much higher closeness
+                    node_size = 0.2 + (raw_value ** 1.5) * 12.0
+                
+                node_data = {
+                    'id': node,
+                    'name': node,
+                    'val': node_size,
+                    'metricValue': raw_value,  # Store actual metric value for tooltip
+                    'isSelected': node in selected_set  # Mark if this node is in selected residues
+                }
+                
+                # Add coordinates if available
+                if frame in trajectory_coords and node in trajectory_coords[frame]:
+                    coords = trajectory_coords[frame][node]
+                    node_data['x'] = coords[0]
+                    node_data['y'] = coords[1]
+                    node_data['z'] = coords[2]
+                    nodes_with_coords += 1
+                
+                nodes.append(node_data)
+            
+            print(f"[3D Network] {nodes_with_coords}/{len(nodes)} nodes have coordinates", flush=True)
+            
+            # Calculate coordinate ranges for debugging
+            if nodes_with_coords > 0:
+                x_coords = [n['x'] for n in nodes if 'x' in n]
+                y_coords = [n['y'] for n in nodes if 'y' in n]
+                z_coords = [n['z'] for n in nodes if 'z' in n]
+                print(f"[3D Network] Coordinate ranges: X=[{min(x_coords):.1f}, {max(x_coords):.1f}], Y=[{min(y_coords):.1f}, {max(y_coords):.1f}], Z=[{min(z_coords):.1f}, {max(z_coords):.1f}]", flush=True)
+            
+            # Process selected paths for highlighting
+            path_edges = set()  # Set of (source, target) tuples in selected paths
+            path_colors = {}    # Maps edge tuple to color
+            
+            # Define dark colors for path highlighting (black as default, then distinct colors)
+            highlight_colors = [
+                'rgba(0, 0, 0, 0.95)',        # Black (first path)
+                'rgba(139, 0, 0, 0.95)',      # Dark red
+                'rgba(0, 100, 0, 0.95)',      # Dark green
+                'rgba(0, 0, 139, 0.95)',      # Dark blue
+                'rgba(128, 0, 128, 0.95)',    # Purple
+                'rgba(139, 69, 19, 0.95)',    # Saddle brown
+                'rgba(0, 139, 139, 0.95)',    # Dark cyan
+                'rgba(184, 134, 11, 0.95)',   # Dark goldenrod
+            ]
+            
+            if selected_path_rows and path_table_data:
+                print(f"[3D Network] Highlighting {len(selected_path_rows)} selected path(s)", flush=True)
+                for idx, row_idx in enumerate(selected_path_rows):
+                    if row_idx < len(path_table_data):
+                        path_str = path_table_data[row_idx]['path']
+                        # Parse the path string (format: "RES1 --> RES2 --> RES3")
+                        residues = [r.strip() for r in path_str.split('-->')]
+                        
+                        # Get color for this path
+                        color = highlight_colors[idx % len(highlight_colors)]
+                        
+                        # Mark edges in this path
+                        for i in range(len(residues) - 1):
+                            edge = (residues[i], residues[i+1])
+                            edge_rev = (residues[i+1], residues[i])  # Check both directions
+                            path_edges.add(edge)
+                            path_edges.add(edge_rev)
+                            # Last selected path wins if multiple paths share an edge
+                            path_colors[edge] = color
+                            path_colors[edge_rev] = color
+                        
+                        print(f"[3D Network]   Path {idx+1}: {len(residues)} nodes, color {color}", flush=True)
+            
+            # Prepare edges data with path highlighting
+            links = []
+            for source, target, data in G.edges(data=True):
+                edge = (source, target)
+                is_in_path = edge in path_edges
+                
+                link_data = {
+                    'source': source,
+                    'target': target,
+                    'value': data.get('weight', 1.0),
+                    'isPathEdge': is_in_path
+                }
+                
+                # Add color if this edge is in a selected path
+                if is_in_path and edge in path_colors:
+                    link_data['color'] = path_colors[edge]
+                
+                links.append(link_data)
+            
+            print(f"[3D Network] Created {len(links)} links", flush=True)
+            
+            # Convert nodes and links to JSON strings for embedding
+            import json
+            nodes_json = json.dumps(nodes)
+            links_json = json.dumps(links)
+            
+            print(f"[3D Network] JSON data prepared, creating HTML...", flush=True)
+            
+            # Create the 3D force graph HTML with embedded JavaScript
+            graph_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ margin: 0; padding: 0; overflow: hidden; }}
+                    #3d-graph {{ width: 100%; height: 100vh; }}
+                </style>
+                <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+                <script src="https://unpkg.com/three-spritetext@1.8.2/dist/three-spritetext.min.js"></script>
+                <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
+            </head>
+            <body>
+                <div id="3d-graph"></div>
+                <script>
+                    console.log('Initializing 3D force graph...');
+                    
+                    const graphData = {{
+                        nodes: {nodes_json},
+                        links: {links_json}
+                    }};
+                    
+                    console.log('Graph data loaded:', graphData.nodes.length, 'nodes,', graphData.links.length, 'links');
+                    
+                    // Check what's available in global scope
+                    console.log('ForceGraph3D available:', typeof ForceGraph3D);
+                    console.log('SpriteText available:', typeof SpriteText);
+                    console.log('THREE available:', typeof THREE);
+                    
+                    // Log first few nodes to verify data
+                    console.log('First 3 nodes:', graphData.nodes.slice(0, 3));
+                    console.log('First 3 links:', graphData.links.slice(0, 3));
+                    
+                    // Get the container element
+                    const container = document.getElementById('3d-graph');
+                    console.log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight);
+                    
+                    // Use new constructor syntax - start simple without custom node objects
+                    console.log('Creating ForceGraph3D instance...');
+                    const Graph = ForceGraph3D()(container);
+                    console.log('ForceGraph3D instance created:', Graph);
+                    
+                    // Set graph data with optimized settings for protein structure
+                    Graph.graphData(graphData)
+                        .nodeLabel(node => {{
+                            // Create tooltip with dark background for better readability
+                            const metricName = '{metric}';
+                            const metricValue = node.metricValue !== undefined ? node.metricValue.toFixed(3) : 'N/A';
+                            const selectedStatus = node.isSelected ? '<br/><span style="color: #FFD700;">⭐ Selected</span>' : '';
+                            return `<div style="background-color: rgba(40, 40, 40, 0.95); color: white; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                                <strong style="color: #7FD8BE;">${{node.name}}</strong>${{selectedStatus}}<br/>
+                                ${{metricName}}: ${{metricValue}}
+                            </div>`;
+                        }})
+                        .nodeColor(node => {{
+                            // Highlight selected residues with gold color
+                            if (node.isSelected) {{
+                                return '#FFD700';  // Gold for selected residues
+                            }} else {{
+                                return '#7C9885';  // Sage green for all other nodes
+                            }}
+                        }})
+                        .nodeRelSize(0.5)  // Base size multiplier
+                        .nodeVal(node => node.val)  // Use metric-based size from node data
+                        .linkDirectionalParticles(0)  // No moving particles
+                        .linkWidth(0.3)  // Very thin, thread-like edges for all
+                        .linkColor(link => {{
+                            if (link.isPathEdge) {{
+                                // Use specific colors for paths, default to black
+                                return link.color || 'rgba(0, 0, 0, 0.95)';
+                            }} else {{
+                                // Light gray for regular edges
+                                return 'rgba(220, 220, 220, 0.6)';
+                            }}
+                        }})
+                        .linkOpacity(1.0)  // Full opacity for all edges
+                        .backgroundColor('#f8fff8')
+                        .width(container.offsetWidth)
+                        .height(container.offsetHeight)
+                        .enableNodeDrag(false);  // Disable node dragging
+                    
+                    console.log('Graph initialized (basic mode)');
+                    
+                    // If coordinates are provided, fix node positions and disable animation
+                    if (graphData.nodes.length > 0 && graphData.nodes[0].x !== undefined) {{
+                        console.log('Using provided coordinates - fixing positions');
+                        
+                        // Calculate bounding box for proper camera positioning
+                        const xs = graphData.nodes.map(n => n.x);
+                        const ys = graphData.nodes.map(n => n.y);
+                        const zs = graphData.nodes.map(n => n.z);
+                        
+                        const minX = Math.min(...xs), maxX = Math.max(...xs);
+                        const minY = Math.min(...ys), maxY = Math.max(...ys);
+                        const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+                        
+                        const centerX = (minX + maxX) / 2;
+                        const centerY = (minY + maxY) / 2;
+                        const centerZ = (minZ + maxZ) / 2;
+                        
+                        const sizeX = maxX - minX;
+                        const sizeY = maxY - minY;
+                        const sizeZ = maxZ - minZ;
+                        const maxSize = Math.max(sizeX, sizeY, sizeZ);
+                        
+                        console.log('Bounding box center:', centerX, centerY, centerZ);
+                        console.log('Bounding box size:', sizeX, sizeY, sizeZ, 'max:', maxSize);
+                        
+                        // Stop the simulation immediately and disable all forces
+                        Graph.numDimensions(3)
+                            .cooldownTicks(0)
+                            .d3AlphaDecay(1)
+                            .d3VelocityDecay(1)
+                            .warmupTicks(0);
+                        
+                        // Fix all node positions to prevent movement
+                        graphData.nodes.forEach(node => {{
+                            node.fx = node.x;
+                            node.fy = node.y;
+                            node.fz = node.z;
+                        }});
+                        
+                        // Update with fixed positions
+                        Graph.graphData(graphData);
+                        
+                        // Position camera to look at center from appropriate distance
+                        // Camera distance = 1.5 * maxSize to fit everything in view
+                        const cameraDistance = maxSize * 1.5;
+                        Graph.cameraPosition(
+                            {{ x: centerX, y: centerY, z: centerZ + cameraDistance }},  // Camera position
+                            {{ x: centerX, y: centerY, z: centerZ }},  // Look at center
+                            0  // No animation
+                        );
+                        
+                        console.log('Camera positioned at distance:', cameraDistance);
+                    }} else {{
+                        console.log('No coordinates provided, using force-directed layout');
+                    }}
+                </script>
+            </body>
+            </html>
+            """
+            
+            print(f"[3D Network] Returning HTML iframe", flush=True)
+            
+            return html.Iframe(
+                srcDoc=graph_html,
+                style={
+                    'width': '100%', 
+                    'height': '70vh',
+                    'border': 'none',
+                    'display': 'block'
+                }
+            )
+        
+        except Exception as e:
+            print(f"[3D Network] ERROR: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            # Return error message
+            error_html = f"""
+            <!DOCTYPE html>
+            <html>
+            <head><style>body {{ font-family: Arial; padding: 20px; }}</style></head>
+            <body>
+                <h2>Error generating 3D network visualization</h2>
+                <p><b>Error:</b> {str(e)}</p>
+                <p>Check the dashboard logs for more details.</p>
+            </body>
+            </html>
+            """
+            return html.Iframe(
+                srcDoc=error_html,
+                style={'width': '100%', 'height': '100%', 'border': 'none'}
+            )
+
+
+    # Shortest Path Analysis Callback
+    @app.callback(
+        [Output('shortest_paths_table', 'data'),
+         Output('path_status_message', 'children'),
+         Output('path_status_message', 'style')],
+        [Input('find_paths_btn', 'n_clicks'),
+         Input('frame_slider', 'value')],
+        [State('source_residue_dropdown', 'value'),
+         State('target_residue_dropdown', 'value'),
+         State('include_covalent_edges', 'value'),
+         State('energy_cutoff', 'value')],
+        prevent_initial_call=True
+    )
+    def find_shortest_paths(n_clicks, frame, source, target, include_cov, cutoff):
+        """Find all shortest paths between source and target residues."""
+        # Get callback context
+        callback_ctx = ctx
+        
+        # Check which input triggered the callback
+        if not callback_ctx.triggered:
+            return [], "", {'display': 'none'}
+        
+        trigger_id = callback_ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Only compute if button was clicked or frame changed (and we have previous results)
+        if trigger_id == 'frame_slider' and n_clicks == 0:
+            return [], "", {'display': 'none'}
+        
+        # Validate inputs
+        if not source or not target:
+            return [], "⚠️ Please select both source and target residues", {
+                'backgroundColor': '#FFF3CD',
+                'color': '#856404',
+                'border': '1px solid #FFE69C',
+                'marginBottom': '15px',
+                'padding': '10px',
+                'borderRadius': '5px',
+                'fontWeight': 'bold'
+            }
+        
+        if source == target:
+            return [], "⚠️ Source and target must be different residues", {
+                'backgroundColor': '#FFF3CD',
+                'color': '#856404',
+                'border': '1px solid #FFE69C',
+                'marginBottom': '15px',
+                'padding': '10px',
+                'borderRadius': '5px',
+                'fontWeight': 'bold'
+            }
+        
+        try:
+            # Build graph with current parameters
+            if frame is None:
+                frame = frame_min
+            if cutoff is None:
+                cutoff = 1.0
+            if include_cov is None:
+                include_cov = ['include']
+            
+            G = build_graph(frame, include_cov, cutoff)
+            
+            # Check if both residues are in the graph
+            if source not in G.nodes() or target not in G.nodes():
+                return [], f"⚠️ One or both residues not found in network for frame {frame}", {
+                    'backgroundColor': '#FFF3CD',
+                    'color': '#856404',
+                    'border': '1px solid #FFE69C',
+                    'marginBottom': '15px',
+                    'padding': '10px',
+                    'borderRadius': '5px',
+                    'fontWeight': 'bold'
+                }
+            
+            # Check if there's a path between source and target
+            if not nx.has_path(G, source, target):
+                return [], f"⚠️ No path exists between {source} and {target} in frame {frame}", {
+                    'backgroundColor': '#FFF3CD',
+                    'color': '#856404',
+                    'border': '1px solid #FFE69C',
+                    'marginBottom': '15px',
+                    'padding': '10px',
+                    'borderRadius': '5px',
+                    'fontWeight': 'bold'
+                }
+            
+            # Find ALL shortest paths
+            # The graph already has 'distance' attributes from Ribeiro-Ortiz methodology
+            # where distance = 1 - normalized_weight
+            # Lower distance = stronger interaction (higher weight)
+            # NetworkX's all_shortest_paths will use 'distance' as the weight parameter
+            
+            # Verify all edges have distance attribute (they should from build_graph)
+            for u, v, data in G.edges(data=True):
+                if 'distance' not in data:
+                    # Fallback: if somehow missing, use neutral distance
+                    data['distance'] = 1.0
+            
+            # Find all shortest paths using distance as the weight
+            all_paths = list(nx.all_shortest_paths(G, source, target, weight='distance'))
+
+            
+            if not all_paths:
+                return [], f"⚠️ No paths found between {source} and {target}", {
+                    'backgroundColor': '#FFF3CD',
+                    'color': '#856404',
+                    'border': '1px solid #FFE69C',
+                    'marginBottom': '15px',
+                    'padding': '10px',
+                    'borderRadius': '5px',
+                    'fontWeight': 'bold'
+                }
+            
+            # Calculate path lengths (sum of distances along the path)
+            path_data = []
+            for path in all_paths:
+                # Calculate total distance along this path
+                total_distance = 0.0
+                total_weight = 0.0  # Sum of normalized weights for reference
+                for i in range(len(path) - 1):
+                    edge_data = G.get_edge_data(path[i], path[i+1])
+                    if edge_data:
+                        if 'distance' in edge_data:
+                            total_distance += edge_data['distance']
+                        if 'weight' in edge_data:
+                            total_weight += edge_data['weight']
+                
+                path_data.append({
+                    'path': ' --> '.join(path),
+                    'length': f"{total_distance:.4f}",
+                    'hops': len(path) - 1
+                })
+            
+            # Sort by length (distance)
+            path_data.sort(key=lambda x: float(x['length']))
+            
+            # Success message
+            success_msg = f"✅ Found {len(all_paths)} shortest path(s) between {source} and {target} (Frame {frame})"
+            success_style = {
+                'backgroundColor': '#D4EDDA',
+                'color': '#155724',
+                'border': '1px solid #C3E6CB',
+                'marginBottom': '15px',
+                'padding': '10px',
+                'borderRadius': '5px',
+                'fontWeight': 'bold'
+            }
+            
+            return path_data, success_msg, success_style
+            
+        except Exception as e:
+            print(f"[Shortest Path] ERROR: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return [], f"❌ Error finding paths: {str(e)}", {
+                'backgroundColor': '#F8D7DA',
+                'color': '#721C24',
+                'border': '1px solid #F5C6CB',
+                'marginBottom': '15px',
+                'padding': '10px',
+                'borderRadius': '5px',
+                'fontWeight': 'bold'
+            }
+
+
+        print(f"🍀 gRINN Dashboard starting...", flush=True)
     print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}", flush=True)
     print(f"🌐 Dashboard: http://0.0.0.0:8050", flush=True)
     
