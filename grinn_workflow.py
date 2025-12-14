@@ -62,6 +62,71 @@ pd.set_option('display.max_info_rows', 0)
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
 
+
+def get_trajectory_frame_count(traj_path, stop_after=None):
+    """Return number of frames in a trajectory file.
+
+    If `stop_after` is provided, stops early once the count reaches or exceeds it.
+    This avoids scanning the whole file when only enforcing an upper limit.
+    """
+    if not traj_path:
+        raise ValueError("Trajectory path is required")
+    if not os.path.exists(traj_path):
+        raise FileNotFoundError(traj_path)
+
+    ext = os.path.splitext(traj_path)[1].lower()
+    chunk_size = 500
+    n_frames = 0
+
+    if ext == '.xtc':
+        if not hasattr(md, 'formats') or not hasattr(md.formats, 'XTCTrajectoryFile'):
+            raise ImportError("mdtraj XTCTrajectoryFile reader is not available")
+
+        with md.formats.XTCTrajectoryFile(traj_path, mode='r') as f:
+            while True:
+                try:
+                    xyz, *_rest = f.read(chunk_size)
+                except EOFError:
+                    break
+
+                if xyz is None or not hasattr(xyz, 'shape') or xyz.shape[0] == 0:
+                    break
+
+                n_frames += int(xyz.shape[0])
+                if stop_after is not None and n_frames >= stop_after:
+                    return n_frames
+
+        return n_frames
+
+    if ext == '.trr':
+        if not hasattr(md, 'formats') or not hasattr(md.formats, 'TRRTrajectoryFile'):
+            raise ImportError("mdtraj TRRTrajectoryFile reader is not available")
+
+        with md.formats.TRRTrajectoryFile(traj_path, mode='r') as f:
+            while True:
+                try:
+                    result = f.read(chunk_size)
+                except EOFError:
+                    break
+
+                if not result:
+                    break
+
+                xyz = result[0]
+                if xyz is None or not hasattr(xyz, 'shape') or xyz.shape[0] == 0:
+                    break
+
+                n_frames += int(xyz.shape[0])
+                if stop_after is not None and n_frames >= stop_after:
+                    return n_frames
+
+        return n_frames
+
+    # Fallback: try mdtraj generic loader (may be memory-heavy)
+    traj = md.load(traj_path)
+    n_frames = int(getattr(traj, 'n_frames', 0))
+    return n_frames
+
 def parse_topology_includes(topology_file, logger=None):
     """
     Parse a GROMACS topology file to find all #include statements.
@@ -2041,11 +2106,25 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
     source = system.select(source_sel)
     target = system.select(target_sel)
 
+    # Validate selections
+    if source is None or len(source) == 0:
+        logger.error('Source selection "%s" returned no atoms. Please check your selection string.' % source_sel)
+        logger.info('Total residues in system: %d' % numResidues)
+        raise ValueError('Source selection returned no atoms: %s' % source_sel)
+    
+    if target is None or len(target) == 0:
+        logger.error('Target selection "%s" returned no atoms. Please check your selection string.' % target_sel)
+        logger.info('Total residues in system: %d' % numResidues)
+        raise ValueError('Target selection returned no atoms: %s' % target_sel)
+
     sourceResids = np.unique(source.getResindices())
     numSource = len(sourceResids)
 
     targetResids = np.unique(target.getResindices())
     numTarget = len(targetResids)
+    
+    logger.info('Source selection: %s (%d residues)' % (source_sel, numSource))
+    logger.info('Target selection: %s (%d residues)' % (target_sel, numTarget))
 
     # Generate all possible unique pairwise residue-residue combinations
     pairProduct = itertools.product(sourceResids, targetResids)
@@ -2059,6 +2138,16 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
 
     # Get a list of pairs within a certain distance from each other, based on the initial structure.
     initialFilter = []
+
+    # Check if pairSet is empty - no pairs to filter
+    if len(pairSet) == 0:
+        logger.warning('No residue pairs found between source and target selections. Check your selections.')
+        logger.info('Source selection: %s (found %d residues)' % (source_sel, numSource))
+        logger.info('Target selection: %s (found %d residues)' % (target_sel, numTarget))
+        initialFilterPickle = os.path.join(os.path.abspath(outFolder), "initialFilter.pkl")
+        with open(initialFilterPickle, 'wb') as f:
+            pickle.dump(initialFilter, f)
+        return initialFilter
 
     # Split the pair set list into chunks according to number of cores
     # Reduce numCores if necessary.
@@ -2844,7 +2933,7 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
                      nt=1, skip=1, noconsole_handler=False,
                      create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False],
                      force_field='amber99sb-ildn', water_model='tip3p', recreate_topology=False,
-                     ensemble_mode=False):
+                     ensemble_mode=False, max_frames=None):
     """
     Test and validate inputs for the gRINN workflow.
     
@@ -2929,6 +3018,22 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
                 errors.append(f"ERROR: Trajectory file '{traj}' does not exist")
             elif not traj.lower().endswith('.xtc'):
                 errors.append(f"ERROR: Only XTC trajectory format is supported, got: {traj}")
+
+            # Optional frame-count limit check (best-effort; may be slow for huge trajectories)
+            if max_frames is not None:
+                try:
+                    max_frames_int = int(max_frames)
+                    if max_frames_int <= 0:
+                        errors.append(f"ERROR: --max_frames must be a positive integer, got: {max_frames}")
+                    elif traj and os.path.exists(traj):
+                        # Stop counting as soon as we exceed the limit
+                        n_frames = get_trajectory_frame_count(traj, stop_after=max_frames_int + 1)
+                        if n_frames > max_frames_int:
+                            errors.append(
+                                f"ERROR: Trajectory has {n_frames} frames which exceeds the configured limit ({max_frames_int})."
+                            )
+                except Exception as e:
+                    errors.append(f"ERROR: Failed to count trajectory frames for --max_frames check: {str(e)}")
             
             # Validate topology file
             if not os.path.exists(top):
@@ -3292,20 +3397,44 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
             return errors
         
         # Test 2: Test structure file with gmx editconf (quick structure check)
+        # NOTE: Do not require `-princ` here; it can fail for some valid structures
+        # (e.g., when element/mass inference is ambiguous), even though GROMACS can
+        # still read/convert the structure.
         if structure_file and os.path.exists(structure_file):
             try:
-                # Convert GRO to PDB if needed for GROMACS compatibility testing
-                input_ext = os.path.splitext(structure_file)[1].lower()
-                if input_ext == '.gro':
-                    # GROMACS can work with GRO files directly
-                    test_out = os.path.join(temp_dir, "test.pdb")
-                    gromacs.editconf(f=structure_file, o=test_out, princ=True)
+                # Basic sanity checks to provide clearer errors than a generic GROMACS failure.
+                try:
+                    size_bytes = os.path.getsize(structure_file)
+                except OSError:
+                    size_bytes = None
+
+                if size_bytes == 0:
+                    errors.append("ERROR: Structure file is empty")
                 else:
-                    test_out = os.path.join(temp_dir, "test.pdb")
-                    gromacs.editconf(f=structure_file, o=test_out, princ=True)
-                print(f"✓ Structure file is readable by GROMACS")
+                    with open(structure_file, 'rb') as fh:
+                        head = fh.read(4096)
+                    if b'\x00' in head:
+                        errors.append("ERROR: Structure file appears to be binary (contains NUL bytes)")
+                    else:
+                        test_out = os.path.join(temp_dir, "test.pdb")
+                        try:
+                            # First try with -princ (kept for backwards compatibility / richer checks)
+                            gromacs.editconf(f=structure_file, o=test_out, princ=True)
+                            print(f"✓ Structure file is readable by GROMACS")
+                        except Exception as e_princ:
+                            # Fallback: just test read/convert without -princ.
+                            # This avoids false negatives when -princ fails due to mass inference.
+                            try:
+                                gromacs.editconf(f=structure_file, o=test_out)
+                                print("✓ Structure file is readable by GROMACS (skipping -princ check)")
+                            except Exception as e:
+                                errors.append(
+                                    "ERROR: GROMACS cannot read structure file via gmx editconf. "
+                                    f"Failure with -princ: {e_princ}. "
+                                    f"Failure without -princ: {e}"
+                                )
             except Exception as e:
-                errors.append(f"ERROR: GROMACS cannot read PDB file: {str(e)}")
+                errors.append(f"ERROR: Unexpected error while validating structure file: {str(e)}")
         
         # Test 3: If topology provided, test with gmx grompp
         if top and os.path.exists(top) and structure_file and os.path.exists(structure_file):
@@ -3371,7 +3500,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
                        nt=1, skip=1, noconsole_handler=False, create_pen=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
-                       recreate_topology=False, ensemble_mode=False):
+                       recreate_topology=False, ensemble_mode=False, max_frames=None):
     
     # If test_only flag is set, just validate inputs and exit
     if test_only:
@@ -3379,7 +3508,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, 
             traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
             noconsole_handler, create_pen, pen_cutoffs, pen_include_covalents,
-            force_field, water_model, recreate_topology, ensemble_mode
+            force_field, water_model, recreate_topology, ensemble_mode, max_frames
         )
         if not is_valid:
             print("\n❌ Workflow cannot proceed due to errors.")
@@ -3494,6 +3623,22 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             n_models = trajectory.n_frames
             
             logger.info(f'Found {n_models} models in PDB file')
+
+            # Enforce frame limit for ensemble input (models == frames)
+            if max_frames is not None:
+                try:
+                    max_frames_int = int(max_frames)
+                except Exception:
+                    raise ValueError(f"--max_frames must be an integer, got: {max_frames}")
+                if max_frames_int <= 0:
+                    raise ValueError(f"--max_frames must be a positive integer, got: {max_frames}")
+                if n_models > max_frames_int:
+                    logger.error(
+                        f"Input ensemble contains {n_models} models/frames, which exceeds --max_frames={max_frames_int}."
+                    )
+                    raise ValueError(
+                        f"Trajectory frame limit exceeded: {n_models} > {max_frames_int} (ensemble models)"
+                    )
             
             if n_models < 2:
                 logger.warning('PDB file contains only 1 model - ensemble mode may not be appropriate')
@@ -3534,6 +3679,28 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         logger.info('Mode: Pre-computed Trajectory')
         logger.info(f'  Structure: {structure_file}')
         logger.info(f'  Trajectory: {traj}')
+
+        # Enforce frame limit for input trajectory (count frames with early-exit)
+        if max_frames is not None:
+            try:
+                max_frames_int = int(max_frames)
+            except Exception:
+                raise ValueError(f"--max_frames must be an integer, got: {max_frames}")
+            if max_frames_int <= 0:
+                raise ValueError(f"--max_frames must be a positive integer, got: {max_frames}")
+
+            try:
+                n_frames = get_trajectory_frame_count(traj, stop_after=max_frames_int + 1)
+            except Exception as e:
+                logger.error(f"Failed to count frames in trajectory '{traj}': {str(e)}")
+                raise
+
+            logger.info(f"Trajectory frame count: {n_frames}")
+            if n_frames > max_frames_int:
+                logger.error(
+                    f"Input trajectory has {n_frames} frames, which exceeds --max_frames={max_frames_int}."
+                )
+                raise ValueError(f"Trajectory frame limit exceeded: {n_frames} > {max_frames_int}")
         logger.info(f'  Topology: {top}')
         
         # Validate trajectory file
@@ -3782,6 +3949,8 @@ Input Modes:
     parser.add_argument("--target_sel", nargs="+", type=str, help="Target selection")
     parser.add_argument("--nt", type=int, default=1, help="Number of threads for GROMACS commands (default is 1)")
     parser.add_argument("--skip", type=int, default=1, help="Skip every nth frame in trajectory analysis (default is 1, no skipping)")
+    parser.add_argument("--max_frames", type=int, default=None,
+                        help="Maximum allowed number of frames in the input trajectory. If the trajectory contains more frames, the workflow errors.")
     parser.add_argument("--noconsole_handler", action="store_true", help="Do not add console handler to the logger")
     parser.add_argument("--ff_folder", type=str, help="Folder containing the force field files")
     
@@ -4022,7 +4191,8 @@ def main():
         force_field=args.force_field,
         water_model=args.water_model,
         recreate_topology=args.recreate_topology,
-        ensemble_mode=args.ensemble_mode
+        ensemble_mode=args.ensemble_mode,
+        max_frames=args.max_frames
     )
 
 if __name__ == "__main__":
