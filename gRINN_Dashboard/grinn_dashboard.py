@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import argparse
+import csv
+from functools import lru_cache
 from dash import Dash, dcc, html, dash_table, Input, Output, State, no_update, ctx
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
@@ -10,39 +12,20 @@ import plotly.graph_objects as go
 import dash_molstar
 from dash_molstar.utils import molstar_helper
 from dash_molstar.utils.representations import Representation
-import networkx as nx
 import numpy as np
 from prody import parsePDB
 from tqdm import tqdm
-
-# Import the sophisticated network construction function from the main workflow
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from grinn_workflow import getRibeiroOrtizNetwork
-
-# Global cache variables for network data
-last_network_params = None
-last_network_data = None
-
-# Global cache for pre-computed network metrics
-# Structure: {(include_cov, cutoff): {'degree': {frame: {res: val}}, 'betweenness': {...}, 'closeness': {...}}}
-precomputed_metrics_cache = None
-default_network_params = (['include'], 1.0)  # Default: include covalent, cutoff=1.0
 
 def parse_arguments():
     """Parse command line arguments"""
     parser = argparse.ArgumentParser(description='gRINN Dashboard - Interactive visualization of protein interaction energies')
     parser.add_argument('results_folder', 
-                       help='Path to the results folder containing gRINN output files, or "test" to use test data')
+                       help='Path to the results folder containing gRINN output files')
     return parser.parse_args()
 
 def setup_data_paths(results_folder):
     """Setup data paths based on the results folder argument"""
-    if results_folder == "test":
-        # Use hardcoded test data directory
-        data_dir = os.path.join(os.path.dirname(__file__), 'test_data', 'prot_lig_1')
-    else:
-        # Use provided results folder
-        data_dir = os.path.abspath(results_folder)
+    data_dir = os.path.abspath(results_folder)
     
     # Check if directory exists
     if not os.path.exists(data_dir):
@@ -464,181 +447,84 @@ def main():
         print("      3D network visualization will use default positions", flush=True)
         trajectory_coords = {}
 
-    def precompute_network_metrics(include_cov, cutoff):
-        """
-        Pre-compute network metrics for all frames with given network parameters.
-        This dramatically speeds up the dashboard by computing once at startup.
-        """
-        global precomputed_metrics_cache
-        
-        print(f"\n[5/5] Pre-computing network metrics (include_cov={include_cov}, cutoff={cutoff})...", flush=True)
-        
-        cache_key = (str(include_cov), cutoff)
-        metrics = {
-            'degree': {},
-            'betweenness': {},
-            'closeness': {}
-        }
-        
-        for frame in tqdm(range(frame_min, frame_max + 1), desc="      Computing metrics", ncols=70):
-            G = build_graph(frame, include_cov, cutoff)
-            
-            if G.number_of_nodes() == 0:
-                # Empty graph
-                metrics['degree'][frame] = {}
-                metrics['betweenness'][frame] = {}
-                metrics['closeness'][frame] = {}
-            else:
-                # Degree centrality
-                metrics['degree'][frame] = dict(G.degree())
-                
-                # Betweenness and closeness
-                if G.number_of_edges() == 0:
-                    metrics['betweenness'][frame] = {node: 0.0 for node in G.nodes()}
-                    metrics['closeness'][frame] = {node: 0.0 for node in G.nodes()}
-                else:
-                    try:
-                        num_nodes = G.number_of_nodes()
-                        if num_nodes > 100:
-                            # Use approximate betweenness for large graphs
-                            k = min(50, num_nodes // 2)
-                            metrics['betweenness'][frame] = nx.betweenness_centrality(G, k=k, normalized=True)
-                        else:
-                            metrics['betweenness'][frame] = nx.betweenness_centrality(G)
-                        
-                        metrics['closeness'][frame] = nx.closeness_centrality(G)
-                    except Exception as e:
-                        print(f"\n      Warning: Error computing centrality for frame {frame}: {e}", flush=True)
-                        metrics['betweenness'][frame] = {node: 0.0 for node in G.nodes()}
-                        metrics['closeness'][frame] = {node: 0.0 for node in G.nodes()}
-        
-        precomputed_metrics_cache = {cache_key: metrics}
-        print(f"      ✓ Pre-computed metrics for {frame_max - frame_min + 1} frames", flush=True)
-        print("="*60, flush=True)
-        print("✓ Dashboard initialization complete!", flush=True)
-        print("="*60 + "\n", flush=True)
-
-    # Build graph helper - optimized for speed
-    def build_graph(frame, include_cov, cutoff):
-        """
-        Build a protein energy network using Ribeiro-Ortiz methodology.
-        Matches getRibeiroOrtizNetwork from grinn_workflow.py
-        """
-        
-        # AGGRESSIVE OPTIMIZATION: Use pre-indexed data instead of DataFrame filtering
-        frame_str = str(frame)
-        G = nx.Graph()
-        
-        # Add all residues as nodes
-        G.add_nodes_from(first_res_list)
-        
-        # Get pre-indexed data for this frame (O(1) lookup)
-        if frame_str in frame_indexed_data['Total']:
-            pairs = frame_indexed_data['Total'][frame_str]['pairs']
-            energies = frame_indexed_data['Total'][frame_str]['energies']
-            
-            # Following Ribeiro-Ortiz methodology:
-            # 1. Only use negative (attractive) energies
-            # 2. Normalize by maximum absolute value
-            # 3. Clip to [0, 0.99]
-            # 4. Set weight=normalized_energy, distance=1-weight
-            
-            # First pass: collect all negative energies for normalization
-            neg_energies = []
-            valid_pairs = []
-            for pair, energy in zip(pairs, energies):
-                if energy < 0 and abs(energy) >= cutoff:
-                    neg_energies.append(abs(energy))
-                    valid_pairs.append((pair, energy))
-            
-            # Normalize by maximum absolute value
-            if neg_energies:
-                max_abs = max(neg_energies)
-                edges = []
-                for pair, energy in valid_pairs:
-                    r1, r2 = pair.split('-', 1)
-                    # Normalize: weight = abs(energy) / max_abs, clipped to [0, 0.99]
-                    normalized_weight = min(abs(energy) / max_abs, 0.99)
-                    # Distance = 1 - weight (as per Ribeiro-Ortiz)
-                    distance = 1.0 - normalized_weight
-                    edges.append((r1, r2, {'weight': normalized_weight, 'distance': distance}))
-                
-                if edges:
-                    G.add_edges_from(edges)
-        
-        # Add covalent bonds if requested
-        if include_cov and 'include' in str(include_cov):
-            # PERFORMANCE OPTIMIZATION: Create edges in batch
-            covalent_edges = []
-            for i in range(len(first_res_list) - 1):
-                if not G.has_edge(first_res_list[i], first_res_list[i+1]):
-                    # Covalent bonds get neutral weight (0.0) and distance (1.0)
-                    covalent_edges.append((first_res_list[i], first_res_list[i+1], {'weight': 0.0, 'distance': 1.0}))
-            if covalent_edges:
-                G.add_edges_from(covalent_edges)
-        
-        return G
-
-    def get_cached_network_data(frame, include_cov, cutoff):
-        """Get network data with caching and fast approximate centrality for large graphs."""
-        global last_network_params, last_network_data
-        
-        # Create cache key
-        cache_key = (frame, str(include_cov), cutoff)
-        
-        # Check if we have cached data for these exact parameters
-        if last_network_params == cache_key and last_network_data is not None:
-            return last_network_data['deg'], last_network_data['btw'], last_network_data['clo']
-        
-        # Compute new network data
+    # --- PEN precomputed outputs (workflow-owned; dashboard load-only) ---
+    pen_root = os.path.join(data_dir, 'pen_precomputed')
+    pen_manifest = None
+    if os.path.exists(os.path.join(pen_root, 'manifest.json')):
         try:
-            G = build_graph(frame, include_cov, cutoff)
-            
-            # Check if graph has nodes
-            if G.number_of_nodes() == 0:
-                print(f"Warning: Empty graph for frame {frame}")
-                deg = {}
-                btw = {}
-                clo = {}
-            else:
-                deg = dict(G.degree())
-                
-                # Betweenness and closeness require connected components
-                if G.number_of_edges() == 0:
-                    # No edges - all centralities are 0
-                    btw = {node: 0.0 for node in G.nodes()}
-                    clo = {node: 0.0 for node in G.nodes()}
-                else:
-                    try:
-                        # AGGRESSIVE OPTIMIZATION: Use approximate algorithms for large graphs
-                        num_nodes = G.number_of_nodes()
-                        if num_nodes > 100:
-                            # Use approximate betweenness with sampling for faster computation
-                            k = min(50, num_nodes // 2)  # Sample subset of nodes
-                            btw = nx.betweenness_centrality(G, k=k, normalized=True)
-                        else:
-                            btw = nx.betweenness_centrality(G)
-                        
-                        # Closeness is fast, compute normally
-                        clo = nx.closeness_centrality(G)
-                    except Exception as e:
-                        print(f"Error computing centrality: {e}")
-                        btw = {node: 0.0 for node in G.nodes()}
-                        clo = {node: 0.0 for node in G.nodes()}
-            
-            # Cache the results
-            last_network_params = cache_key
-            last_network_data = {'deg': deg, 'btw': btw, 'clo': clo}
-            
-            return deg, btw, clo
-            
+            with open(os.path.join(pen_root, 'manifest.json'), 'r') as f:
+                pen_manifest = json.load(f)
+            print(f"      ✓ Loaded PEN manifest from {pen_root}", flush=True)
         except Exception as e:
-            print(f"Error in get_cached_network_data: {e}")
-            # Return empty dicts to avoid crashing
-            return {}, {}, {}
+            print(f"      ⚠ Warning: Could not read PEN manifest: {e}", flush=True)
 
-    # Pre-compute network metrics with default parameters for fast dashboard startup
-    precompute_network_metrics(default_network_params[0], default_network_params[1])
+    pen_cutoffs = [1.0]
+    if isinstance(pen_manifest, dict) and isinstance(pen_manifest.get('cutoffs'), list) and pen_manifest['cutoffs']:
+        pen_cutoffs = [float(x) for x in pen_manifest['cutoffs']]
+
+    def _pen_cov_flag(include_cov_value):
+        return 1 if include_cov_value and 'include' in str(include_cov_value) else 0
+
+    def _pen_energy_key(energy_type_selector_value: str) -> str:
+        if energy_type_selector_value in ('Total', 'VdW', 'Electrostatic'):
+            return energy_type_selector_value
+        if energy_type_selector_value == 'Elec':
+            return 'Electrostatic'
+        return 'Total'
+
+    def _pen_metrics_path(energy_key: str, cov_flag: int, cutoff: float) -> str:
+        return os.path.join(pen_root, f"metrics_{energy_key}_cov{cov_flag}_cutoff{float(cutoff)}.csv")
+
+    def _pen_edges_path(energy_key: str, cov_flag: int, cutoff: float, frame: int) -> str:
+        return os.path.join(pen_root, f"edges_{energy_key}_cov{cov_flag}_cutoff{float(cutoff)}_frame{int(frame)}.csv")
+
+    def _pen_paths_path(energy_key: str, cov_flag: int, cutoff: float, frame: int) -> str:
+        return os.path.join(pen_root, f"paths_{energy_key}_cov{cov_flag}_cutoff{float(cutoff)}_frame{int(frame)}.csv")
+
+    @lru_cache(maxsize=16)
+    def _load_metrics_df(path: str):
+        if not os.path.exists(path):
+            return None
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            return None
+
+    def _load_edges_for_frame(path: str):
+        if not os.path.exists(path):
+            return []
+        out = []
+        with open(path, 'r', newline='') as f:
+            r = csv.DictReader(f)
+            for row in r:
+                out.append({
+                    'source': row.get('source'),
+                    'target': row.get('target'),
+                    'weight': float(row.get('weight', 0.0)),
+                    'distance': float(row.get('distance', 1.0)),
+                })
+        return out
+
+    def _load_shortest_paths_for_pair(path: str, source: str, target: str):
+        if not os.path.exists(path):
+            return []
+        rows = []
+        with open(path, 'r', newline='') as f:
+            r = csv.DictReader(f)
+            for row in r:
+                if row.get('source') == source and row.get('target') == target:
+                    rows.append({
+                        'path': row.get('path', ''),
+                        'length': row.get('length', ''),
+                        'hops': int(row.get('hops', 0)) if str(row.get('hops', '')).isdigit() else row.get('hops', ''),
+                    })
+        try:
+            rows.sort(key=lambda x: float(x['length']))
+        except Exception:
+            pass
+        return rows
+
+    print("      ✓ PEN dashboard mode: load-only (no NetworkX computations)", flush=True)
 
     # App layout
     # AGGRESSIVE OPTIMIZATION: Configure app for maximum performance
@@ -943,17 +829,14 @@ def main():
                                     'fontWeight': '500',
                                     'fontSize': '12px'
                                 }),
-                                dcc.Input(
-                                    id='energy_cutoff', 
-                                    type='number', 
-                                    value=1.0, 
-                                    step=0.1, 
+                                dcc.Dropdown(
+                                    id='energy_cutoff',
+                                    options=[{'label': str(float(c)), 'value': float(c)} for c in pen_cutoffs],
+                                    value=float(pen_cutoffs[0]) if pen_cutoffs else 1.0,
+                                    clearable=False,
                                     style={
-                                        'width': '80px', 
+                                        'width': '120px',
                                         'marginRight': '20px',
-                                        'borderRadius': '5px',
-                                        'border': f'2px solid {soft_palette["accent"]}',
-                                        'padding': '5px'
                                     }
                                 ),
                                 html.Button('🔄 Update Network', 
@@ -1828,15 +1711,14 @@ def main():
         [Input('metric_selector', 'value'),
          Input('frame_slider', 'value'),
          Input('update_network_btn', 'n_clicks'),
-         Input('selected_residues_dropdown', 'value')],
+         Input('selected_residues_dropdown', 'value'),
+         Input('energy_type_selector', 'value')],
         [State('include_covalent_edges', 'value'),
          State('energy_cutoff', 'value')],
         prevent_initial_call=False
     )
-    def update_network_metrics_heatmap(metric, current_frame, n_clicks, selected_residues, include_cov, cutoff):
+    def update_network_metrics_heatmap(metric, current_frame, n_clicks, selected_residues, energy_type, include_cov, cutoff):
         """Generate heatmap showing network metrics across all frames and residues."""
-        global precomputed_metrics_cache
-        
         print(f"[CALLBACK TRIGGERED] metric={metric}, current_frame={current_frame}, n_clicks={n_clicks}, selected_residues={len(selected_residues) if selected_residues else 0}", flush=True)
         
         # Use default values if not provided
@@ -1850,34 +1732,34 @@ def main():
             metric = 'degree'
         if selected_residues is None or len(selected_residues) == 0:
             selected_residues = first_res_list  # Show all if none selected
-        
-        # Check if we need to recompute (network settings changed)
-        cache_key = (str(include_cov), cutoff)
-        
-        # Check if Update Network button was clicked (triggers recomputation)
-        triggered_id = ctx.triggered_id if ctx.triggered_id else None
-        
-        if (precomputed_metrics_cache is None or 
-            cache_key not in precomputed_metrics_cache or 
-            triggered_id == 'update_network_btn'):
-            # Recompute metrics with new network settings
-            print(f"[Network Metrics Heatmap] Recomputing metrics with new network settings (include_cov={include_cov}, cutoff={cutoff})", flush=True)
-            precompute_network_metrics(include_cov, cutoff)
-        
-        # Use pre-computed data
-        print(f"[Network Metrics Heatmap] Using pre-computed {metric} data for {len(selected_residues)} residues", flush=True)
-        metrics_data = precomputed_metrics_cache[cache_key][metric]
-        
-        # Build heatmap data from pre-computed metrics, filtered by selected residues
-        all_frames_data = []
-        for frame in range(frame_min, frame_max + 1):
-            data = metrics_data.get(frame, {})
-            frame_values = [data.get(res, 0.0) for res in selected_residues]
-            all_frames_data.append(frame_values)
-        
-        # Convert to numpy array (residues x frames)
-        heatmap_data = np.array(all_frames_data).T  # Transpose to get residues as rows
-        heatmap_data = np.nan_to_num(heatmap_data, nan=0.0)
+
+        energy_key = _pen_energy_key(energy_type)
+        cov_flag = _pen_cov_flag(include_cov)
+        metrics_path = _pen_metrics_path(energy_key, cov_flag, float(cutoff))
+        dfm = _load_metrics_df(metrics_path)
+        if dfm is None or dfm.empty:
+            return go.Figure()
+
+        frames = list(range(frame_min, frame_max + 1))
+        residues = list(selected_residues)
+        idx_res = {r: i for i, r in enumerate(residues)}
+        idx_frame = {f: j for j, f in enumerate(frames)}
+        heatmap_data = np.zeros((len(residues), len(frames)), dtype=float)
+
+        try:
+            dfm = dfm[dfm['residue'].isin(residues)]
+        except Exception:
+            return go.Figure()
+
+        for _, row in dfm.iterrows():
+            try:
+                i = idx_res.get(row['residue'])
+                j = idx_frame.get(int(row['frame']))
+                if i is None or j is None:
+                    continue
+                heatmap_data[i, j] = float(row[metric])
+            except Exception:
+                continue
         
         print(f"[Network Metrics Heatmap] Data shape: {heatmap_data.shape}", flush=True)
         print(f"[Network Metrics Heatmap] Data range: [{np.min(heatmap_data):.4f}, {np.max(heatmap_data):.4f}]", flush=True)
@@ -1898,7 +1780,7 @@ def main():
         fig = go.Figure(data=go.Heatmap(
             z=heatmap_data,
             x=frame_labels,
-            y=selected_residues,
+            y=residues,
             colorscale=[
                 [0, 'white'],
                 [0.5, 'rgb(173, 216, 230)'],  # Light blue
@@ -1923,7 +1805,7 @@ def main():
             x0=frame_idx - 0.5,
             x1=frame_idx + 0.5,
             y0=-0.5,
-            y1=len(selected_residues) - 0.5,
+            y1=len(residues) - 0.5,
             line=dict(color='red', width=2),
             fillcolor='rgba(0,0,0,0)'
         )
@@ -1952,52 +1834,6 @@ def main():
         )
         
         return fig
-
-
-    # Shortest Paths
-    @app.callback(
-        Output('paths_table','data'),
-        Input('find_paths_btn','n_clicks'),
-        State('frame_slider','value'),
-        State('include_covalent_edges','value'),
-        State('energy_cutoff','value'),
-        State('source_residue','value'),
-        State('target_residue','value'),
-        prevent_initial_call=True
-    )
-    def find_paths(n_clicks, frame, include_cov, cutoff, source, target):
-        if n_clicks is None or n_clicks < 1 or not source or not target or source == target:
-            return []
-        
-        # Use default values if not provided
-        if frame is None:
-            frame = frame_min
-        if cutoff is None:
-            cutoff = 1.0
-        if include_cov is None:
-            include_cov = ['include']
-            
-        G = build_graph(frame, include_cov, cutoff)
-        
-        try:
-            paths_gen = nx.shortest_simple_paths(G, source, target, weight='weight')
-            out = []
-            for i, path in enumerate(paths_gen):
-                if i >= 10: 
-                    break
-                length = sum(G[u][v]['weight'] for u, v in zip(path[:-1], path[1:]))
-                out.append({'Path': '-'.join(path), 'Length': round(length, 6)})
-            return out
-        except nx.NetworkXNoPath:
-            print(f"No path found between {source} and {target}")
-            return []
-        except nx.NodeNotFound as e:
-            print(f"Node not found in graph: {e}")
-            return []
-        except Exception as e:
-            print(f"Error finding paths: {e}")
-            return []
-
     # 3D Network Visualization callback
     @app.callback(
         Output('network-3d-container', 'children'),
@@ -2005,16 +1841,15 @@ def main():
          Input('update_network_btn', 'n_clicks'),
          Input('shortest_paths_table', 'selected_rows'),
          Input('metric_selector', 'value'),
-         Input('selected_residues_dropdown', 'value')],
+         Input('selected_residues_dropdown', 'value'),
+         Input('energy_type_selector', 'value')],
         [State('include_covalent_edges', 'value'),
          State('energy_cutoff', 'value'),
          State('shortest_paths_table', 'data')],
         prevent_initial_call=False
     )
-    def update_3d_network(frame, n_clicks, selected_path_rows, metric, selected_residues, include_cov, cutoff, path_table_data):
+    def update_3d_network(frame, n_clicks, selected_path_rows, metric, selected_residues, energy_type, include_cov, cutoff, path_table_data):
         """Update 3D force graph network visualization based on frame and network parameters."""
-        global precomputed_metrics_cache
-        
         print(f"\n{'='*60}", flush=True)
         print(f"[3D NETWORK CALLBACK] FIRED!", flush=True)
         print(f"  frame={frame}, n_clicks={n_clicks}, metric={metric}", flush=True)
@@ -2039,22 +1874,32 @@ def main():
             
             # Convert selected residues to set for fast lookup
             selected_set = set(selected_residues) if selected_residues else set()
-            
-            # Get metric data for node sizing
-            cache_key = (str(include_cov), cutoff)
-            if precomputed_metrics_cache and cache_key in precomputed_metrics_cache:
-                metric_data = precomputed_metrics_cache[cache_key][metric].get(frame, {})
-            else:
-                # Fallback: compute on the fly
-                deg, btw, clo = get_cached_network_data(frame, include_cov, cutoff)
-                metric_data = {'degree': deg, 'betweenness': btw, 'closeness': clo}[metric]
-            
-            print(f"[3D Network] Got metric data for {len(metric_data)} nodes", flush=True)
-            
-            # Build network graph for current frame
-            G = build_graph(frame, include_cov, cutoff)
-            
-            print(f"[3D Network] Graph has {G.number_of_nodes()} nodes, {G.number_of_edges()} edges", flush=True)
+
+            energy_key = _pen_energy_key(energy_type)
+            cov_flag = _pen_cov_flag(include_cov)
+
+            metric_data = {}
+            metrics_path = _pen_metrics_path(energy_key, cov_flag, float(cutoff))
+            dfm = _load_metrics_df(metrics_path)
+            if dfm is not None and not dfm.empty:
+                try:
+                    dff = dfm[dfm['frame'] == int(frame)]
+                    metric_data = {r: float(v) for r, v in zip(dff['residue'], dff[metric])}
+                except Exception:
+                    metric_data = {}
+
+            edges_path = _pen_edges_path(energy_key, cov_flag, float(cutoff), int(frame))
+            edges = _load_edges_for_frame(edges_path)
+            nodes_in_edges = set()
+            for e in edges:
+                if e.get('source'):
+                    nodes_in_edges.add(e['source'])
+                if e.get('target'):
+                    nodes_in_edges.add(e['target'])
+
+            nodes_for_frame = sorted(nodes_in_edges) if nodes_in_edges else list(first_res_list)
+
+            print(f"[3D Network] Loaded {len(nodes_for_frame)} nodes, {len(edges)} edges", flush=True)
             print(f"[3D Network] trajectory_coords has {len(trajectory_coords)} frames", flush=True)
             if frame in trajectory_coords:
                 print(f"[3D Network] Frame {frame} has coords for {len(trajectory_coords[frame])} residues", flush=True)
@@ -2066,13 +1911,16 @@ def main():
             nodes_with_coords = 0
             
             # Get metric values and calculate scaling
-            metric_values = [metric_data.get(node, 0.0) for node in G.nodes()]
+            metric_values = [metric_data.get(node, 0.0) for node in nodes_for_frame]
             max_metric = max(metric_values) if metric_values else 1.0
             
             # Use aggressive scaling to maximize visual differences
-            print(f"[3D Network] Metric range: [{min(metric_values):.4f}, {max_metric:.4f}]", flush=True)
+            if metric_values:
+                print(f"[3D Network] Metric range: [{min(metric_values):.4f}, {max_metric:.4f}]", flush=True)
+            else:
+                print(f"[3D Network] Metric range: [0.0000, {max_metric:.4f}]", flush=True)
             
-            for node in G.nodes():
+            for node in nodes_for_frame:
                 raw_value = metric_data.get(node, 0.0)
                 
                 # Aggressive scaling strategies to emphasize differences
@@ -2157,14 +2005,16 @@ def main():
             
             # Prepare edges data with path highlighting
             links = []
-            for source, target, data in G.edges(data=True):
+            for e in edges:
+                source = e.get('source')
+                target = e.get('target')
                 edge = (source, target)
                 is_in_path = edge in path_edges
                 
                 link_data = {
                     'source': source,
                     'target': target,
-                    'value': data.get('weight', 1.0),
+                    'value': e.get('weight', 1.0),
                     'isPathEdge': is_in_path
                 }
                 
@@ -2367,14 +2217,15 @@ def main():
          Output('path_status_message', 'children'),
          Output('path_status_message', 'style')],
         [Input('find_paths_btn', 'n_clicks'),
-         Input('frame_slider', 'value')],
+         Input('frame_slider', 'value'),
+         Input('energy_type_selector', 'value')],
         [State('source_residue_dropdown', 'value'),
          State('target_residue_dropdown', 'value'),
          State('include_covalent_edges', 'value'),
          State('energy_cutoff', 'value')],
         prevent_initial_call=True
     )
-    def find_shortest_paths(n_clicks, frame, source, target, include_cov, cutoff):
+    def find_shortest_paths(n_clicks, frame, energy_type, source, target, include_cov, cutoff):
         """Find all shortest paths between source and target residues."""
         # Get callback context
         callback_ctx = ctx
@@ -2413,58 +2264,20 @@ def main():
             }
         
         try:
-            # Build graph with current parameters
             if frame is None:
                 frame = frame_min
             if cutoff is None:
                 cutoff = 1.0
             if include_cov is None:
                 include_cov = ['include']
-            
-            G = build_graph(frame, include_cov, cutoff)
-            
-            # Check if both residues are in the graph
-            if source not in G.nodes() or target not in G.nodes():
-                return [], f"⚠️ One or both residues not found in network for frame {frame}", {
-                    'backgroundColor': '#FFF3CD',
-                    'color': '#856404',
-                    'border': '1px solid #FFE69C',
-                    'marginBottom': '15px',
-                    'padding': '10px',
-                    'borderRadius': '5px',
-                    'fontWeight': 'bold'
-                }
-            
-            # Check if there's a path between source and target
-            if not nx.has_path(G, source, target):
-                return [], f"⚠️ No path exists between {source} and {target} in frame {frame}", {
-                    'backgroundColor': '#FFF3CD',
-                    'color': '#856404',
-                    'border': '1px solid #FFE69C',
-                    'marginBottom': '15px',
-                    'padding': '10px',
-                    'borderRadius': '5px',
-                    'fontWeight': 'bold'
-                }
-            
-            # Find ALL shortest paths
-            # The graph already has 'distance' attributes from Ribeiro-Ortiz methodology
-            # where distance = 1 - normalized_weight
-            # Lower distance = stronger interaction (higher weight)
-            # NetworkX's all_shortest_paths will use 'distance' as the weight parameter
-            
-            # Verify all edges have distance attribute (they should from build_graph)
-            for u, v, data in G.edges(data=True):
-                if 'distance' not in data:
-                    # Fallback: if somehow missing, use neutral distance
-                    data['distance'] = 1.0
-            
-            # Find all shortest paths using distance as the weight
-            all_paths = list(nx.all_shortest_paths(G, source, target, weight='distance'))
 
-            
-            if not all_paths:
-                return [], f"⚠️ No paths found between {source} and {target}", {
+            energy_key = _pen_energy_key(energy_type)
+            cov_flag = _pen_cov_flag(include_cov)
+            paths_path = _pen_paths_path(energy_key, cov_flag, float(cutoff), int(frame))
+            path_data = _load_shortest_paths_for_pair(paths_path, source, target)
+
+            if not path_data:
+                return [], f"⚠️ No precomputed shortest paths found for {source} → {target} (Frame {frame})", {
                     'backgroundColor': '#FFF3CD',
                     'color': '#856404',
                     'border': '1px solid #FFE69C',
@@ -2473,32 +2286,8 @@ def main():
                     'borderRadius': '5px',
                     'fontWeight': 'bold'
                 }
-            
-            # Calculate path lengths (sum of distances along the path)
-            path_data = []
-            for path in all_paths:
-                # Calculate total distance along this path
-                total_distance = 0.0
-                total_weight = 0.0  # Sum of normalized weights for reference
-                for i in range(len(path) - 1):
-                    edge_data = G.get_edge_data(path[i], path[i+1])
-                    if edge_data:
-                        if 'distance' in edge_data:
-                            total_distance += edge_data['distance']
-                        if 'weight' in edge_data:
-                            total_weight += edge_data['weight']
-                
-                path_data.append({
-                    'path': ' --> '.join(path),
-                    'length': f"{total_distance:.4f}",
-                    'hops': len(path) - 1
-                })
-            
-            # Sort by length (distance)
-            path_data.sort(key=lambda x: float(x['length']))
-            
-            # Success message
-            success_msg = f"✅ Found {len(all_paths)} shortest path(s) between {source} and {target} (Frame {frame})"
+
+            success_msg = f"✅ Loaded {len(path_data)} shortest path(s) between {source} and {target} (Frame {frame})"
             success_style = {
                 'backgroundColor': '#D4EDDA',
                 'color': '#155724',
@@ -2508,9 +2297,8 @@ def main():
                 'borderRadius': '5px',
                 'fontWeight': 'bold'
             }
-            
             return path_data, success_msg, success_style
-            
+
         except Exception as e:
             print(f"[Shortest Path] ERROR: {e}", flush=True)
             import traceback

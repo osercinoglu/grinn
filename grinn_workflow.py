@@ -1,5 +1,6 @@
 # Standard library imports
 import argparse
+import hashlib
 import concurrent.futures
 import contextlib
 import gc
@@ -61,6 +62,22 @@ pd.set_option('display.max_info_rows', 0)
 
 # Global variable to store the process group ID
 pgid = os.getpgid(os.getpid())
+
+
+# Default selection used by the workflow when --source_sel/--target_sel are not provided.
+_DEFAULT_INTERACTION_SELECTION = "not water and not resname SOL and not ion"
+
+
+def _normalize_selection(sel) -> str:
+    return " ".join(str(sel).strip().split())
+
+
+def _is_default_pen_selection(sel) -> bool:
+    """Return True if selection should be treated as the workflow default for PEN gating."""
+    normalized = _normalize_selection(sel)
+    if normalized == "all":
+        return True
+    return normalized == _normalize_selection(_DEFAULT_INTERACTION_SELECTION)
 
 
 def get_trajectory_frame_count(traj_path, stop_after=None):
@@ -814,36 +831,77 @@ def create_logger(outFolder, noconsoleHandler=False):
 
     return logger
 
-def getRibeiroOrtizNetwork(structure_file, df_intEn, includeCovalents=True, intEnCutoff=1, startFrame=0, residue_indices=None):
-    sys = parse_structure_file(structure_file)
+
+def _residue_id(resname: str, resnum: int, chain: str) -> str:
+    """Return residue identifier in dashboard style: e.g., GLY290_A."""
+    return f"{str(resname).strip()}{int(resnum)}_{str(chain).strip() or 'A'}"
+
+
+def _ensure_dir(path: str) -> None:
+    os.makedirs(path, exist_ok=True)
+
+
+def _iter_frame_columns(df: pd.DataFrame, pair_col: str) -> list:
+    """Return frame columns (wide format) between pair_col and annotation columns."""
+    frame_start = list(df.columns).index(pair_col) + 1
+    annotation_cols = [
+        'res1_index', 'res2_index', 'res1_chain', 'res2_chain',
+        'res1_resnum', 'res2_resnum', 'res1_resname', 'res2_resname',
+        'res1', 'res2'
+    ]
+    frame_end = len(df.columns)
+    for ann in annotation_cols:
+        if ann in df.columns:
+            frame_end = list(df.columns).index(ann)
+            break
+    return list(df.columns[frame_start:frame_end])
+
+def getRibeiroOrtizNetwork(
+    structure_file,
+    df_intEn,
+    includeCovalents=True,
+    intEnCutoff=1,
+    startFrame=0,
+    residue_indices=None,
+):
+    """Build Ribeiro–Ortiz-like PENs per frame.
+
+    Nodes are residue IDs in dashboard style (e.g., GLY290_A).
+    Edge attributes:
+      - weight: normalized attractive interaction magnitude in [0, 0.99]
+      - distance: 1 - weight
+    """
+    sys_ag = parse_structure_file(structure_file)
+
     if residue_indices is None:
-        sys_sel = sys.select("all")
-        resIndices = np.unique(sys_sel.getResindices())
+        sys_sel = sys_ag.select("all")
+        res_indices = np.unique(sys_sel.getResindices())
     else:
-        resIndices = np.array(sorted(residue_indices))
-        sys_sel = sys.select(' or '.join([f"resindex {i}" for i in resIndices]))
-    numResidues = len(resIndices)
-    
-    # ✅ FIX: Get residue information correctly by using unique residue indices
-    # Create arrays for residue names, numbers, and chains
-    resNames = []
-    resNums = []
-    chains = []
-    
-    for res_idx in resIndices:
-        # Get the first atom of this residue to extract residue information
-        atoms_in_residue = sys.select(f"resindex {res_idx}")
+        res_indices = np.array(sorted(residue_indices))
+
+    num_residues = len(res_indices)
+    if num_residues == 0:
+        return []
+
+    # Build residue metadata arrays in the same order as res_indices
+    resnames: list[str] = []
+    resnums: list[int] = []
+    chains: list[str] = []
+    segindices: list[int] = []
+    for res_idx in res_indices:
+        atoms_in_residue = sys_ag.select(f"resindex {int(res_idx)}")
         if atoms_in_residue is not None and len(atoms_in_residue) > 0:
-            resNames.append(atoms_in_residue.getResnames()[0])
-            resNums.append(atoms_in_residue.getResnums()[0])
-            chains.append(atoms_in_residue.getChids()[0])
+            resnames.append(str(atoms_in_residue.getResnames()[0]))
+            resnums.append(int(atoms_in_residue.getResnums()[0]))
+            chains.append(str(atoms_in_residue.getChids()[0]).strip() or "A")
+            segindices.append(int(atoms_in_residue.getSegindices()[0]))
         else:
-            # Fallback in case of issues
-            resNames.append("UNK")
-            resNums.append(0)
+            resnames.append("UNK")
+            resnums.append(0)
             chains.append("A")
-    
-    rname_rnum_ch = ['_'.join(map(str, [resNames[i], resNums[i], chains[i]])) for i in range(numResidues)]
+            segindices.append(-1)
+
+    residue_ids = [_residue_id(resnames[i], resnums[i], chains[i]) for i in range(num_residues)]
 
     # Robustly find the pair column
     pair_col = None
@@ -854,55 +912,305 @@ def getRibeiroOrtizNetwork(structure_file, df_intEn, includeCovalents=True, intE
     if pair_col is None:
         raise ValueError("Could not find a 'Pair_indices' or 'pair' column in the input DataFrame.")
 
-    # Identify frame columns: all columns between pair_col and the first annotation column
-    frame_start = list(df_intEn.columns).index(pair_col) + 1
-    annotation_cols = ['res1_index', 'res2_index', 'res1_chain', 'res2_chain', 'res1_resnum', 'res2_resnum', 'res1_resname', 'res2_resname', 'res1', 'res2']
-    frame_end = len(df_intEn.columns)
-    for ann in annotation_cols:
-        if ann in df_intEn.columns:
-            frame_end = list(df_intEn.columns).index(ann)
-            break
-    frame_cols = df_intEn.columns[frame_start:frame_end]
-    numFrames = len(frame_cols)
+    frame_cols = _iter_frame_columns(df_intEn, pair_col)
+    num_frames = len(frame_cols)
+    if startFrame >= num_frames:
+        return []
+
+    # Map global resindex -> local 0..N-1 position in this residue subset
+    resindex_to_pos = {int(res_indices[i]): i for i in range(num_residues)}
 
     nx_list = []
-    for m in range(startFrame, numFrames):
+    for m in range(startFrame, num_frames):
         frame_col = frame_cols[m]
-        network = nx.Graph()
-        for j in range(numResidues):
-            network.add_node(j + 1, label=rname_rnum_ch[j])
-        resIntEnMat = np.zeros((numResidues, numResidues))
+        G = nx.Graph()
+        G.add_nodes_from(residue_ids)
+
+        # Populate interaction matrix in local indexing
+        resIntEnMat = np.zeros((num_residues, num_residues), dtype=float)
         for _, row in df_intEn.iterrows():
             pair = row[pair_col]
-            resindex_1 = int(pair.split('-')[0])
-            resindex_2 = int(pair.split('-')[1])
+            try:
+                a_str, b_str = str(pair).split('-', 1)
+                resindex_1 = int(a_str)
+                resindex_2 = int(b_str)
+            except Exception:
+                continue
+            if resindex_1 not in resindex_to_pos or resindex_2 not in resindex_to_pos:
+                continue
             try:
                 value = float(row[frame_col])
             except Exception:
                 continue
-            resIntEnMat[resindex_1, resindex_2] = value
-            resIntEnMat[resindex_2, resindex_1] = value
+            i = resindex_to_pos[resindex_1]
+            j = resindex_to_pos[resindex_2]
+            resIntEnMat[i, j] = value
+            resIntEnMat[j, i] = value
+
+        # Ribeiro–Ortiz-like normalization using attractive interactions
         resIntEnMatNegFavor = np.where(resIntEnMat < 0, np.abs(resIntEnMat), 0)
-        max_abs = np.max(np.abs(resIntEnMatNegFavor))
+        max_abs = float(np.max(np.abs(resIntEnMatNegFavor)))
         X = resIntEnMatNegFavor / max_abs if max_abs != 0 else resIntEnMatNegFavor
         X = np.clip(X, 0, 0.99)
+
+        # Add covalent edges with chain/segment-validated adjacency
         if includeCovalents:
-            for i in range(numResidues - 1):
-                res1 = sys.select('resindex %i' % resIndices[i])
-                res2 = sys.select('resindex %i' % resIndices[i + 1])
-                if (res1.getChids()[0] == res2.getChids()[0]) and (res1.getSegindices()[0] == res2.getSegindices()[0]):
-                    network.add_edge(i + 1, i + 2, weight=X[i, i + 1], distance=1 - float(X[i, i + 1]))
-        for i in range(numResidues):
-            for j in range(numResidues):
-                if not includeCovalents and abs(i - j) == 1:
+            for i in range(num_residues - 1):
+                if (chains[i] == chains[i + 1]) and (segindices[i] == segindices[i + 1]):
+                    u = residue_ids[i]
+                    v = residue_ids[i + 1]
+                    if not G.has_edge(u, v):
+                        G.add_edge(u, v, weight=float(X[i, i + 1]), distance=1.0 - float(X[i, i + 1]))
+
+        # Add non-covalent edges (and optionally skip covalent-adjacent when includeCovalents=False)
+        cutoff = float(abs(intEnCutoff))
+        for i in range(num_residues):
+            for j in range(i + 1, num_residues):
+                if (not includeCovalents) and abs(i - j) == 1:
                     continue
-                if not network.has_edge(i + 1, j + 1):
-                    if abs(float(resIntEnMat[i, j])) >= abs(intEnCutoff):
-                        if X[i, j] < 0.01:
-                            continue
-                        network.add_edge(i + 1, j + 1, weight=X[i, j], distance=1 - float(X[i, j]))
-        nx_list.append(network)
+                u = residue_ids[i]
+                v = residue_ids[j]
+                if G.has_edge(u, v):
+                    continue
+                if abs(float(resIntEnMat[i, j])) >= cutoff:
+                    if float(X[i, j]) < 0.01:
+                        continue
+                    G.add_edge(u, v, weight=float(X[i, j]), distance=1.0 - float(X[i, j]))
+
+        nx_list.append(G)
+
     return nx_list
+
+
+def _write_edges_csv(G: nx.Graph, out_csv: str) -> None:
+    import csv
+    with open(out_csv, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['source', 'target', 'weight', 'distance'])
+        for u, v, data in G.edges(data=True):
+            w.writerow([u, v, float(data.get('weight', 0.0)), float(data.get('distance', 1.0))])
+
+
+def _compute_metrics(G: nx.Graph) -> dict:
+    deg = dict(G.degree())
+    if G.number_of_edges() == 0:
+        btw = {n: 0.0 for n in G.nodes()}
+        clo = {n: 0.0 for n in G.nodes()}
+    else:
+        btw = nx.betweenness_centrality(G)
+        clo = nx.closeness_centrality(G)
+    return {'degree': deg, 'betweenness': btw, 'closeness': clo}
+
+
+def _export_all_shortest_paths_csv(G: nx.Graph, out_csv: str) -> None:
+    """Export all shortest paths for all unordered node pairs.
+
+    Writes both directions (A->B and B->A) for easier dashboard lookup.
+    """
+    import csv
+
+    nodes = list(G.nodes())
+    if len(nodes) == 0:
+        _ensure_dir(os.path.dirname(out_csv))
+        with open(out_csv, 'w', newline='') as f:
+            csv.writer(f).writerow(['source', 'target', 'path', 'length', 'hops'])
+        return
+
+    _ensure_dir(os.path.dirname(out_csv))
+    with open(out_csv, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['source', 'target', 'path', 'length', 'hops'])
+
+        # For each source, compute predecessor DAG once, then enumerate all shortest paths to each target.
+        for source in nodes:
+            try:
+                pred, dist = nx.dijkstra_predecessor_and_distance(G, source, weight='distance')
+            except Exception:
+                continue
+
+            for target in nodes:
+                if target == source:
+                    continue
+                if target not in dist:
+                    continue
+
+                # Enumerate all shortest paths from source to target using predecessor lists.
+                stack = [(target, [target])]
+                while stack:
+                    node, path_rev = stack.pop()
+                    if node == source:
+                        path = list(reversed(path_rev))
+                        total_distance = 0.0
+                        for u, v in zip(path[:-1], path[1:]):
+                            ed = G.get_edge_data(u, v) or {}
+                            total_distance += float(ed.get('distance', 1.0))
+                        hops = len(path) - 1
+                        path_str = ' --> '.join(path)
+                        w.writerow([source, target, path_str, f"{total_distance:.4f}", hops])
+
+                        # Also write the reverse-direction variant
+                        path_str_rev = ' --> '.join(reversed(path))
+                        w.writerow([target, source, path_str_rev, f"{total_distance:.4f}", hops])
+                        continue
+
+                    for p in pred.get(node, []):
+                        # Predecessor graph is acyclic with positive distances, so this won't loop.
+                        stack.append((p, path_rev + [p]))
+
+
+def compute_pen_precomputed_outputs(
+    out_folder: str,
+    structure_file: str,
+    source_sel: str,
+    target_sel: str,
+    pen_cutoffs: list[float],
+    pen_include_covalents: list[bool],
+    logger=None,
+):
+    """Compute and save precomputed PEN artifacts for dashboard consumption.
+
+    Outputs under: out_folder/pen_precomputed/
+      - manifest.json
+      - nodes.csv
+      - metrics_{energy}_cov{0|1}_cutoff{cutoff}.csv
+      - edges_{energy}_cov{0|1}_cutoff{cutoff}_frame{frame}.csv
+      - paths_{energy}_cov{0|1}_cutoff{cutoff}_frame{frame}.csv
+    """
+    import csv
+    import json
+    from datetime import datetime
+
+    pen_root = os.path.join(out_folder, 'pen_precomputed')
+    _ensure_dir(pen_root)
+
+    sys_ag = parse_structure_file(structure_file)
+    src_sel = sys_ag.select(source_sel)
+    tgt_sel = sys_ag.select(target_sel)
+    if src_sel is None or tgt_sel is None:
+        raise ValueError("Invalid source_sel/target_sel selection for PEN.")
+
+    residue_indices = sorted(set(src_sel.getResindices()) | set(tgt_sel.getResindices()))
+    if len(residue_indices) == 0:
+        raise ValueError("No residues selected for PEN (empty union of source_sel and target_sel).")
+
+    # Create nodes.csv mapping for dashboard and provenance.
+    nodes_csv = os.path.join(pen_root, 'nodes.csv')
+    with open(nodes_csv, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['residue', 'resindex', 'resname', 'resnum', 'chain', 'segindex'])
+        for res_idx in residue_indices:
+            atoms = sys_ag.select(f"resindex {int(res_idx)}")
+            if atoms is None or len(atoms) == 0:
+                continue
+            resname = str(atoms.getResnames()[0])
+            resnum = int(atoms.getResnums()[0])
+            chain = str(atoms.getChids()[0]).strip() or 'A'
+            segindex = int(atoms.getSegindices()[0])
+            rid = _residue_id(resname, resnum, chain)
+            w.writerow([rid, int(res_idx), resname, resnum, chain, segindex])
+
+    energy_csvs = {
+        'Total': os.path.join(out_folder, 'energies_intEnTotal.csv'),
+        'VdW': os.path.join(out_folder, 'energies_intEnVdW.csv'),
+        'Electrostatic': os.path.join(out_folder, 'energies_intEnElec.csv'),
+    }
+
+    present_energy_types = []
+    frame_counts = {}
+    for energy_type, csv_path in energy_csvs.items():
+        if os.path.exists(csv_path):
+            present_energy_types.append(energy_type)
+            df_tmp = pd.read_csv(csv_path, nrows=1)
+            pair_col = 'Pair_indices' if 'Pair_indices' in df_tmp.columns else ('pair' if 'pair' in df_tmp.columns else None)
+            if pair_col is None:
+                continue
+            frame_counts[energy_type] = len(_iter_frame_columns(df_tmp, pair_col))
+
+    manifest = {
+        'created_at': datetime.utcnow().isoformat() + 'Z',
+        'pen_root': 'pen_precomputed',
+        'energy_types': present_energy_types,
+        'include_covalents': [bool(x) for x in pen_include_covalents],
+        'cutoffs': [float(x) for x in pen_cutoffs],
+        'source_sel': source_sel,
+        'target_sel': target_sel,
+        'frame_counts': frame_counts,
+        'node_id_format': 'RESNAME+RESNUM_+CHAIN (e.g., GLY290_A)',
+        'edge_attributes': ['weight', 'distance'],
+        'metrics': ['degree', 'betweenness', 'closeness'],
+        'paths': {
+            'definition': 'all shortest paths by distance=1-weight',
+            'path_format': 'RES --> RES --> ...',
+        },
+    }
+    with open(os.path.join(pen_root, 'manifest.json'), 'w') as f:
+        json.dump(manifest, f, indent=2)
+
+    # Compute PENs for each energy type + parameter combo.
+    for energy_type in present_energy_types:
+        csv_path = energy_csvs[energy_type]
+        logger and logger.info(f"PEN precompute: energy_type={energy_type} from {os.path.basename(csv_path)}")
+
+        df_intEn = pd.read_csv(csv_path)
+        if 'Unnamed: 0' in df_intEn.columns:
+            df_intEn = df_intEn.drop(columns=['Unnamed: 0'])
+        if 'Pair_indices' in df_intEn.columns:
+            df_intEn = df_intEn.rename(columns={'Pair_indices': 'pair'})
+
+        pair_col = 'pair' if 'pair' in df_intEn.columns else None
+        if pair_col is None:
+            logger and logger.warning(f"Skipping {energy_type}: missing pair column")
+            continue
+
+        frame_cols = _iter_frame_columns(df_intEn, pair_col)
+        num_frames = len(frame_cols)
+
+        for include_cov in [bool(x) for x in pen_include_covalents]:
+            for cutoff in [float(x) for x in pen_cutoffs]:
+                logger and logger.info(f"PEN precompute: {energy_type} include_cov={include_cov} cutoff={cutoff}")
+
+                graphs = getRibeiroOrtizNetwork(
+                    structure_file,
+                    df_intEn,
+                    includeCovalents=include_cov,
+                    intEnCutoff=cutoff,
+                    residue_indices=residue_indices,
+                )
+
+                # Metrics file per (energy, cov, cutoff) spanning all frames
+                cov_flag = 1 if include_cov else 0
+                metrics_csv = os.path.join(pen_root, f"metrics_{energy_type}_cov{cov_flag}_cutoff{cutoff}.csv")
+                with open(metrics_csv, 'w', newline='') as mf:
+                    mw = csv.writer(mf)
+                    mw.writerow(['frame', 'residue', 'degree', 'betweenness', 'closeness'])
+
+                    for frame_idx, G in enumerate(graphs[:num_frames]):
+                        # Save edges per frame
+                        edges_csv = os.path.join(
+                            pen_root,
+                            f"edges_{energy_type}_cov{cov_flag}_cutoff{cutoff}_frame{frame_idx}.csv",
+                        )
+                        _write_edges_csv(G, edges_csv)
+
+                        # Save all shortest paths per frame
+                        paths_csv = os.path.join(
+                            pen_root,
+                            f"paths_{energy_type}_cov{cov_flag}_cutoff{cutoff}_frame{frame_idx}.csv",
+                        )
+                        _export_all_shortest_paths_csv(G, paths_csv)
+
+                        # Compute and write node metrics for this frame
+                        met = _compute_metrics(G)
+                        for residue in G.nodes():
+                            mw.writerow([
+                                frame_idx,
+                                residue,
+                                int(met['degree'].get(residue, 0)),
+                                float(met['betweenness'].get(residue, 0.0)),
+                                float(met['closeness'].get(residue, 0.0)),
+                            ])
+
+    logger and logger.info(f"Saved PEN precomputed outputs under {pen_root}")
 
 def compute_pen_and_bc(
     structure_file, 
@@ -2931,7 +3239,7 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
                      nofixpdb=False, top=None, traj=None, nointeraction=False, 
                      gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
                      nt=1, skip=1, noconsole_handler=False,
-                     create_pen=False, pen_cutoffs=[1.0], pen_include_covalents=[True, False],
+                     pen_cutoffs=[1.0], pen_include_covalents=[True, False],
                      force_field='amber99sb-ildn', water_model='tip3p', recreate_topology=False,
                      ensemble_mode=False, max_frames=None):
     """
@@ -3101,8 +3409,8 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
             warnings.append(f"WARNING: Could not validate selections: {str(e)}")
     
     # Validate logical combinations
-    if nointeraction and create_pen:
-        errors.append("ERROR: Cannot create PEN without calculating interactions (nointeraction=True)")
+    if nointeraction:
+        warnings.append("INFO: nointeraction=True; PEN outputs will not be generated.")
     
     # Validate force field and water model parameters
     valid_force_fields = [
@@ -3498,8 +3806,9 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
 
 def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, 
                        traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                       nt=1, skip=1, noconsole_handler=False, create_pen=False, pen_cutoffs=[1.0], 
+                       nt=1, skip=1, noconsole_handler=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
+                       request_pen=True,
                        recreate_topology=False, ensemble_mode=False, max_frames=None):
     
     # If test_only flag is set, just validate inputs and exit
@@ -3507,7 +3816,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         is_valid, errors = test_grinn_inputs(
             structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb, top, 
             traj, nointeraction, gpu, solvate, npt, source_sel, target_sel, nt, skip,
-            noconsole_handler, create_pen, pen_cutoffs, pen_include_covalents,
+            noconsole_handler, pen_cutoffs, pen_include_covalents,
             force_field, water_model, recreate_topology, ensemble_mode, max_frames
         )
         if not is_valid:
@@ -3526,11 +3835,11 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
 
     # If source_sel is None, set it to an appropriate selection
     if source_sel is None:
-        source_sel = "not water and not resname SOL and not ion"
+        source_sel = _DEFAULT_INTERACTION_SELECTION
 
     # If target_sel is None, set it to an appropriate selection
     if target_sel is None:
-        target_sel = "not water and not resname SOL and not ion"
+        target_sel = _DEFAULT_INTERACTION_SELECTION
 
     if type(source_sel) == list:
         if len(source_sel) > 1:
@@ -3546,6 +3855,48 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
 
     logger = create_logger(out_folder, noconsole_handler)
     logger.info('### gRINN workflow started ###')
+
+    # Emit a deterministic fingerprint so logs show exactly which workflow code ran in the container.
+    try:
+        with open(__file__, 'rb') as f:
+            workflow_sha256 = hashlib.sha256(f.read()).hexdigest()
+        logger.info(
+            "Workflow fingerprint: sha256=%s | file=%s",
+            workflow_sha256,
+            os.path.realpath(__file__),
+        )
+    except Exception as e:
+        logger.warning("Could not compute workflow fingerprint: %s", str(e))
+
+    # Decide whether PEN precompute should run, and log the decision explicitly.
+    # Policy:
+    # - Skip when --nointeraction is set.
+    # - Skip when explicitly disabled (request_pen=False).
+    # - Skip when selections are customized (i.e., not the workflow defaults).
+    selections_default = _is_default_pen_selection(source_sel) and _is_default_pen_selection(target_sel)
+    if nointeraction:
+        pen_enabled = False
+        pen_skip_reason = 'nointeraction=True'
+    elif not request_pen:
+        pen_enabled = False
+        pen_skip_reason = 'request_pen=False'
+    elif not selections_default:
+        pen_enabled = False
+        pen_skip_reason = 'non-default source_sel/target_sel'
+    else:
+        pen_enabled = True
+        pen_skip_reason = None
+
+    pen_state = 'pending' if pen_enabled else 'skipped'
+    logger.info(
+        "PEN precompute: enabled=%s%s | source_sel=%r | target_sel=%r | cutoffs=%s | include_covalents=%s",
+        pen_enabled,
+        (f" (reason: {pen_skip_reason})" if (not pen_enabled and pen_skip_reason) else ""),
+        str(source_sel),
+        str(target_sel),
+        [float(x) for x in (pen_cutoffs or [])],
+        [bool(x) for x in (pen_include_covalents or [])],
+    )
     
     # Set up and validate GROMACS environment
     try:
@@ -3868,24 +4219,33 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             logger.error('No topology (.top) file available for interaction energy analysis')
             raise ValueError("Topology file required for interaction energy calculation")
 
-    # --- PEN analysis ---
-    if create_pen:
-        logger.info('Starting PEN (Protein Energy Network) analysis...')
-        pen_csv = os.path.join(out_folder, 'energies_intEnTotal.csv')
+    # --- PEN analysis (precomputed outputs for dashboard) ---
+    if pen_enabled:
+        logger.info('Starting PEN (Protein Energy Network) precompute...')
         pdb_path = os.path.join(out_folder, 'system_dry.pdb')
-        if os.path.exists(pen_csv) and os.path.exists(pdb_path):
-            compute_pen_and_bc(
-                structure_file=pdb_path,
-                int_en_csv=pen_csv,
-                out_folder=out_folder,
-                intEnCutoff_values=pen_cutoffs,
-                include_covalents_options=pen_include_covalents,
-                logger=logger,
-                source_sel=source_sel,
-                target_sel=target_sel
-            )
+        if os.path.exists(pdb_path):
+            try:
+                compute_pen_precomputed_outputs(
+                    out_folder=out_folder,
+                    structure_file=pdb_path,
+                    source_sel=source_sel,
+                    target_sel=target_sel,
+                    pen_cutoffs=pen_cutoffs,
+                    pen_include_covalents=pen_include_covalents,
+                    logger=logger,
+                )
+                pen_state = 'ran'
+            except Exception as e:
+                logger.warning(f"PEN precompute failed: {e}")
+                pen_state = 'failed'
         else:
             logger.warning("PEN input files not found, skipping PEN analysis.")
+            pen_state = 'missing_inputs'
+    else:
+        logger.info(
+            'Skipping PEN precompute (%s).',
+            pen_skip_reason or 'disabled',
+        )
 
     cleanUp(out_folder, logger)
     
@@ -3906,9 +4266,11 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             'source_sel': source_sel,
             'target_sel': target_sel,
             'nt': nt,
-            'create_pen': create_pen,
             'pen_cutoffs': pen_cutoffs,
-            'pen_include_covalents': pen_include_covalents
+            'pen_include_covalents': pen_include_covalents,
+            'pen_enabled': pen_enabled,
+            'pen_state': pen_state,
+            'pen_skip_reason': pen_skip_reason,
         }
         generate_workflow_summary_report(out_folder, logger, workflow_params)
     except Exception as e:
@@ -3968,10 +4330,17 @@ Input Modes:
     parser.add_argument('--recreate_topology', action='store_true',
                        help='Force recreation of topology file even if one exists')
     
-    # PEN-specific arguments
-    parser.add_argument('--create_pen', action='store_true', help='Create Protein Energy Networks (PENs) and calculate betweenness centralities')
+    # PEN-specific arguments. PEN precompute runs when interactions are computed and
+    # selections match the workflow defaults (to avoid generating PENs for arbitrary custom selections).
     parser.add_argument('--pen_cutoffs', nargs='+', type=float, default=[1.0], help='List of intEnCutoff values for PEN construction')
     parser.add_argument('--pen_include_covalents', nargs='+', type=lambda x: (str(x).lower() == 'true'), default=[True, False], help='Whether to include covalent bonds in PENs (True/False, can be multiple)')
+
+    # Backward/forward compatible PEN toggles:
+    # - By default, the workflow will attempt PEN precompute when eligible.
+    # - grinn-web historically passed --create_pen; accept it as a no-op enable flag.
+    # - Provide --no_pen to explicitly disable PEN precompute.
+    parser.add_argument('--create_pen', action='store_true', help='(Deprecated) Attempt PEN precompute when eligible (default behavior)')
+    parser.add_argument('--no_pen', action='store_true', help='Disable PEN precompute')
     
     # Add test-only flag
     parser.add_argument("--test-only", action="store_true", 
@@ -4035,10 +4404,11 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
                 'trajectory': os.path.join(out_folder, 'traj_dry.xtc'),
                 'topology': os.path.join(out_folder, 'topol_dry.top')
             },
-            'pen_files': {
-                'betweenness_centralities': os.path.join(out_folder, 'pen_betweenness_centralities.csv')
+            'pen_precomputed': {
+                'manifest': os.path.join(out_folder, 'pen_precomputed', 'manifest.json'),
+                'nodes': os.path.join(out_folder, 'pen_precomputed', 'nodes.csv'),
             },
-            'pen_networks': glob.glob(os.path.join(out_folder, 'pen_*.gml')),
+            'pen_precomputed_files': glob.glob(os.path.join(out_folder, 'pen_precomputed', '*.csv')),
             'log_files': {
                 'main_log': os.path.join(out_folder, 'calc.log'),
                 'gromacs_log': os.path.join(out_folder, 'gromacs.log')
@@ -4093,25 +4463,23 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
                     'error': f'Could not analyze energy CSV: {str(e)}'
                 }
         
-        # Analyze PEN results if available
-        pen_csv = os.path.join(out_folder, 'pen_betweenness_centralities.csv')
-        if os.path.exists(pen_csv):
+        # Analyze PEN results if available (precomputed dashboard outputs)
+        pen_manifest = os.path.join(out_folder, 'pen_precomputed', 'manifest.json')
+        if os.path.exists(pen_manifest):
             try:
-                df_pen = pd.read_csv(pen_csv)
-                
+                with open(pen_manifest, 'r') as f:
+                    manifest = json.load(f)
                 report['analysis_results']['pen_analysis'] = {
-                    'unique_residues': len(df_pen['Residue'].unique()),
-                    'pen_conditions': len(df_pen.groupby(['include_covalents', 'intEnCutoff'])),
-                    'frames_analyzed': len(df_pen['Frame'].unique()),
-                    'bc_statistics': {
-                        'mean_bc': float(df_pen['BC'].mean()),
-                        'max_bc': float(df_pen['BC'].max()),
-                        'min_bc': float(df_pen['BC'].min())
-                    }
+                    'energy_types': manifest.get('energy_types', []),
+                    'cutoffs': manifest.get('cutoffs', []),
+                    'include_covalents': manifest.get('include_covalents', []),
+                    'frame_counts': manifest.get('frame_counts', {}),
+                    'source_sel': manifest.get('source_sel'),
+                    'target_sel': manifest.get('target_sel'),
                 }
             except Exception as e:
                 report['analysis_results']['pen_analysis'] = {
-                    'error': f'Could not analyze PEN CSV: {str(e)}'
+                    'error': f'Could not read PEN manifest: {str(e)}'
                 }
         
         # Save report
@@ -4151,13 +4519,10 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
             if 'pen_analysis' in report['analysis_results']:
                 pa = report['analysis_results']['pen_analysis']
                 f.write("PEN Analysis:\n")
-                f.write(f"  Unique Residues: {pa.get('unique_residues', 'N/A')}\n")
-                f.write(f"  PEN Conditions: {pa.get('pen_conditions', 'N/A')}\n")
-                f.write(f"  Frames Analyzed: {pa.get('frames_analyzed', 'N/A')}\n")
-                if 'bc_statistics' in pa:
-                    stats = pa['bc_statistics']
-                    f.write(f"  Mean Betweenness Centrality: {stats['mean_bc']:.4f}\n")
-                    f.write(f"  Max Betweenness Centrality: {stats['max_bc']:.4f}\n")
+                f.write(f"  Energy Types: {pa.get('energy_types', 'N/A')}\n")
+                f.write(f"  Cutoffs: {pa.get('cutoffs', 'N/A')}\n")
+                f.write(f"  Include Covalents: {pa.get('include_covalents', 'N/A')}\n")
+                f.write(f"  Frame Counts: {pa.get('frame_counts', 'N/A')}\n")
                 f.write("\n")
             
             # Output files
@@ -4166,10 +4531,14 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
                 f.write(f"  {category.replace('_', ' ').title()}:\n")
                 if isinstance(files, dict):
                     for file_type, file_info in files.items():
-                        if file_info.get('exists', False):
-                            f.write(f"    ✓ {file_type}: {file_info['size_mb']} MB\n")
+                        if isinstance(file_info, dict):
+                            if file_info.get('exists', False):
+                                f.write(f"    ✓ {file_type}: {file_info.get('size_mb', 'N/A')} MB\n")
+                            else:
+                                f.write(f"    ✗ {file_type}: Not found\n")
                         else:
-                            f.write(f"    ✗ {file_type}: Not found\n")
+                            # e.g., pen_precomputed_files: {'count': int, 'files': [..]}
+                            f.write(f"    - {file_type}: {file_info}\n")
                 f.write("\n")
         
         logger.info(f'Human-readable summary generated: {text_report}')
@@ -4179,17 +4548,20 @@ def generate_workflow_summary_report(out_folder, logger, workflow_params=None):
 
 def main():
     args = parse_args()
+    # Default behavior is to attempt PEN precompute when eligible.
+    # --no_pen explicitly disables it. --create_pen is a deprecated no-op enable flag.
+    request_pen = not getattr(args, 'no_pen', False)
     run_grinn_workflow(
         args.structure_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
         args.nofixpdb, args.top, args.traj, args.nointeraction, 
         args.gpu, args.solvate, args.npt, args.source_sel, args.target_sel, 
         args.nt, args.skip, args.noconsole_handler,
-        create_pen=args.create_pen,
         pen_cutoffs=args.pen_cutoffs,
         pen_include_covalents=args.pen_include_covalents,
         test_only=getattr(args, 'test_only', False),
         force_field=args.force_field,
         water_model=args.water_model,
+        request_pen=request_pen,
         recreate_topology=args.recreate_topology,
         ensemble_mode=args.ensemble_mode,
         max_frames=args.max_frames
