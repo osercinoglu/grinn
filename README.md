@@ -47,8 +47,17 @@ docker run -v /path/to/data:/data grinn:gromacs-2024.1 workflow \
 
 **Launch Dashboard:**
 ```bash
-docker run -p 8051:8051 -v /path/to/data:/data grinn:gromacs-2024.1 dashboard /data/results
-# Open http://localhost:8051
+# Basic dashboard
+docker run -p 8060:8060 -v /path/to/data:/data grinn:gromacs-2024.1 dashboard /data/results
+
+# Dashboard with AI chatbot (requires Docker socket + API key)
+docker run -p 8060:8060 \
+  -v /path/to/data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e GEMINI_API_KEY=your_api_key \
+  grinn:gromacs-2024.1 dashboard /data/results
+
+# Open http://localhost:8060
 ```
 
 ### Conda Alternative
@@ -108,10 +117,10 @@ docker run -v C:/Users/YourName/data:/data grinn:gromacs-2024.1 workflow ...
 # With spaces: -v "C:/My Data":/data
 ```
 
-**Port 8051 in use:**
+**Port 8060 in use:**
 ```bash
-docker run -p 8052:8051 -v /path/to/data:/data grinn:gromacs-2024.1 dashboard /data/results
-# Access via http://localhost:8052
+docker run -p 8062:8060 -v /path/to/data:/data grinn:gromacs-2024.1 dashboard /data/results
+# Access via http://localhost:8062
 ```
 
 **Input requirements:**

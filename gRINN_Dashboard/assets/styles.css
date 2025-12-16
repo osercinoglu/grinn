@@ -1,10 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Irish+Grover&family=Roboto:wght@300;400;500;700&display=swap');
 
+html, body {
+    height: 100%;
+}
+
+/* Dash mounting points */
+#react-entry-point,
+#_dash-app-content,
+#_dash-global-error-container {
+    height: 100%;
+}
+
 body {
     background: #F5F7F5;
     font-family: 'Roboto', sans-serif;
     margin: 0;
     padding: 0;
+    /* Keep the page locked to viewport; component heights are set to fit. */
+    overflow: hidden;
+}
+
+@media (max-height: 900px) {
+    .main-title {
+        font-size: 1.6rem;
+        margin: 6px 0;
+    }
 }
 
 .main-title {
@@ -12,8 +32,8 @@ body {
     font-weight: 700;
     color: #7C9885;
     text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
-    font-size: 2.5rem;
-    margin: 20px 0;
+    font-size: 2.0rem;
+    margin: 10px 0;
     text-align: center;
     position: relative;
     letter-spacing: 1px;
@@ -30,8 +50,8 @@ body {
 .tab-content {
     background: rgba(248,253,248,0.6);
     border-radius: 10px;
-    padding: 15px;
-    margin: 10px;
+    padding: 8px;
+    margin: 6px;
 }
 
 /* Network Analysis - Prevent horizontal scrolling */
@@ -39,7 +59,7 @@ body {
     display: flex;
     gap: 15px;
     padding: 10px;
-    height: 75vh;
+    height: 58vh;
     width: 100%;
     overflow-x: hidden !important;  /* Force no horizontal scrollbar */
     overflow-y: hidden;  /* Parent container doesn't need vertical scroll */
@@ -117,6 +137,113 @@ body {
     background-color: rgba(102,187,106,0.3) !important;
     color: #2E7D32 !important;
     font-weight: 600 !important;
+}
+
+/* Chatbot: keep input visible; scroll messages instead */
+#chat-component-wrap {
+    min-height: 0;
+}
+
+/* Try common dash-chat container class names (no-op if not present) */
+#chat-component-wrap .dash-chat,
+#chat-component-wrap .dash-chat-container,
+#chat-component-wrap .chat-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#chat-component-wrap .messages,
+#chat-component-wrap .message-list,
+#chat-component-wrap .chat-messages,
+#chat-component-wrap .messages-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+#chat-component-wrap .chat-input,
+#chat-component-wrap .input-container,
+#chat-component-wrap form {
+    flex: 0 0 auto;
+}
+
+/* Fix z-index stacking for Plotly graphs in chat messages */
+#chat-component-wrap .messages,
+#chat-component-wrap .message-list,
+#chat-component-wrap .chat-messages,
+#chat-component-wrap .messages-container {
+    position: relative;
+    z-index: 1;
+}
+
+/* Ensure message bubbles stay in normal stacking order */
+#chat-component-wrap [class*="message"],
+#chat-component-wrap [class*="bubble"] {
+    position: relative;
+    z-index: auto;
+    overflow-x: auto;  /* Allow horizontal scroll for wide tables */
+    max-width: 100%;
+}
+
+/* Constrain Plotly graphs within chat bubbles */
+#chat-component-wrap .js-plotly-plot {
+    position: relative !important;
+    z-index: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+#chat-component-wrap .plotly-graph-div {
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Ensure table cells don't break layout */
+#chat-component-wrap .table-container {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* Style markdown tables in chat messages */
+#chat-component-wrap table {
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    table-layout: fixed;
+    word-wrap: break-word;
+}
+
+#chat-component-wrap th,
+#chat-component-wrap td {
+    padding: 4px 6px;
+    border: 1px solid #ddd;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 80px;
+}
+
+#chat-component-wrap th {
+    background-color: #f5f5f5;
+    font-weight: 600;
+}
+
+#chat-component-wrap tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+/* Ensure pre/code blocks in chat don't overflow */
+#chat-component-wrap pre,
+#chat-component-wrap code {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-width: 100%;
+    overflow-x: auto;
+    font-size: 11px;
 }
 
 /* Mol* viewer container */

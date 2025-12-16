@@ -529,16 +529,23 @@ show_summary() {
     
     if [[ "$GROMACS_VERSION" == "NONE" ]]; then
         print_info "Usage Examples:"
-        print_info "  docker run -p 8051:8051 -v /data:/data $IMAGE_TAG dashboard /data/results"
+        print_info "  # Basic dashboard (without chatbot):"
+        print_info "  docker run -p 8060:8060 -v /data:/data $IMAGE_TAG dashboard /data/results"
+        print_info ""
+        print_info "  # Dashboard with chatbot (requires Docker socket and API key):"
+        print_info "  docker run -p 8060:8060 -v /data:/data -v /var/run/docker.sock:/var/run/docker.sock -e GEMINI_API_KEY=your_key $IMAGE_TAG dashboard /data/results"
+        print_info ""
+        print_info "  # Interactive shell:"
         print_info "  docker run -it $IMAGE_TAG bash"
         print_info ""
         print_info "Note: This is a dashboard-only image (no GROMACS or workflow)."
         print_info "      For full gRINN functionality, build with a GROMACS version."
+        print_info "      Chatbot requires: 1) Docker socket mount, 2) GEMINI_API_KEY env var"
     else
         print_info "Usage Examples:"
         print_info "  docker run --rm $IMAGE_TAG gmx --version"
         print_info "  docker run --rm $IMAGE_TAG workflow --help"
-        print_info "  docker run -p 8051:8051 -v /data:/data $IMAGE_TAG dashboard /data/results"
+        print_info "  docker run -p 8060:8060 -v /data:/data $IMAGE_TAG dashboard /data/results"
         print_info "  docker run -it $IMAGE_TAG bash"
     fi
     

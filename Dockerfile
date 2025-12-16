@@ -16,7 +16,7 @@
 ARG GROMACS_VERSION=2024.1
 
 # Modern GROMACS versions use Ubuntu 22.04
-FROM ubuntu:22.04 as gromacs-builder
+FROM ubuntu:22.04 AS gromacs-builder
 
 # Re-declare ARG after FROM
 ARG GROMACS_VERSION=2024.1
@@ -125,7 +125,7 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
 # ============================================================================
 
 # Use Ubuntu 22.04 for runtime (matches builder stage)
-FROM ubuntu:22.04 as python-env
+FROM ubuntu:22.04 AS python-env
 
 # Re-declare ARG
 ARG GROMACS_VERSION=2024.1
@@ -257,7 +257,13 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
 # Install additional packages via pip (more reliable for some packages)
 RUN echo "📦 Installing additional packages via pip..." && \
     conda run -n grinn-env pip install --no-cache-dir \
-        dash-molstar && \
+        dash-molstar \
+        dash-chat \
+        pandasai \
+        pandasai-docker \
+        pandasai-litellm \
+        pillow \
+        flask-compress && \
     echo "✅ Pip packages installed successfully"
 
 # Copy GROMACS installation from builder stage (create empty dir for dashboard-only)
@@ -282,7 +288,7 @@ ENV LD_LIBRARY_PATH="/usr/local/gromacs/lib:$LD_LIBRARY_PATH"
 # STAGE 3: Final gRINN Application (rebuilds when code changes)
 # ============================================================================
 
-FROM python-env as final
+FROM python-env AS final
 
 # Re-declare build args
 ARG GROMACS_VERSION=2024.1
@@ -343,7 +349,7 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
         # For dashboard-only mode, add a runtime guard at the top of main execution
         # but keep the file importable for dashboard
         sed -i '1s/^/import sys\n/' grinn_workflow.py && \
-        sed -i '/if __name__ == .__main__./a\    print("❌ gRINN workflow not available in dashboard-only mode")\n    print("This image was built for dashboard functionality only")\n    print("Use: docker run -p 8051:8051 <image> dashboard <results_folder>")\n    sys.exit(1)' grinn_workflow.py && \
+        sed -i '/if __name__ == .__main__./a\    print("❌ gRINN workflow not available in dashboard-only mode")\n    print("This image was built for dashboard functionality only")\n    print("Use: docker run -p 8060:8060 <image> dashboard <results_folder>")\n    sys.exit(1)' grinn_workflow.py && \
         chmod +x grinn_workflow.py; \
     fi
 
@@ -363,7 +369,7 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
         echo '    echo "  help                                        - Show this help message"' >> /app/entrypoint.sh; \
         echo '    echo ""' >> /app/entrypoint.sh; \
         echo '    echo "Examples:"' >> /app/entrypoint.sh; \
-        echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn-dashboard:latest dashboard /data/results"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -p 8060:8060 -v /data:/data grinn-dashboard:latest dashboard /data/results"' >> /app/entrypoint.sh; \
         echo '    echo "  docker run -it grinn-dashboard:latest bash"' >> /app/entrypoint.sh; \
         echo '    echo ""' >> /app/entrypoint.sh; \
         echo '    echo "Note: This is a dashboard-only image. For full gRINN workflow, use grinn:gromacs-VERSION"' >> /app/entrypoint.sh; \
@@ -381,7 +387,7 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
         echo '    echo ""' >> /app/entrypoint.sh; \
         echo '    echo "Examples:"' >> /app/entrypoint.sh; \
         echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} workflow /data/protein.pdb /data/results"' >> /app/entrypoint.sh; \
-        echo '    echo "  docker run -p 8051:8051 -v /data:/data grinn:gromacs-${GROMACS_VERSION} dashboard /data/results"' >> /app/entrypoint.sh; \
+        echo '    echo "  docker run -p 8060:8060 -v /data:/data grinn:gromacs-${GROMACS_VERSION} dashboard /data/results"' >> /app/entrypoint.sh; \
         echo '    echo "  docker run -v /data:/data grinn:gromacs-${GROMACS_VERSION} gmx --version"' >> /app/entrypoint.sh; \
         echo '    echo "  docker run -it grinn:gromacs-${GROMACS_VERSION} bash"' >> /app/entrypoint.sh; \
     fi && \
@@ -413,7 +419,7 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \
     echo '        shift' >> /app/entrypoint.sh && \
     echo '        echo "📊 Starting gRINN Dashboard with GROMACS ${GROMACS_VERSION}..."' >> /app/entrypoint.sh && \
-    echo '        echo "Dashboard will be available at http://localhost:8050"' >> /app/entrypoint.sh && \
+    echo '        echo "Dashboard will be available at http://localhost:8060"' >> /app/entrypoint.sh && \
     echo '        echo "Results folder: $1"' >> /app/entrypoint.sh && \
     echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
     echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \

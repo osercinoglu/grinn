@@ -164,7 +164,7 @@ if eval "$BUILD_CMD"; then
     echo "  docker run -v /data:/data $FINAL_TAG workflow /data/protein.pdb /data/results"
     echo ""
     echo "  # Run dashboard"
-    echo "  docker run -p 8051:8051 -v /data:/data $FINAL_TAG dashboard /data/results"
+    echo "  docker run -p 8060:8060 -v /data:/data $FINAL_TAG dashboard /data/results"
     echo ""
     echo "  # Interactive bash"
     echo "  docker run -it $FINAL_TAG bash"

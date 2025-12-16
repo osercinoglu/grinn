@@ -1065,6 +1065,7 @@ def compute_pen_precomputed_outputs(
     target_sel: str,
     pen_cutoffs: list[float],
     pen_include_covalents: list[bool],
+    write_paths: bool = False,
     logger=None,
 ):
     """Compute and save precomputed PEN artifacts for dashboard consumption.
@@ -1074,7 +1075,7 @@ def compute_pen_precomputed_outputs(
       - nodes.csv
       - metrics_{energy}_cov{0|1}_cutoff{cutoff}.csv
       - edges_{energy}_cov{0|1}_cutoff{cutoff}_frame{frame}.csv
-      - paths_{energy}_cov{0|1}_cutoff{cutoff}_frame{frame}.csv
+            - paths_{energy}_cov{0|1}_cutoff{cutoff}_frame{frame}.csv (optional; controlled by write_paths)
     """
     import csv
     import json
@@ -1139,6 +1140,7 @@ def compute_pen_precomputed_outputs(
         'edge_attributes': ['weight', 'distance'],
         'metrics': ['degree', 'betweenness', 'closeness'],
         'paths': {
+            'enabled': bool(write_paths),
             'definition': 'all shortest paths by distance=1-weight',
             'path_format': 'RES --> RES --> ...',
         },
@@ -1192,12 +1194,13 @@ def compute_pen_precomputed_outputs(
                         )
                         _write_edges_csv(G, edges_csv)
 
-                        # Save all shortest paths per frame
-                        paths_csv = os.path.join(
-                            pen_root,
-                            f"paths_{energy_type}_cov{cov_flag}_cutoff{cutoff}_frame{frame_idx}.csv",
-                        )
-                        _export_all_shortest_paths_csv(G, paths_csv)
+                        # Save all shortest paths per frame (optional; can be large on disk)
+                        if write_paths:
+                            paths_csv = os.path.join(
+                                pen_root,
+                                f"paths_{energy_type}_cov{cov_flag}_cutoff{cutoff}_frame{frame_idx}.csv",
+                            )
+                            _export_all_shortest_paths_csv(G, paths_csv)
 
                         # Compute and write node metrics for this frame
                         met = _compute_metrics(G)
@@ -3809,6 +3812,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
                        nt=1, skip=1, noconsole_handler=False, pen_cutoffs=[1.0], 
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
                        request_pen=True,
+                       pen_write_paths=False,
                        recreate_topology=False, ensemble_mode=False, max_frames=None):
     
     # If test_only flag is set, just validate inputs and exit
@@ -3897,6 +3901,12 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         [float(x) for x in (pen_cutoffs or [])],
         [bool(x) for x in (pen_include_covalents or [])],
     )
+    if pen_enabled:
+        logger.info(
+            "PEN precompute: shortest-path CSV export %s (pen_write_paths=%s)",
+            ("ENABLED" if pen_write_paths else "disabled"),
+            bool(pen_write_paths),
+        )
     
     # Set up and validate GROMACS environment
     try:
@@ -4232,6 +4242,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
                     target_sel=target_sel,
                     pen_cutoffs=pen_cutoffs,
                     pen_include_covalents=pen_include_covalents,
+                    write_paths=bool(pen_write_paths),
                     logger=logger,
                 )
                 pen_state = 'ran'
@@ -4268,6 +4279,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             'nt': nt,
             'pen_cutoffs': pen_cutoffs,
             'pen_include_covalents': pen_include_covalents,
+            'pen_write_paths': bool(pen_write_paths),
             'pen_enabled': pen_enabled,
             'pen_state': pen_state,
             'pen_skip_reason': pen_skip_reason,
@@ -4334,6 +4346,12 @@ Input Modes:
     # selections match the workflow defaults (to avoid generating PENs for arbitrary custom selections).
     parser.add_argument('--pen_cutoffs', nargs='+', type=float, default=[1.0], help='List of intEnCutoff values for PEN construction')
     parser.add_argument('--pen_include_covalents', nargs='+', type=lambda x: (str(x).lower() == 'true'), default=[True, False], help='Whether to include covalent bonds in PENs (True/False, can be multiple)')
+
+    # Optional: writing per-frame all-pairs shortest-path CSVs can consume significant disk.
+    # Default is OFF; enable explicitly with --pen_paths.
+    parser.add_argument('--pen_paths', action='store_true', help='Enable writing PEN shortest-path CSVs (paths_*.csv)')
+    # Backward compatibility for earlier iterations.
+    parser.add_argument('--no_pen_paths', action='store_true', help='(Deprecated) Disable writing PEN shortest-path CSVs (paths_*.csv)')
 
     # Backward/forward compatible PEN toggles:
     # - By default, the workflow will attempt PEN precompute when eligible.
@@ -4551,6 +4569,9 @@ def main():
     # Default behavior is to attempt PEN precompute when eligible.
     # --no_pen explicitly disables it. --create_pen is a deprecated no-op enable flag.
     request_pen = not getattr(args, 'no_pen', False)
+    pen_write_paths = bool(getattr(args, 'pen_paths', False))
+    if getattr(args, 'no_pen_paths', False):
+        pen_write_paths = False
     run_grinn_workflow(
         args.structure_file, args.out_folder, args.ff_folder, args.initpairfiltercutoff, 
         args.nofixpdb, args.top, args.traj, args.nointeraction, 
@@ -4562,6 +4583,7 @@ def main():
         force_field=args.force_field,
         water_model=args.water_model,
         request_pen=request_pen,
+        pen_write_paths=pen_write_paths,
         recreate_topology=args.recreate_topology,
         ensemble_mode=args.ensemble_mode,
         max_frames=args.max_frames

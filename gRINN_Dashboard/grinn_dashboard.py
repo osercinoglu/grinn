@@ -3,8 +3,11 @@ import re
 import sys
 import argparse
 import csv
+import json
 from functools import lru_cache
 from dash import Dash, dcc, html, dash_table, Input, Output, State, no_update, ctx
+import dash
+from dash_chat import ChatComponent
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import pandas as pd
@@ -13,6 +16,7 @@ import dash_molstar
 from dash_molstar.utils import molstar_helper
 from dash_molstar.utils.representations import Representation
 import numpy as np
+import networkx as nx
 from prody import parsePDB
 from tqdm import tqdm
 
@@ -505,24 +509,96 @@ def main():
                 })
         return out
 
-    def _load_shortest_paths_for_pair(path: str, source: str, target: str):
-        if not os.path.exists(path):
+    def _compute_shortest_paths_for_pair_from_edges(edges: list, source: str, target: str):
+        """Compute all shortest paths between source and target using the same method as grinn_workflow.py.
+
+        - Builds an undirected NetworkX graph from edges.csv rows with 'distance' edge attribute.
+        - Uses nx.dijkstra_predecessor_and_distance(..., weight='distance')
+        - Enumerates all shortest paths via predecessor lists.
+        """
+        if not edges:
             return []
+        if not source or not target or source == target:
+            return []
+
+        G = nx.Graph()
+        for e in edges:
+            u = e.get('source')
+            v = e.get('target')
+            if not u or not v:
+                continue
+            try:
+                weight = float(e.get('weight', 0.0))
+            except Exception:
+                weight = 0.0
+            try:
+                distance = float(e.get('distance', 1.0))
+            except Exception:
+                distance = 1.0
+            G.add_edge(u, v, weight=weight, distance=distance)
+
+        if not G.has_node(source) or not G.has_node(target):
+            return []
+
+        try:
+            pred, dist = nx.dijkstra_predecessor_and_distance(G, source, weight='distance')
+        except Exception:
+            return []
+
+        if target not in dist:
+            return []
+
         rows = []
-        with open(path, 'r', newline='') as f:
-            r = csv.DictReader(f)
-            for row in r:
-                if row.get('source') == source and row.get('target') == target:
-                    rows.append({
-                        'path': row.get('path', ''),
-                        'length': row.get('length', ''),
-                        'hops': int(row.get('hops', 0)) if str(row.get('hops', '')).isdigit() else row.get('hops', ''),
-                    })
+        # Enumerate all shortest paths from source to target using predecessor lists.
+        stack = [(target, [target])]
+        while stack:
+            node, path_rev = stack.pop()
+            if node == source:
+                path = list(reversed(path_rev))
+                total_distance = 0.0
+                for uu, vv in zip(path[:-1], path[1:]):
+                    ed = G.get_edge_data(uu, vv) or {}
+                    total_distance += float(ed.get('distance', 1.0))
+                hops = len(path) - 1
+                path_str = ' --> '.join(path)
+                rows.append({
+                    'path': path_str,
+                    'length': f"{total_distance:.4f}",
+                    'hops': hops,
+                })
+                continue
+
+            for p in pred.get(node, []):
+                stack.append((p, path_rev + [p]))
+
         try:
             rows.sort(key=lambda x: float(x['length']))
         except Exception:
             pass
         return rows
+
+    def _load_shortest_paths_for_pair(paths_csv_path: str, edges_csv_path: str, source: str, target: str):
+        """Load shortest paths from precomputed paths CSV if present; otherwise compute from edges CSV."""
+        if os.path.exists(paths_csv_path):
+            rows = []
+            with open(paths_csv_path, 'r', newline='') as f:
+                r = csv.DictReader(f)
+                for row in r:
+                    if row.get('source') == source and row.get('target') == target:
+                        rows.append({
+                            'path': row.get('path', ''),
+                            'length': row.get('length', ''),
+                            'hops': int(row.get('hops', 0)) if str(row.get('hops', '')).isdigit() else row.get('hops', ''),
+                        })
+            try:
+                rows.sort(key=lambda x: float(x['length']))
+            except Exception:
+                pass
+            return rows
+
+        # Fallback: compute on-the-fly using edges for this frame.
+        edges = _load_edges_for_frame(edges_csv_path)
+        return _compute_shortest_paths_for_pair_from_edges(edges, source, target)
 
     print("      ✓ PEN dashboard mode: load-only (no NetworkX computations)", flush=True)
 
@@ -557,42 +633,323 @@ def main():
 
     # CSS styling is now loaded from external file in assets/styles.css
 
+    # Chatbot state stores
+    session_store = dcc.Store(id='chat-session-id', storage_type='session')
+    chatbot_visible_store = dcc.Store(id='chatbot-visible', data=False, storage_type='session')
+    cleanup_store = dcc.Store(id='chat-cleanup', storage_type='memory')
+
+    def _maybe_load_env_file() -> None:
+        """Best-effort load of KEY=VALUE pairs from a local env file.
+
+        This lets users set PANDASAI_MODELS (and API keys) in a file when the
+        dashboard is launched without those vars exported in the shell.
+
+                Precedence:
+                - Existing process env vars are never overwritten (except empty values).
+                - File candidates (first found wins):
+                    1) $PANDASAI_ENV_FILE / $DOTENV_FILE
+                    2) ./.env then ./.venv (if .venv is a file, not a directory)
+                    3) <this_script_dir>/.env
+                    4) <repo_root>/grinn-web/.env (common sibling checkout)
+        """
+
+        def _strip_quotes(v: str) -> str:
+            v = v.strip()
+            if len(v) >= 2 and ((v[0] == v[-1] == '"') or (v[0] == v[-1] == "'")):
+                return v[1:-1]
+            return v
+
+        def _load_file(path: str) -> bool:
+            try:
+                if not path or not os.path.exists(path) or not os.path.isfile(path):
+                    return False
+                with open(path, 'r', encoding='utf-8') as f:
+                    for raw in f:
+                        line = raw.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if line.lower().startswith('export '):
+                            line = line[7:].lstrip()
+                        if '=' not in line:
+                            continue
+                        k, v = line.split('=', 1)
+                        k = k.strip()
+                        if not k:
+                            continue
+                        # Don't override existing env vars, unless they are empty.
+                        if k in os.environ and str(os.environ.get(k, '')).strip() != '':
+                            continue
+                        os.environ[k] = _strip_quotes(v)
+                return True
+            except Exception:
+                return False
+
+        candidates: list[str] = []
+        for env_key in ('PANDASAI_ENV_FILE', 'DOTENV_FILE'):
+            p = (os.getenv(env_key) or '').strip()
+            if p:
+                candidates.append(p)
+        cwd = os.getcwd()
+        candidates.append(os.path.join(cwd, '.env'))
+        candidates.append(os.path.join(cwd, '.venv'))
+        try:
+            candidates.append(os.path.join(os.path.dirname(__file__), '.env'))
+        except Exception:
+            pass
+
+        # If grinn-web is checked out next to grinn/, load its .env as well.
+        try:
+            repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            sibling_env = os.path.abspath(os.path.join(repo_root, '..', 'grinn-web', '.env'))
+            candidates.append(sibling_env)
+        except Exception:
+            pass
+
+        # Also try to find grinn-web/.env up a few levels from CWD.
+        try:
+            for i in range(0, 4):
+                base = os.path.abspath(os.path.join(cwd, *(['..'] * i)))
+                candidates.append(os.path.join(base, 'grinn-web', '.env'))
+        except Exception:
+            pass
+
+        for p in candidates:
+            # If .venv is a directory (common), skip it.
+            if os.path.basename(p) == '.venv' and os.path.isdir(p):
+                continue
+            if _load_file(p):
+                break
+
+    # Load env file before reading PANDASAI_MODELS/default model.
+    _maybe_load_env_file()
+
+    def _parse_models_env(raw: str) -> list[str]:
+        import json
+
+        s = (raw or '').strip()
+        if not s:
+            return []
+
+        # JSON array format: ["model1","model2"]
+        if s.startswith('['):
+            try:
+                parsed = json.loads(s)
+                if isinstance(parsed, list):
+                    out: list[str] = []
+                    for item in parsed:
+                        if isinstance(item, str) and item.strip():
+                            out.append(item.strip())
+                    # de-dupe while preserving order
+                    seen = set()
+                    uniq: list[str] = []
+                    for m in out:
+                        if m not in seen:
+                            seen.add(m)
+                            uniq.append(m)
+                    return uniq
+            except Exception:
+                pass
+
+        # Comma/newline separated
+        parts = [p.strip() for p in s.replace('\n', ',').split(',')]
+        out = [p for p in parts if p]
+        seen = set()
+        uniq: list[str] = []
+        for m in out:
+            if m not in seen:
+                seen.add(m)
+                uniq.append(m)
+        return uniq
+
+    def _get_available_models() -> tuple[list[str], str]:
+        models = _parse_models_env(os.getenv('PANDASAI_MODELS', ''))
+        fallback = 'gemini/gemini-pro-latest'
+        default_model = (os.getenv('PANDASAI_DEFAULT_MODEL') or os.getenv('PANDASAI_MODEL') or (models[0] if models else fallback)).strip()
+        if not models:
+            models = [default_model or fallback]
+        elif default_model and default_model not in models:
+            models = [default_model] + models
+        return models, (default_model or models[0] or fallback)
+
+    AVAILABLE_MODELS, DEFAULT_MODEL = _get_available_models()
+
+    # Token limit from environment (0 or empty = unlimited)
+    _token_limit_raw = os.getenv('PANDASAI_TOKEN_LIMIT', '').strip()
+    PANDASAI_TOKEN_LIMIT = int(_token_limit_raw) if _token_limit_raw.isdigit() else 0
+
+    # --- Build DataFrame registry for chatbot context selection ---
+    # This registry allows users to select which DataFrames to include in LLM queries.
+    # Categories: Pairwise Interaction Energies, Network Metrics, Network Edges
+    import glob
+    import re as _re
+
+    def _pen_folder_from_dashboard() -> str:
+        return os.path.join(data_dir, 'pen_precomputed')
+
+    def _build_chatbot_dataframe_registry():
+        """Build the registry of available DataFrames for chatbot queries."""
+        registry_items = {}
+
+        # 1. Pairwise Interaction Energy DataFrames (wide format - original CSVs)
+        for energy_type, df in [('Total', total_df_wide), ('VdW', vdw_df_wide), ('Electrostatic', elec_df_wide)]:
+            key = f"IE_{energy_type}"
+            registry_items[key] = {
+                'df': df,
+                'category': 'Pairwise Energies',
+                'label': f"IE: {energy_type}",
+                'description': f"Pairwise {energy_type} interaction energies (all frames)",
+                'rows': len(df),
+                'cols': len(df.columns),
+            }
+
+        # 2. Network Metrics DataFrames (from pen_precomputed/metrics_*.csv)
+        pen = _pen_folder_from_dashboard()
+        metrics_files = sorted(glob.glob(os.path.join(pen, 'metrics_*.csv')))
+        for path in metrics_files:
+            basename = os.path.basename(path)
+            m = _re.match(r"metrics_(?P<energy>[^_]+)_cov(?P<cov>[01])_cutoff(?P<cutoff>-?[0-9.]+)\.csv", basename)
+            if not m:
+                continue
+            energy = m.group('energy')
+            cov = 'Cov' if m.group('cov') == '1' else 'NoCov'
+            cutoff = m.group('cutoff')
+            key = f"Metrics_{energy}_{cov}_Cut{cutoff}"
+            try:
+                df = pd.read_csv(path)
+                registry_items[key] = {
+                    'df': df,
+                    'category': 'Network Metrics',
+                    'label': f"Metrics: {energy} {cov} Cut{cutoff}",
+                    'description': f"Network metrics ({energy}, covalents={'included' if cov == 'Cov' else 'excluded'}, cutoff={cutoff})",
+                    'rows': len(df),
+                    'cols': len(df.columns),
+                }
+            except Exception:
+                continue
+
+        # 3. Network Edges DataFrames - group by settings, pick frame 0 as representative
+        edges_files = sorted(glob.glob(os.path.join(pen, 'edges_*.csv')))
+        edges_seen = set()
+        for path in edges_files:
+            basename = os.path.basename(path)
+            m = _re.match(r"edges_(?P<energy>[^_]+)_cov(?P<cov>[01])_cutoff(?P<cutoff>-?[0-9.]+)_frame(?P<frame>\d+)\.csv", basename)
+            if not m:
+                continue
+            energy = m.group('energy')
+            cov = 'Cov' if m.group('cov') == '1' else 'NoCov'
+            cutoff = m.group('cutoff')
+            frame = int(m.group('frame'))
+            # Only include frame 0 as representative to avoid too many options
+            setting_key = f"{energy}_{cov}_{cutoff}"
+            if setting_key in edges_seen:
+                continue
+            edges_seen.add(setting_key)
+            key = f"Edges_{energy}_{cov}_Cut{cutoff}"
+            try:
+                df = pd.read_csv(path)
+                registry_items[key] = {
+                    'df': df,
+                    'category': 'Network Edges',
+                    'label': f"Edges: {energy} {cov} Cut{cutoff}",
+                    'description': f"Network edges ({energy}, covalents={'included' if cov == 'Cov' else 'excluded'}, cutoff={cutoff}, frame {frame})",
+                    'rows': len(df),
+                    'cols': len(df.columns),
+                }
+            except Exception:
+                continue
+
+        return registry_items
+
+    _CHATBOT_DATAFRAMES = _build_chatbot_dataframe_registry()
+
+    # Build dropdown options grouped by category
+    def _get_dataframe_dropdown_options():
+        options = []
+        categories = {}
+        for key, info in _CHATBOT_DATAFRAMES.items():
+            cat = info['category']
+            if cat not in categories:
+                categories[cat] = []
+            categories[cat].append({'label': f"{info['label']} ({info['rows']}×{info['cols']})", 'value': key})
+        # Flatten with category headers
+        for cat in ['Pairwise Energies', 'Network Metrics', 'Network Edges']:
+            if cat in categories:
+                for opt in categories[cat]:
+                    options.append(opt)
+        return options
+
+    DATAFRAME_OPTIONS = _get_dataframe_dropdown_options()
+    DEFAULT_DATAFRAMES = ['IE_Total']  # Default selection
+    if 'Metrics_Total_Cov_Cut1.0' in _CHATBOT_DATAFRAMES:
+        DEFAULT_DATAFRAMES.append('Metrics_Total_Cov_Cut1.0')
+    elif _CHATBOT_DATAFRAMES:
+        # Pick first metrics if available
+        for k in _CHATBOT_DATAFRAMES:
+            if k.startswith('Metrics_'):
+                DEFAULT_DATAFRAMES.append(k)
+                break
+
+    def _resolve_model_selection(selected: str | None) -> str:
+        if isinstance(selected, str) and selected.strip() and selected.strip() in AVAILABLE_MODELS:
+            return selected.strip()
+        return DEFAULT_MODEL
+
     app.layout = dbc.Container([
-        dbc.Row([
-            dbc.Col([
-                html.Div(style={
-                    'display': 'flex',
-                    'alignItems': 'center',
-                    'justifyContent': 'space-between',
-                    'margin': '10px 0 15px 0'
-                }, children=[
-                    html.H1("gRINN Workflow Results",
-                            className="main-title",
-                            style={
-                                'color': soft_palette['primary'],
-                                'fontFamily': 'Roboto, sans-serif',
-                                'fontWeight': '700',
-                                'fontSize': '2rem',
-                                'margin': '0',
-                                'textShadow': '1px 1px 2px rgba(0,0,0,0.1)',
-                                'letterSpacing': '1px',
-                                'flex': '0 0 auto'
-                            }),
-                    html.P(f"📁 {data_dir}",
-                           style={
-                               'textAlign': 'center',
-                               'color': soft_palette['text'],
-                               'fontFamily': 'Roboto, sans-serif',
-                               'fontSize': '0.9rem',
-                               'margin': '0',
-                               'flex': '1',
-                               'paddingLeft': '20px',
-                               'paddingRight': '20px'
-                           })
-                ])
-            ], width=12)
+        html.Div([
+            dbc.Row([
+                dbc.Col([
+                    html.Div(style={
+                        'display': 'flex',
+                        'alignItems': 'center',
+                        'justifyContent': 'space-between',
+                        'margin': '4px 0 6px 0'
+                    }, children=[
+                        html.H1("gRINN Workflow Results",
+                                className="main-title",
+                                style={
+                                    'color': soft_palette['primary'],
+                                    'fontFamily': 'Roboto, sans-serif',
+                                    'fontWeight': '700',
+                                    'fontSize': '1.6rem',
+                                    'margin': '0',
+                                    'textShadow': '1px 1px 2px rgba(0,0,0,0.1)',
+                                    'letterSpacing': '1px',
+                                    'flex': '0 0 auto'
+                                }),
+                        html.P(f"📁 {data_dir}",
+                               style={
+                                   'textAlign': 'center',
+                                   'color': soft_palette['text'],
+                                   'fontFamily': 'Roboto, sans-serif',
+                                   'fontSize': '0.9rem',
+                                   'margin': '0',
+                                   'flex': '1',
+                                   'paddingLeft': '12px',
+                                   'paddingRight': '12px'
+                               }),
+                        html.Button('💬 gRINN Chatbot', id='toggle-chatbot', n_clicks=0,
+                                    style={
+                                        'backgroundColor': soft_palette['primary'],
+                                        'color': 'white',
+                                        'border': 'none',
+                                        'borderRadius': '8px',
+                                        'padding': '6px 10px',
+                                        'fontWeight': 'bold',
+                                        'fontSize': '12px',
+                                        'cursor': 'pointer',
+                                        'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
+                                    })
+                    ])
+                ], width=12)
+            ]),
+            # Store components for chatbot state
+            session_store,
+            chatbot_visible_store,
+            cleanup_store,
+            dcc.Interval(id='chat-cleanup-tick', interval=60_000, n_intervals=0),
         ]),
-        dbc.Row([
+        html.Div([
+            dbc.Row([
             # Left Panel: Tabs
             dbc.Col([
                 dbc.Card([
@@ -624,7 +981,7 @@ def main():
                                                 data=[{'Residue': r} for r in first_res_list],
                                                 row_selectable='single',
                                                 style_table={
-                                                    'height': 'calc(100vh - 250px)', 
+                                                    'height': 'calc(100vh - 360px)',
                                                     'overflowY': 'scroll',
                                                     'borderRadius': '8px',
                                                     'border': f'2px solid {soft_palette["accent"]}',
@@ -667,7 +1024,7 @@ def main():
                                                 data=[],
                                                 row_selectable='single',
                                                 style_table={
-                                                    'height': 'calc(100vh - 250px)', 
+                                                    'height': 'calc(100vh - 360px)',
                                                     'overflowY': 'scroll',
                                                     'borderRadius': '8px',
                                                     'border': f'2px solid {soft_palette["accent"]}',
@@ -706,7 +1063,7 @@ def main():
                                         dbc.CardBody([
                                             dcc.Graph(
                                                 id='energy_bar_chart',
-                                                style={'height': 'calc(100vh - 250px)'},
+                                                style={'height': 'calc(100vh - 360px)'},
                                                 config={'displayModeBar': False}
                                             )
                                         ], style={'padding': '5px'})
@@ -715,9 +1072,9 @@ def main():
                                 dbc.Col([
                                     dbc.Card([
                                         dbc.CardBody([
-                                            dcc.Graph(id='total_energy_graph', style={'height': 'calc((100vh - 200px) / 3)'}),
-                                            dcc.Graph(id='vdw_energy_graph', style={'height': 'calc((100vh - 200px) / 3)'}),
-                                            dcc.Graph(id='elec_energy_graph', style={'height': 'calc((100vh - 200px) / 3)'})
+                                            dcc.Graph(id='total_energy_graph', style={'height': 'calc((100vh - 420px) / 3)'}),
+                                            dcc.Graph(id='vdw_energy_graph', style={'height': 'calc((100vh - 420px) / 3)'}),
+                                            dcc.Graph(id='elec_energy_graph', style={'height': 'calc((100vh - 420px) / 3)'})
                                         ])
                                     ])
                                 ], width=6)
@@ -784,7 +1141,7 @@ def main():
                                             ], style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'width': '100%'})
                                         ], style={'backgroundColor': soft_palette["light_blue"], 'padding': '10px'}),
                                         dbc.CardBody([
-                                            dcc.Graph(id='matrix_heatmap', style={'height': 'calc(100vh - 240px)'})
+                                            dcc.Graph(id='matrix_heatmap', style={'height': 'calc(100vh - 360px)'})
                                         ])
                                     ])
                                 ], width=12)
@@ -796,8 +1153,8 @@ def main():
                         html.Div(id='network-analysis-tab', className="tab-content", style={
                             'background': f'rgba(248,255,248,0.6)',
                             'borderRadius': '10px',
-                            'padding': '15px',
-                            'margin': '10px',
+                            'padding': '8px',
+                            'margin': '6px',
                             'border': f'2px solid {soft_palette["accent"]}'
                         }, children=[
                             # General Network Settings (moved from Network Metrics tab)
@@ -807,8 +1164,8 @@ def main():
                                 'paddingBottom': '15px',
                                 'background': soft_palette["light_blue"],
                                 'borderRadius': '10px',
-                                'padding': '15px',
-                                'marginBottom': '15px',
+                                'padding': '10px',
+                                'marginBottom': '10px',
                                 'boxShadow': '0 4px 16px rgba(0,0,0,0.1)'
                             }, children=[
                                 dcc.Checklist(
@@ -821,6 +1178,28 @@ def main():
                                         'fontFamily': 'Roboto, sans-serif',
                                         'fontWeight': '500',
                                         'fontSize': '12px'
+                                    }
+                                ),
+                                html.Label("🔥 Energy type:", style={
+                                    'color': 'white',
+                                    'fontFamily': 'Roboto, sans-serif',
+                                    'fontWeight': '500',
+                                    'fontSize': '12px',
+                                    'marginRight': '10px'
+                                }),
+                                dcc.RadioItems(
+                                    id='network_energy_type',
+                                    options=[
+                                        {'label': '🔥 Total', 'value': 'Total'},
+                                        {'label': '⚡ Elec', 'value': 'Electrostatic'},
+                                        {'label': '🌊 VdW', 'value': 'VdW'},
+                                    ],
+                                    value='Total',
+                                    inline=True,
+                                    className='text-white',
+                                    style={
+                                        'fontSize': '12px',
+                                        'marginRight': '20px'
                                     }
                                 ),
                                 html.Label("⚡ Edge addition energy cutoff (kcal/mol): ", style={
@@ -934,7 +1313,7 @@ def main():
                                             dcc.Graph(
                                                 id='network_metrics_heatmap',
                                                 config={'displayModeBar': True, 'displaylogo': False},
-                                                style={'width': '100%', 'height': '70vh'}
+                                                style={'width': '100%', 'height': 'calc(100vh - 470px)'}
                                             )
                                         ])
                                     ])
@@ -1071,9 +1450,9 @@ def main():
                     ])
                 ])
             ])
-        ], style={'padding': '20px', 'backgroundColor': 'rgba(255,255,255,0.95)', 'borderRadius': '15px', 'border': f'3px solid {soft_palette["border"]}', 'boxShadow': '0 8px 32px rgba(0,0,0,0.1)'})
-        ], width=8),
-        # Right Panel: 3D Viewer with tabs
+        ], style={'padding': '12px', 'backgroundColor': 'rgba(255,255,255,0.95)', 'borderRadius': '15px', 'border': f'3px solid {soft_palette["border"]}', 'boxShadow': '0 8px 32px rgba(0,0,0,0.1)'})
+        ], width=8, id='left-panel'),
+        # Middle Panel: 3D Viewer
         dbc.Col([
             dbc.Card([
                 dbc.CardHeader([
@@ -1090,7 +1469,7 @@ def main():
                                         id='viewer', 
                                         data=initial_traj, 
                                         layout={'modelIndex': frame_min}, 
-                                        style={'width': '100%','height':'65vh'}
+                                        style={'width': '100%','height':'calc(100vh - 520px)'}
                                     )
                                 ])
                             ], style={'border': f'3px solid {soft_palette["border"]}', 'borderRadius': '10px', 'backgroundColor': 'rgba(250,255,250,0.4)', 'marginTop': '10px'})
@@ -1102,7 +1481,7 @@ def main():
                                 # 3D Force Graph container
                                 html.Div(id='network-3d-container', style={
                                     'width': '100%',
-                                    'height': '65vh',
+                                    'height': 'calc(100vh - 520px)',
                                     'border': f'2px solid {soft_palette["border"]}',
                                     'borderRadius': '10px',
                                     'backgroundColor': 'rgba(255,255,255,0.9)',
@@ -1134,9 +1513,689 @@ def main():
                     ], className="mt-3")
                 ])
             ])
-        ], width=4)
-    ], className="mt-3")
-    ], fluid=True, style={'background': soft_palette["background"], 'minHeight': '100vh', 'padding': '20px'})
+        ], width=4, id='viewer-panel'),
+        # Right Panel: Chatbot (shown/hidden via toggle)
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader([
+                    html.Div(style={
+                        'display': 'flex',
+                        'justifyContent': 'space-between',
+                        'alignItems': 'center'
+                    }, children=[
+                        html.H5('💬 gRINN Chatbot', className='mb-0', style={'color': 'white'}),
+                        html.Button('✕', id='close-chatbot', n_clicks=0, style={
+                            'backgroundColor': 'transparent',
+                            'border': 'none',
+                            'color': 'white',
+                            'fontSize': '20px',
+                            'cursor': 'pointer',
+                            'padding': '0',
+                            'width': '30px',
+                            'height': '30px'
+                        })
+                    ])
+                ], style={'backgroundColor': soft_palette['primary']}),
+                dbc.CardBody([
+                    html.Div(
+                        [
+                            # Token usage display (right-aligned in header area)
+                            html.Div([
+                                html.Span(
+                                    "Tokens: 0 / ∞" if PANDASAI_TOKEN_LIMIT <= 0 else f"Tokens: 0 / {PANDASAI_TOKEN_LIMIT:,}",
+                                    id='token-usage-display',
+                                    style={'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
+                                ),
+                            ], style={'textAlign': 'right', 'marginBottom': '6px'}),
+                            # Model selector
+                            html.Div([
+                                html.Label('Model', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                dcc.Dropdown(
+                                    id='llm-model',
+                                    options=[{'label': m, 'value': m} for m in AVAILABLE_MODELS],
+                                    value=DEFAULT_MODEL,
+                                    clearable=False,
+                                    searchable=True,
+                                    persistence=True,
+                                    persistence_type='session',
+                                    style={'fontSize': '12px'}
+                                ),
+                            ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                            # DataFrame selector (multi-select, max 4)
+                            html.Div([
+                                html.Label('DataFrames (max 4)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                dcc.Dropdown(
+                                    id='chat-dataframe-selector',
+                                    options=DATAFRAME_OPTIONS,
+                                    value=DEFAULT_DATAFRAMES[:4],
+                                    multi=True,
+                                    clearable=False,
+                                    searchable=True,
+                                    persistence=True,
+                                    persistence_type='session',
+                                    style={'fontSize': '11px'},
+                                    maxHeight=200
+                                ),
+                            ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                            # Store for token usage tracking per session
+                            dcc.Store(id='chat-token-usage', data={'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}, storage_type='session'),
+                            html.Div(
+                                ChatComponent(
+                                    id='chat',
+                                    messages=[],
+                                    assistant_bubble_style={
+                                        'backgroundColor': soft_palette['surface'],
+                                        'color': soft_palette['text'],
+                                        'marginRight': 'auto',
+                                        'textAlign': 'left',
+                                        'maxWidth': '100%',
+                                        'width': '100%',
+                                        'overflow': 'hidden',
+                                        'boxSizing': 'border-box',
+                                        'position': 'relative',
+                                        'zIndex': 'auto'
+                                    },
+                                ),
+                                id='chat-component-wrap',
+                                style={'flex': '1 1 auto', 'minHeight': 0, 'overflow': 'hidden'}
+                            ),
+                        ],
+                        style={'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100vh - 250px)', 'minHeight': 0}
+                    )
+                ], style={'padding': '10px', 'overflow': 'hidden'})
+            ], style={'height': '100%', 'borderRadius': '10px', 'border': f'3px solid {soft_palette["border"]}'})
+        ], width=3, id='chat-panel', style={'display': 'none'})
+        ], className="mt-1")
+        ])
+    ], fluid=True, style={'background': soft_palette["background"], 'padding': '10px'})
+
+    # --- Chatbot backend helpers ---
+    import uuid
+    import time
+    from dataclasses import dataclass
+    from typing import Optional
+    @dataclass
+    class _SessionEntry:
+        value: object
+        last_access_epoch_s: float
+
+    class _TTLRegistry:
+        def __init__(self, ttl_seconds: int):
+            self._ttl = ttl_seconds
+            self._items: dict[str, _SessionEntry] = {}
+        def get_or_create(self, sid: str, factory):
+            now = time.time()
+            entry = self._items.get(sid)
+            if entry is None:
+                val = factory()
+                self._items[sid] = _SessionEntry(value=val, last_access_epoch_s=now)
+                return val
+            entry.last_access_epoch_s = now
+            return entry.value
+        def reset(self, sid: str) -> bool:
+            """Remove an existing session and best-effort stop its sandbox."""
+            entry = self._items.pop(sid, None)
+            if entry is None:
+                return False
+            try:
+                if hasattr(entry.value, 'sandbox'):
+                    _stop_session_context(entry.value)
+            except Exception:
+                pass
+            return True
+        def cleanup(self):
+            now = time.time()
+            remove = []
+            for sid, entry in list(self._items.items()):
+                if now - entry.last_access_epoch_s > self._ttl:
+                    remove.append(sid)
+            for sid in remove:
+                entry = self._items.pop(sid, None)
+                if entry is None:
+                    continue
+                try:
+                    # Best-effort: stop Docker sandbox to avoid leaks.
+                    if hasattr(entry.value, 'sandbox'):
+                        _stop_session_context(entry.value)
+                except Exception:
+                    pass
+            return len(remove)
+
+    registry = _TTLRegistry(ttl_seconds=int(os.getenv('CHAT_SESSION_TTL_SECONDS', '3600')))
+
+    # Load PEN master tables once from this dashboard's folder
+    def _read_csvs(files: list[str], kind: str) -> pd.DataFrame:
+        rows = []
+        for path in files:
+            try:
+                df = pd.read_csv(path)
+            except Exception:
+                continue
+            basename = os.path.basename(path)
+            m = _re.match(rf"{kind}_(?P<energy>[^_]+)_cov(?P<cov>[01])_cutoff(?P<cutoff>-?[0-9.]+)(?:_frame(?P<frame>\d+))?\.csv", basename)
+            meta = {
+                'source_file': path,
+                'energy_type': m.group('energy') if m else pd.NA,
+                'include_covalents': (bool(int(m.group('cov'))) if m else pd.NA),
+                'cutoff': (float(m.group('cutoff')) if m else pd.NA),
+                'frame': (int(m.group('frame')) if (m and m.group('frame')) else pd.NA),
+                'kind': kind,
+            }
+            df = df.copy()
+            for k, v in meta.items():
+                df[k] = v
+            rows.append(df)
+        return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    _pen_cached: Optional[dict] = None
+    _pen_sig: Optional[tuple] = None
+    def _get_pen_tables():
+        nonlocal _pen_cached, _pen_sig
+
+        def _files_signature(paths: list[str]) -> tuple:
+            sig = []
+            for p in paths:
+                try:
+                    st = os.stat(p)
+                    sig.append((p, st.st_mtime, st.st_size))
+                except Exception:
+                    sig.append((p, None, None))
+            return tuple(sig)
+
+        pen = _pen_folder_from_dashboard()
+        metrics_files = sorted(glob.glob(os.path.join(pen, 'metrics_*.csv')))
+        edges_files = sorted(glob.glob(os.path.join(pen, 'edges_*.csv')))
+
+        sig = _files_signature(metrics_files) + _files_signature(edges_files)
+        if _pen_cached is not None and _pen_sig == sig:
+            return _pen_cached
+
+        _pen_sig = sig
+        _pen_cached = {
+            'pen_folder': pen,
+            'sig': str(abs(hash(sig))),
+            'metrics_master': _read_csvs(metrics_files, 'metrics'),
+            'edges_master': _read_csvs(edges_files, 'edges'),
+        }
+        return _pen_cached
+
+    # Build PandasAI session context (lazy imports)
+    @dataclass
+    class _SessionCtx:
+        sandbox: object
+        agent: object
+    def _build_llm(model: Optional[str] = None):
+        from pandasai_litellm.litellm import LiteLLM
+        chosen_model = _resolve_model_selection(model)
+        m = (chosen_model or '').strip().lower()
+        is_claude = ('claude' in m) or m.startswith('anthropic/')
+        if is_claude:
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                raise RuntimeError('Missing API key: set ANTHROPIC_API_KEY for Claude models')
+        else:
+            api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+            if not api_key:
+                raise RuntimeError('Missing API key: set GEMINI_API_KEY (or GOOGLE_API_KEY)')
+        return LiteLLM(model=chosen_model, api_key=api_key)
+    def _wrap_df(df: pd.DataFrame, name: str):
+        import pandasai as pai
+        try:
+            return pai.DataFrame(df, name=name)
+        except TypeError:
+            w = pai.DataFrame(df)
+            try:
+                setattr(w, 'name', name)
+            except Exception:
+                pass
+            return w
+    def _build_session_context_for_dfs(selected_df_keys: list[str], model: Optional[str] = None) -> _SessionCtx:
+        """Build session context with selected DataFrames from registry."""
+        from pandasai import Agent
+        from pandasai_docker import DockerSandbox
+        sandbox = DockerSandbox()
+        sandbox.start()
+        llm = _build_llm(model=model)
+        
+        # Collect selected DataFrames
+        pai_dfs = []
+        df_names = []
+        for key in selected_df_keys[:4]:  # max 4
+            info = _CHATBOT_DATAFRAMES.get(key)
+            if info is None:
+                continue
+            df_name = key.replace('-', '_').replace(' ', '_')
+            df_names.append(df_name)
+            pai_dfs.append(_wrap_df(info['df'], df_name))
+        
+        if not pai_dfs:
+            # Fallback to default if nothing valid selected
+            if _CHATBOT_DATAFRAMES:
+                fallback_key = DEFAULT_DATAFRAMES[0] if DEFAULT_DATAFRAMES else list(_CHATBOT_DATAFRAMES.keys())[0]
+                info = _CHATBOT_DATAFRAMES[fallback_key]
+                df_name = fallback_key.replace('-', '_').replace(' ', '_')
+                df_names.append(df_name)
+                pai_dfs.append(_wrap_df(info['df'], df_name))
+        
+        # Build custom instructions listing available DataFrames
+        df_list_str = ', '.join(df_names)
+        custom_instructions = (
+            f'You have exactly {len(pai_dfs)} pandas DataFrame(s) available: {df_list_str}. '
+            'Use ONLY Python + pandas operations on these DataFrames; do NOT write SQL and do NOT reference internal table names like table_*. '
+            'You MAY create intermediate results as Python variables (e.g., df_tmp = ...), but never as new tables. '
+            'CRITICAL: Your Python code MUST assign the final answer to a variable named result (e.g., result = ...). '
+            'Set result to a string for narrative answers, a pandas DataFrame for tabular outputs, or a matplotlib chart (when asked to plot). '
+            'When returning tables/lists: return a concise result (prefer a pandas DataFrame or list of dicts), '
+            'limit to relevant columns and at most ~50 rows, and include a short textual summary when appropriate. '
+            'When plotting charts, use matplotlib: plt.figure(figsize=(6, 4), dpi=300) and plt.tight_layout().'
+        )
+        
+        agent = Agent(pai_dfs, config={
+            'llm': llm,
+            'custom_instructions': custom_instructions,
+        }, sandbox=sandbox)
+        return _SessionCtx(sandbox=sandbox, agent=agent)
+    
+    # Legacy wrapper for backward compatibility
+    def _build_session_context(metrics_master: pd.DataFrame, edges_master: pd.DataFrame, model: Optional[str] = None) -> _SessionCtx:
+        from pandasai import Agent
+        from pandasai_docker import DockerSandbox
+        sandbox = DockerSandbox()
+        sandbox.start()
+        llm = _build_llm(model=model)
+        pai_metrics = _wrap_df(metrics_master, 'metrics_master')
+        pai_edges = _wrap_df(edges_master, 'edges_master')
+        agent = Agent([pai_metrics, pai_edges], config={
+            'llm': llm,
+            'custom_instructions': (
+                'You have exactly two pandas DataFrames available: metrics_master and edges_master. '
+                'Prefer metrics_master for per-residue/aggregate metrics, edges_master for interaction edges. '
+                'Use ONLY Python + pandas operations on these DataFrames; do NOT write SQL and do NOT reference internal table names like table_*. '
+                'You MAY create intermediate results as Python variables (e.g., df_tmp = ...), but never as new tables. '
+                'CRITICAL: Your Python code MUST assign the final answer to a variable named result (e.g., result = ...). '
+                'Set result to a string for narrative answers, a pandas DataFrame for tabular outputs, or a matplotlib chart (when asked to plot). '
+                'When returning tables/lists: return a concise result (prefer a pandas DataFrame or list of dicts), '
+                'limit to relevant columns and at most ~50 rows, and include a short textual summary when appropriate. '
+                'When plotting charts, use matplotlib: plt.figure(figsize=(6, 4), dpi=300) and plt.tight_layout().'
+            ),
+        }, sandbox=sandbox)
+        return _SessionCtx(sandbox=sandbox, agent=agent)
+    def _stop_session_context(ctxobj: _SessionCtx):
+        try:
+            ctxobj.sandbox.stop()
+        except Exception:
+            pass
+    def _chart_to_plotly(resp):
+        import base64
+        from PIL import Image as PILImage
+        from io import BytesIO
+        data_uri = getattr(resp, 'get_base64_image', lambda: None)()
+        if not data_uri:
+            return None
+        b64_str = data_uri.replace('data:image/png;base64,', '')
+        img_bytes = base64.b64decode(b64_str)
+        img = PILImage.open(BytesIO(img_bytes))
+        fig = go.Figure()
+        fig.add_trace(go.Image(z=img))
+        # Use autosize for responsive scaling within chat panel; cap height only
+        fig.update_layout(
+            xaxis_visible=False, yaxis_visible=False, hovermode=False, showlegend=False,
+            margin=dict(l=0, r=0, t=0, b=0),
+            height=min(img.size[1], 350),
+            autosize=True
+        )
+        return fig
+
+    def _sanitize_user_text(s: str) -> str:
+        if not isinstance(s, str):
+            s = str(s)
+        # Drop control characters (except common whitespace)
+        s = ''.join(ch for ch in s if (ch >= ' ' or ch in '\n\t\r'))
+        return s.strip()
+
+    def _limit_df(df: pd.DataFrame, max_rows: int = 30, max_cols: int = 6) -> pd.DataFrame:
+        """Limit DataFrame size for display in narrow chat panel."""
+        try:
+            if df.shape[1] > max_cols:
+                df = df.iloc[:, :max_cols]
+            if df.shape[0] > max_rows:
+                df = df.head(max_rows)
+            return df
+        except Exception:
+            return df
+
+    def _format_cell_value(val) -> str:
+        """Format cell values for compact display."""
+        try:
+            if pd.isna(val):
+                return ''
+            if isinstance(val, float):
+                # Use scientific notation for very large/small numbers
+                if abs(val) > 1e6 or (abs(val) < 1e-3 and val != 0):
+                    return f'{val:.2e}'
+                return f'{val:.4f}'.rstrip('0').rstrip('.')
+            return str(val)[:20]  # Truncate long strings
+        except Exception:
+            return str(val)[:20]
+
+    def _df_to_markdown(df: pd.DataFrame) -> str:
+        """Convert DataFrame to compact markdown table string."""
+        dff = _limit_df(df)
+        if dff.empty:
+            return "(Empty table)"
+        
+        # Format all values
+        formatted = dff.copy()
+        for col in formatted.columns:
+            formatted[col] = formatted[col].apply(_format_cell_value)
+        
+        # Build markdown table
+        cols = list(formatted.columns)
+        # Truncate column names if too long
+        cols_display = [c[:12] if len(str(c)) > 12 else str(c) for c in cols]
+        
+        lines = []
+        lines.append('| ' + ' | '.join(cols_display) + ' |')
+        lines.append('|' + '|'.join(['---'] * len(cols)) + '|')
+        
+        for _, row in formatted.iterrows():
+            row_vals = [str(row[c])[:15] for c in cols]  # Truncate cell values
+            lines.append('| ' + ' | '.join(row_vals) + ' |')
+        
+        result = '\n'.join(lines)
+        if len(dff) < len(df):
+            result += f'\n\n*(Showing {len(dff)} of {len(df)} rows)*'
+        if dff.shape[1] < df.shape[1]:
+            result += f'\n*(Showing {dff.shape[1]} of {df.shape[1]} columns)*'
+        return result
+
+    def _plotly_table_figure(df: pd.DataFrame) -> go.Figure:
+        """Create a Plotly table figure - kept for backwards compatibility but less preferred."""
+        dff = _limit_df(df)
+        cols = list(dff.columns)
+        # Format and truncate values for compact display
+        cell_values = []
+        for c in cols:
+            formatted_col = [_format_cell_value(v) for v in dff[c]]
+            cell_values.append(formatted_col)
+        
+        # Truncate column headers
+        cols_display = [str(c)[:10] for c in cols]
+        
+        fig = go.Figure(data=[go.Table(
+            header=dict(values=cols_display, align='left', font=dict(size=11)),
+            cells=dict(values=cell_values, align='left', font=dict(size=10)),
+            columnwidth=[1] * len(cols)  # Equal column widths
+        )])
+        # Dynamic height based on row count
+        row_height = 24
+        header_height = 28
+        dynamic_height = min(300, header_height + len(dff) * row_height)
+        fig.update_layout(
+            margin=dict(l=2, r=2, t=2, b=2),
+            height=dynamic_height,
+            autosize=True
+        )
+        return fig
+
+    def _coerce_tabular(val) -> Optional[pd.DataFrame]:
+        try:
+            if isinstance(val, pd.DataFrame):
+                return val
+            if isinstance(val, list) and val:
+                # list[dict] or list[list]
+                if all(isinstance(x, dict) for x in val):
+                    return pd.DataFrame(val)
+                if all(isinstance(x, (list, tuple)) for x in val):
+                    return pd.DataFrame(val)
+            if isinstance(val, dict) and val:
+                # dict -> single-row table for readability
+                return pd.DataFrame([val])
+        except Exception:
+            return None
+        return None
+
+    def _is_missing_result_error(msg: str) -> bool:
+        try:
+            s = (msg or '').lower()
+            return ('nameerror' in s) and ('result' in s) and ('not defined' in s)
+        except Exception:
+            return False
+    def _normalize_response(resp):
+        rtype = getattr(resp, 'type', None)
+        if rtype == 'chart':
+            fig = _chart_to_plotly(resp)
+            if fig:
+                return {'role': 'assistant', 'content': {'type': 'graph', 'props': {'figure': fig.to_dict(), 'responsive': True}}}
+            return {'role': 'assistant', 'content': {'type': 'text', 'text': '(Failed to render chart)'}}
+        if rtype == 'dataframe':
+            val = getattr(resp, 'value', None)
+            df = _coerce_tabular(val)
+            if df is not None and not df.empty:
+                # Use markdown table for better responsiveness in narrow chat panel
+                md_table = _df_to_markdown(df)
+                return {'role': 'assistant', 'content': {'type': 'text', 'text': md_table}}
+            return {'role': 'assistant', 'content': {'type': 'text', 'text': str(val)}}
+        if rtype == 'error':
+            err = getattr(resp, 'error', None)
+            return {'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {err or resp}'}}
+        val = getattr(resp, 'value', None)
+        df = _coerce_tabular(val)
+        if df is not None and not df.empty:
+            # Use markdown table for better responsiveness in narrow chat panel
+            md_table = _df_to_markdown(df)
+            return {'role': 'assistant', 'content': {'type': 'text', 'text': md_table}}
+        return {'role': 'assistant', 'content': {'type': 'text', 'text': str(val if val is not None else resp)}}
+
+    # --- Chatbot callbacks ---
+    @app.callback(
+        Output('chat-session-id', 'data'),
+        Input('url', 'pathname'),
+        State('chat-session-id', 'data')
+    )
+    def _ensure_chat_session_id(_pathname, sid):
+        if sid:
+            return sid
+        return str(uuid.uuid4())
+
+    @app.callback(
+        Output('chat-panel', 'style'),
+        Output('left-panel', 'width'),
+        Output('viewer-panel', 'width'),
+        Output('chatbot-visible', 'data'),
+        Input('toggle-chatbot', 'n_clicks'),
+        Input('close-chatbot', 'n_clicks'),
+        State('chatbot-visible', 'data')
+    )
+    def _toggle_chat(toggle_clicks, close_clicks, visible):
+        if not toggle_clicks and not close_clicks and not visible:
+            raise PreventUpdate
+        # Close button always hides; toggle button toggles state
+        if ctx.triggered and 'close-chatbot' in ctx.triggered[0]['prop_id']:
+            new_vis = False
+        else:
+            new_vis = not bool(visible)
+        
+        # When chatbot is visible, allocate space for it on the right.
+        if new_vis:
+            chat_style = {'display': 'block'}
+            left_width = 6
+            viewer_width = 3
+        else:
+            chat_style = {'display': 'none'}
+            left_width = 8
+            viewer_width = 4
+
+        return chat_style, left_width, viewer_width, new_vis
+
+    @app.callback(
+        Output('chat-cleanup', 'data'),
+        Input('chat-cleanup-tick', 'n_intervals')
+    )
+    def _chat_cleanup(_n):
+        ev = registry.cleanup()
+        return {'evicted': ev}
+
+    # Callback to limit DataFrame selection to max 4
+    @app.callback(
+        Output('chat-dataframe-selector', 'value'),
+        Input('chat-dataframe-selector', 'value'),
+        prevent_initial_call=True
+    )
+    def _limit_dataframe_selection(selected):
+        if not selected:
+            return DEFAULT_DATAFRAMES[:4]
+        if len(selected) > 4:
+            return selected[:4]
+        return selected
+
+    # Helper to extract token usage from PandasAI response
+    def _extract_token_usage(resp) -> int:
+        """Try to extract token usage from response. Returns 0 if not available."""
+        try:
+            # Try various attributes that might hold usage info
+            usage = getattr(resp, 'usage', None)
+            if usage is not None:
+                if isinstance(usage, dict):
+                    return usage.get('total_tokens', 0) or usage.get('prompt_tokens', 0) + usage.get('completion_tokens', 0)
+                elif hasattr(usage, 'total_tokens'):
+                    return getattr(usage, 'total_tokens', 0) or 0
+            # Try metadata
+            metadata = getattr(resp, 'metadata', None)
+            if metadata and isinstance(metadata, dict):
+                if 'usage' in metadata:
+                    u = metadata['usage']
+                    return u.get('total_tokens', 0) if isinstance(u, dict) else 0
+            # Estimate from response size as fallback (rough: ~4 chars per token)
+            val = getattr(resp, 'value', None)
+            if val is not None:
+                est = len(str(val)) // 4
+                return min(est, 1000)  # Cap estimate at 1000
+        except Exception:
+            pass
+        return 500  # Conservative default estimate per query
+
+    @app.callback(
+        Output('chat', 'messages'),
+        Output('chat-token-usage', 'data'),
+        Output('token-usage-display', 'children'),
+        Output('token-usage-display', 'style'),
+        Input('chat', 'new_message'),
+        State('chat', 'messages'),
+        State('chat-session-id', 'data'),
+        State('llm-model', 'value'),
+        State('chat-dataframe-selector', 'value'),
+        State('chat-token-usage', 'data')
+    )
+    def _on_chat_msg(new_message, messages, sid, selected_model, selected_dfs, token_data):
+        if not new_message:
+            return no_update, no_update, no_update, no_update
+        
+        messages = list(messages or [])
+        token_data = dict(token_data) if token_data else {'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}
+        used = token_data.get('used', 0)
+        limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
+        
+        # Token budget check
+        if limit > 0 and used >= limit:
+            messages.append({'role': 'user', 'content': new_message if isinstance(new_message, str) else new_message.get('content', str(new_message))})
+            messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '⚠️ Token budget exhausted for this session. Please refresh the page to start a new session.'}})
+            style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace'}
+            display = f"Tokens: {used:,} / {limit:,} (EXCEEDED)"
+            return messages, token_data, display, style
+        
+        # normalize user message
+        if isinstance(new_message, str):
+            user_msg = {'role': 'user', 'content': new_message}
+            user_text = new_message
+        else:
+            user_msg = new_message
+            user_text = new_message.get('content') if isinstance(new_message, dict) else str(new_message)
+        messages.append(user_msg)
+        user_text = _sanitize_user_text(user_text)
+        
+        # Determine DataFrames to use
+        selected_df_keys = selected_dfs if selected_dfs else DEFAULT_DATAFRAMES[:4]
+        
+        # create/reuse session - include selected_dfs in session key
+        chosen_model = _resolve_model_selection(selected_model)
+        dfs_sig = '|'.join(sorted(selected_df_keys[:4]))
+        pen_folder = _pen_folder_from_dashboard()
+        skey = f"{sid}|{pen_folder}|{dfs_sig}|{chosen_model}"
+        
+        tokens_used_this_query = 0
+        try:
+            ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(selected_df_keys, model=chosen_model))
+            try:
+                resp = ctxobj.agent.chat(user_text)
+                tokens_used_this_query += _extract_token_usage(resp)
+                # Some backends return "error" responses instead of raising.
+                if getattr(resp, 'type', None) == 'error':
+                    err = str(getattr(resp, 'error', '') or resp)
+                    if _is_missing_result_error(err):
+                        registry.reset(skey)
+                        ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(selected_df_keys, model=chosen_model))
+                        retry_prompt = (
+                            user_text
+                            + "\n\nIMPORTANT: Your Python code must end by assigning the final output to a variable named result (e.g., result = ...)."
+                        )
+                        resp = ctxobj.agent.chat(retry_prompt)
+                        tokens_used_this_query += _extract_token_usage(resp)
+            except Exception as e:
+                msg = str(e)
+                df_names = [k.replace('-', '_').replace(' ', '_') for k in selected_df_keys[:4]]
+                df_list_str = ', '.join(df_names)
+                retryable = (
+                    ('unauthorized' in msg.lower() and 'table' in msg.lower())
+                    or ('unauthorized table' in msg.lower())
+                    or ('table_' in msg.lower() and ('unauthorized' in msg.lower() or 'not allowed' in msg.lower() or 'forbidden' in msg.lower()))
+                )
+                if _is_missing_result_error(msg):
+                    # Reset session/sandbox and retry once with an explicit contract.
+                    registry.reset(skey)
+                    ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(selected_df_keys, model=chosen_model))
+                    retry_prompt = (
+                        user_text
+                        + "\n\nIMPORTANT: Your Python code must end by assigning the final output to a variable named result (e.g., result = ...)."
+                    )
+                    resp = ctxobj.agent.chat(retry_prompt)
+                    tokens_used_this_query += _extract_token_usage(resp)
+                elif retryable:
+                    retry_prompt = (
+                        user_text
+                        + f"\n\nIMPORTANT: Use Python/pandas only on {df_list_str}. "
+                          "Do not use SQL and do not reference any table_* identifiers. "
+                          "Intermediate results must be stored in Python variables."
+                    )
+                    resp = ctxobj.agent.chat(retry_prompt)
+                    tokens_used_this_query += _extract_token_usage(resp)
+                else:
+                    raise
+            assistant_msg = _normalize_response(resp)
+        except Exception as e:
+            assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {e}'}}
+        messages.append(assistant_msg)
+        
+        # Update token usage
+        new_used = used + tokens_used_this_query
+        token_data['used'] = new_used
+        
+        # Determine display style based on usage percentage
+        if limit <= 0:
+            display = f"Tokens: {new_used:,} / ∞"
+            style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
+        else:
+            pct = (new_used / limit) * 100
+            if pct >= 100:
+                display = f"Tokens: {new_used:,} / {limit:,} (EXCEEDED)"
+                style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace', 'fontWeight': 'bold'}
+            elif pct >= 80:
+                display = f"Tokens: {new_used:,} / {limit:,} ({pct:.0f}%)"
+                style = {'fontSize': '11px', 'color': '#ffc107', 'fontFamily': 'monospace'}
+            else:
+                display = f"Tokens: {new_used:,} / {limit:,}"
+                style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
+        
+        return messages, token_data, display, style
 
     # Pairwise & Viewer - Split into separate callbacks for better performance
     @app.callback(
@@ -1712,7 +2771,7 @@ def main():
          Input('frame_slider', 'value'),
          Input('update_network_btn', 'n_clicks'),
          Input('selected_residues_dropdown', 'value'),
-         Input('energy_type_selector', 'value')],
+         Input('network_energy_type', 'value')],
         [State('include_covalent_edges', 'value'),
          State('energy_cutoff', 'value')],
         prevent_initial_call=False
@@ -1842,7 +2901,7 @@ def main():
          Input('shortest_paths_table', 'selected_rows'),
          Input('metric_selector', 'value'),
          Input('selected_residues_dropdown', 'value'),
-         Input('energy_type_selector', 'value')],
+         Input('network_energy_type', 'value')],
         [State('include_covalent_edges', 'value'),
          State('energy_cutoff', 'value'),
          State('shortest_paths_table', 'data')],
@@ -2218,7 +3277,7 @@ def main():
          Output('path_status_message', 'style')],
         [Input('find_paths_btn', 'n_clicks'),
          Input('frame_slider', 'value'),
-         Input('energy_type_selector', 'value')],
+         Input('network_energy_type', 'value')],
         [State('source_residue_dropdown', 'value'),
          State('target_residue_dropdown', 'value'),
          State('include_covalent_edges', 'value'),
@@ -2274,10 +3333,11 @@ def main():
             energy_key = _pen_energy_key(energy_type)
             cov_flag = _pen_cov_flag(include_cov)
             paths_path = _pen_paths_path(energy_key, cov_flag, float(cutoff), int(frame))
-            path_data = _load_shortest_paths_for_pair(paths_path, source, target)
+            edges_path = _pen_edges_path(energy_key, cov_flag, float(cutoff), int(frame))
+            path_data = _load_shortest_paths_for_pair(paths_path, edges_path, source, target)
 
             if not path_data:
-                return [], f"⚠️ No precomputed shortest paths found for {source} → {target} (Frame {frame})", {
+                return [], f"⚠️ No shortest paths found for {source} → {target} (Frame {frame})", {
                     'backgroundColor': '#FFF3CD',
                     'color': '#856404',
                     'border': '1px solid #FFE69C',
@@ -2313,19 +3373,20 @@ def main():
                 'fontWeight': 'bold'
             }
 
+    # Get port from environment or use default
+    port = int(os.getenv('DASHBOARD_PORT', '8060'))
 
-        print(f"🍀 gRINN Dashboard starting...", flush=True)
     print(f"📊 Data: {data_dir} | Frames: {frame_min}-{frame_max} | Residues: {len(first_res_list)}", flush=True)
-    print(f"🌐 Dashboard: http://0.0.0.0:8050", flush=True)
+    print(f"🌐 Dashboard: http://0.0.0.0:{port}", flush=True)
     
     print("\n" + "="*60, flush=True)
     print("✓ Initialization complete!", flush=True)
     print("="*60, flush=True)
     print("\n🚀 Starting dashboard server...", flush=True)
-    print("   Open your browser to: http://localhost:8050", flush=True)
+    print(f"   Open your browser to: http://localhost:{port}", flush=True)
     print("   Press Ctrl+C to stop the server\n", flush=True)
-    
-    app.run(debug=False, host='0.0.0.0', port=8050)
+
+    app.run(debug=False, host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
     main()
