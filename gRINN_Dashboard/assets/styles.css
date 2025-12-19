@@ -54,6 +54,16 @@ body {
     margin: 6px;
 }
 
+/* Tab header font size reduction */
+.tab-container .tab,
+.dash-tabs .tab,
+#main-tabs .tab,
+#network-sub-tabs .tab,
+#viewer-tabs .tab {
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+}
+
 /* Network Analysis - Prevent horizontal scrolling */
 .network-plots-container {
     display: flex;
@@ -142,6 +152,20 @@ body {
 /* Chatbot: keep input visible; scroll messages instead */
 #chat-component-wrap {
     min-height: 0;
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    overflow: hidden !important;
+}
+
+/* ChatComponent direct child - the main chat container */
+#chat-component-wrap > div,
+#chat-component-wrap > #chat {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
 }
 
 /* Try common dash-chat container class names (no-op if not present) */
@@ -154,13 +178,32 @@ body {
     min-height: 0;
 }
 
+/* Messages area - should scroll */
 #chat-component-wrap .messages,
 #chat-component-wrap .message-list,
 #chat-component-wrap .chat-messages,
-#chat-component-wrap .messages-container {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
+#chat-component-wrap .messages-container,
+#chat-component-wrap [class*="message"] {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+/* Input area - should stay fixed at bottom */
+#chat-component-wrap .chat-input,
+#chat-component-wrap .input-container,
+#chat-component-wrap [class*="input"],
+#chat-component-wrap form,
+#chat-component-wrap textarea {
+    flex: 0 0 auto !important;
+}
+
+/* Ensure message bubbles don't shrink */
+#chat-component-wrap .message,
+#chat-component-wrap .chat-message,
+#chat-component-wrap [class*="bubble"] {
+    flex-shrink: 0 !important;
 }
 
 #chat-component-wrap .chat-input,
@@ -353,17 +396,15 @@ input[type="checkbox"] {
     background: #6B806B;
 }
 
-/* Network Analysis Tab Specific Styles */
+/* Network Analysis Tab Specific Styles - minimal styling to not interfere with Plotly */
 #network-analysis-tab .dash-graph {
-    overflow-y: auto;
-    overflow-x: hidden;  /* Prevent horizontal scrolling */
     border: 1px solid #D0E5D0;
     border-radius: 8px;
     background-color: rgba(255, 255, 255, 0.95);
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    /* Removed max-height to allow plots to expand naturally */
 }
 
+/* Scrollbar styling for network analysis graphs */
 #network-analysis-tab .dash-graph::-webkit-scrollbar {
     width: 10px;
 }
@@ -383,84 +424,80 @@ input[type="checkbox"] {
     background-color: #A0B0A0;
 }
 
-/* Ensure the plot containers have proper flex behavior */
-#network-analysis-tab .dash-graph .js-plotly-plot {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-height: 400px !important;
-    overflow: hidden !important;  /* Prevent content from overflowing */
+/* Network Metrics visualization controls */
+#metrics-viz-tabs {
+    display: inline-flex;
 }
 
-/* Force bar plots to maintain their calculated height and prevent compression */
-#network-analysis-tab .dash-graph .plotly-graph-div {
-    height: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    min-height: 400px !important;
-    overflow: hidden !important;  /* Prevent horizontal overflow */
+#metrics-viz-tabs .tab {
+    padding: 4px 14px !important;
+    font-size: 12px !important;
+    min-width: 90px !important;
 }
 
-/* Prevent plot distortion during updates */
-#network-analysis-tab .dash-graph .plot-container {
+#metrics-viz-tabs .tab--selected {
+    font-weight: bold !important;
+}
+
+/* Metrics controls row styling */
+.metrics-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+/* Range input styling */
+#metrics-lower-cutoff,
+#metrics-upper-cutoff {
+    width: 60px;
+    font-size: 12px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid #B5C5B5;
+    transition: border-color 0.2s;
+}
+
+#metrics-lower-cutoff:focus,
+#metrics-upper-cutoff:focus {
+    outline: none;
+    border-color: #7C9885;
+    box-shadow: 0 0 0 2px rgba(124, 152, 133, 0.2);
+}
+
+/* Sort dropdown compact styling */
+#metrics-sort-order {
+    min-width: 120px;
+    font-size: 12px;
+}
+
+#metrics-sort-order .Select-control {
+    min-height: 28px;
+}
+
+/* Metrics visualization container */
+#metrics-viz-container {
+    width: 100%;
     position: relative;
-    width: 100% !important;
-    max-width: 100% !important;
-    height: auto;
-    overflow: hidden !important;  /* Prevent overflow */
+    overflow: visible !important;
 }
 
-/* Ensure text and bars stay properly sized after updates */
-#network-analysis-tab .dash-graph .ytick text {
-    font-size: 8px !important;
-    font-family: 'Roboto', sans-serif !important;
+/* Chatbot message font sizes */
+#chat-panel .dash-chat-message,
+#chat-panel .chat-message,
+#chat-panel .message-content {
+    font-size: 12px !important;
 }
 
-#network-analysis-tab .dash-graph .xtick text {
-    font-size: 8px !important;
-    font-family: 'Roboto', sans-serif !important;
+#chat-panel p,
+#chat-panel li,
+#chat-panel td,
+#chat-panel th {
+    font-size: 12px !important;
 }
 
-/* Prevent bar width changes during updates */
-#network-analysis-tab .dash-graph .bars path {
-    stroke-width: 1px !important;
-}
-
-/* Maintain compact spacing between bars */
-#network-analysis-tab .dash-graph .bar {
-    opacity: 0.9;
-}
-
-#network-analysis-tab .dash-graph .bar:hover {
-    opacity: 1;
-}
-
-/* Compact layout for residue metrics container */
-#network-analysis-tab .residue-metrics-container {
-    max-width: 100%;
-    overflow-x: hidden;  /* Prevent horizontal scrolling */
-}
-
-/* Ensure the residue metrics container allows plots to expand */
-#network-analysis-tab .residue-metrics-container > div {
-    max-height: none !important;
-    height: auto !important;
-}
-
-/* Additional safeguards to prevent horizontal scrolling */
-#network-analysis-tab .dash-graph svg {
-    width: 100% !important;
-    max-width: 100% !important;
-}
-
-#network-analysis-tab .dash-graph .plotly .main-svg {
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: hidden !important;
-}
-
-/* Ensure all plotly elements stay within bounds */
-#network-analysis-tab .dash-graph .plotly-graph-div .plotly-graph-div {
-    width: 100% !important;
-    max-width: 100% !important;
-    overflow: hidden !important;
+/* Violin plot container */
+.violin-plot-container {
+    width: 100%;
 }

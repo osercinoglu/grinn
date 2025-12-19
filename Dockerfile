@@ -7,6 +7,15 @@
 #   docker build --build-arg GROMACS_VERSION=2024.1 -t grinn:gromacs-2024.1 .
 #   docker build --build-arg GROMACS_VERSION=2025.2 -t grinn:gromacs-2025.2 .
 #   docker build --build-arg GROMACS_VERSION=2022.4 -t grinn:gromacs-2022.4 .
+#
+# Tutorial System (driver.js):
+#   The gRINN Dashboard uses driver.js for guided tutorials. The CDN links are
+#   loaded via external_scripts/external_stylesheets in grinn_dashboard.py.
+#   When implementing dashboard tutorials, add tutorial config JSON files to
+#   gRINN_Dashboard/assets/ and a tutorial.js helper similar to grinn-web.
+#   CDN URLs:
+#     - https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.css
+#     - https://cdn.jsdelivr.net/npm/driver.js@1.3.1/dist/driver.js.iife.js
 
 # ============================================================================
 # STAGE 1: GROMACS Builder (cached independently of gRINN code changes)
@@ -424,6 +433,15 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
     echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh && \
     echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh && \
     echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh && \
+    echo '        # Forward dashboard-related environment variables (docker -e vars are not auto-propagated by conda run)' >> /app/entrypoint.sh && \
+    echo '        export DASH_URL_BASE_PATHNAME="${DASH_URL_BASE_PATHNAME:-/}"' >> /app/entrypoint.sh && \
+    echo '        export GRINN_JOB_ID="${GRINN_JOB_ID:-}"' >> /app/entrypoint.sh && \
+    echo '        export GRINN_WEB_BACKEND_URL="${GRINN_WEB_BACKEND_URL:-}"' >> /app/entrypoint.sh && \
+    echo '        export GEMINI_API_KEY="${GEMINI_API_KEY:-}"' >> /app/entrypoint.sh && \
+    echo '        export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"' >> /app/entrypoint.sh && \
+    echo '        export PANDASAI_MODELS="${PANDASAI_MODELS:-}"' >> /app/entrypoint.sh && \
+    echo '        export PANDASAI_TOKEN_LIMIT="${PANDASAI_TOKEN_LIMIT:-}"' >> /app/entrypoint.sh && \
+    echo '        export PANDASAI_USE_DOCKER_SANDBOX="${PANDASAI_USE_DOCKER_SANDBOX:-false}"' >> /app/entrypoint.sh && \
     echo '        conda run --no-capture-output -n grinn-env python -u gRINN_Dashboard/grinn_dashboard.py "$@"' >> /app/entrypoint.sh && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "gmx")' >> /app/entrypoint.sh && \
