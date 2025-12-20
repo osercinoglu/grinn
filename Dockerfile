@@ -494,6 +494,10 @@ RUN if [ "${GROMACS_VERSION}" != "NONE" ]; then \
         echo "📊 Dashboard-only mode - no GROMACS to verify"; \
     fi
 
+# Make /app writable by any user (for non-root container execution)
+# This allows the container to run with --user flag for correct file ownership
+RUN chmod -R a+rwX /app
+
 # Expose port for dashboard
 EXPOSE 8050
 
