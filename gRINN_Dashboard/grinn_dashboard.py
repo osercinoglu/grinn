@@ -311,11 +311,49 @@ def main():
     # Molecular visualization setup
     print("\n[5/5] Setting up molecular viewer...", flush=True)
     try:
-        cartoon = Representation(type='cartoon', color='uniform')
-        cartoon.set_color_params({'value': 0xD3D3D3})
-        chainA = molstar_helper.get_targets(chain='A')
-        component = molstar_helper.create_component(label='Protein', targets=[chainA], representation=cartoon)
-        topo = molstar_helper.parse_molecule(pdb_path, component=component)
+        # Detect protein vs ligand chains using ProDy
+        structure = parsePDB(pdb_path)
+        
+        # Get protein chains
+        protein_atoms = structure.select('protein')
+        protein_chains = sorted(set(protein_atoms.getChids())) if protein_atoms else []
+        
+        # Get ligand/hetero chains (non-water, non-protein)
+        ligand_atoms = structure.select('hetero and not water')
+        ligand_chains = sorted(set(ligand_atoms.getChids())) if ligand_atoms else []
+        
+        print(f"      Detected protein chains: {protein_chains}", flush=True)
+        print(f"      Detected ligand chains: {ligand_chains}", flush=True)
+        
+        # Build components list
+        components = []
+        
+        # Create protein component with cartoon representation
+        if protein_chains:
+            cartoon = Representation(type='cartoon', color='uniform')
+            cartoon.set_color_params({'value': 0xD3D3D3})
+            protein_targets = [molstar_helper.get_targets(chain=ch) for ch in protein_chains]
+            protein_component = molstar_helper.create_component(
+                label='Protein', targets=protein_targets, representation=cartoon
+            )
+            components.append(protein_component)
+        
+        # Create ligand component with ball-and-stick representation (if ligands exist)
+        if ligand_chains:
+            ball_stick = Representation(type='ball-and-stick', color='element-symbol')
+            ligand_targets = [molstar_helper.get_targets(chain=ch) for ch in ligand_chains]
+            ligand_component = molstar_helper.create_component(
+                label='Ligand', targets=ligand_targets, representation=ball_stick
+            )
+            components.append(ligand_component)
+            print(f"      ✓ Added ball-and-stick representation for ligand(s)", flush=True)
+        
+        # Parse molecule with custom components (disable default representation)
+        if components:
+            topo = molstar_helper.parse_molecule(pdb_path, component=components, preset={'kind': 'empty'})
+        else:
+            # Fallback to default if no chains detected
+            topo = molstar_helper.parse_molecule(pdb_path)
         
         # Handle trajectory loading
         if traj_xtc:

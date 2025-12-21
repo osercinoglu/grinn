@@ -214,6 +214,208 @@ def parse_topology_includes(topology_file, logger=None):
             logger.error(f"Error parsing topology file {topology_file}: {str(e)}")
         return include_files
 
+def validate_topology_residues(pdb_file, topology_file, source_sel, target_sel, logger=None):
+    """
+    Validate that all residues in the structure that match the selection criteria
+    are properly defined in the topology file.
+    
+    Parameters:
+    - pdb_file (str): Path to the structure file (system_dry.pdb)
+    - topology_file (str): Path to the topology file (topol_dry.top)
+    - source_sel (str): Source selection string
+    - target_sel (str): Target selection string
+    - logger: Optional logger for output messages
+    
+    Returns:
+    - dict: Validation results containing:
+        - 'valid': bool - True if all residues are in topology
+        - 'structure_residues': set - Unique residue names in structure
+        - 'topology_molecules': set - Molecule types defined in topology
+        - 'missing_residues': set - Residue names in structure but not in topology
+        - 'resname_to_indices': dict - Mapping of residue names to their indices
+    """
+    from prody import parsePDB
+    
+    result = {
+        'valid': True,
+        'structure_residues': set(),
+        'topology_molecules': set(),
+        'missing_residues': set(),
+        'resname_to_indices': {}
+    }
+    
+    if logger:
+        logger.info('Validating topology against structure residues...')
+    
+    # Parse structure and get residues matching selection
+    try:
+        system = parsePDB(pdb_file)
+        
+        # Get residues from source and target selections
+        source = system.select(source_sel)
+        target = system.select(target_sel)
+        
+        if source is None and target is None:
+            if logger:
+                logger.warning('Both source and target selections returned no atoms')
+            return result
+        
+        # Combine selections to get all relevant residues
+        selected_indices = set()
+        if source is not None:
+            selected_indices.update(source.getResindices())
+        if target is not None:
+            selected_indices.update(target.getResindices())
+        
+        # Get unique residue names and map them to indices
+        resname_to_indices = {}
+        for resindex in selected_indices:
+            residue = system.select(f'resindex {resindex}')
+            if residue is not None:
+                resname = residue.getResnames()[0]
+                if resname not in resname_to_indices:
+                    resname_to_indices[resname] = []
+                resname_to_indices[resname].append(resindex)
+        
+        result['structure_residues'] = set(resname_to_indices.keys())
+        result['resname_to_indices'] = resname_to_indices
+        
+        if logger:
+            logger.info(f'Structure contains {len(selected_indices)} residues with {len(result["structure_residues"])} unique residue types')
+            logger.info(f'Unique residue names in selection: {sorted(result["structure_residues"])}')
+        
+    except Exception as e:
+        if logger:
+            logger.error(f'Error parsing structure file: {str(e)}')
+        result['valid'] = False
+        return result
+    
+    # Parse topology to get molecule types
+    try:
+        if not os.path.exists(topology_file):
+            if logger:
+                logger.warning(f'Topology file not found: {topology_file}')
+            result['valid'] = False
+            return result
+        
+        topology_molecules = set()
+        in_molecules_section = False
+        topology_dir = os.path.dirname(os.path.abspath(topology_file))
+        
+        # Also collect molecule types from [ moleculetype ] sections
+        moleculetype_names = set()
+        in_moleculetype_section = False
+        
+        with open(topology_file, 'r') as f:
+            for line in f:
+                line = line.strip()
+                
+                # Skip comments and empty lines
+                if line.startswith(';') or not line:
+                    continue
+                
+                # Remove inline comments
+                if ';' in line:
+                    line = line.split(';')[0].strip()
+                
+                # Check for section headers
+                if line.startswith('['):
+                    section_name = line.strip('[] ').lower()
+                    in_molecules_section = (section_name == 'molecules')
+                    in_moleculetype_section = (section_name == 'moleculetype')
+                    continue
+                
+                # Parse [ molecules ] section
+                if in_molecules_section:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mol_name = parts[0]
+                        topology_molecules.add(mol_name)
+                
+                # Parse [ moleculetype ] section to get defined molecule names
+                if in_moleculetype_section:
+                    parts = line.split()
+                    if len(parts) >= 1:
+                        mol_name = parts[0]
+                        moleculetype_names.add(mol_name)
+        
+        result['topology_molecules'] = topology_molecules
+        
+        if logger:
+            logger.info(f'Topology defines {len(topology_molecules)} molecule entries: {sorted(topology_molecules)}')
+            if moleculetype_names:
+                logger.info(f'Topology contains {len(moleculetype_names)} moleculetype definitions: {sorted(moleculetype_names)}')
+        
+    except Exception as e:
+        if logger:
+            logger.error(f'Error parsing topology file: {str(e)}')
+        result['valid'] = False
+        return result
+    
+    # Cross-reference: find residues in structure but not in topology
+    # Note: Topology molecule names may not exactly match residue names
+    # Common patterns: Protein_chain_A contains ALA, GLY, etc.
+    # We need to check if residue names are either:
+    # 1. Directly listed as a molecule
+    # 2. Part of a protein chain (standard amino acids)
+    # 3. Defined in an included .itp file
+    
+    standard_amino_acids = {
+        'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE',
+        'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL',
+        'HIE', 'HID', 'HIP', 'CYX', 'CYM',  # Common variants
+        'ACE', 'NME', 'NH2'  # Caps
+    }
+    
+    missing_residues = set()
+    
+    for resname in result['structure_residues']:
+        # Check if it's a standard amino acid (covered by protein topology)
+        if resname.upper() in standard_amino_acids:
+            continue
+        
+        # Check if directly listed as a molecule
+        if resname in topology_molecules or resname.upper() in topology_molecules:
+            continue
+        
+        # Check if it matches any molecule type pattern (case-insensitive)
+        found = False
+        for mol in topology_molecules:
+            if resname.lower() == mol.lower():
+                found = True
+                break
+        
+        if not found:
+            missing_residues.add(resname)
+    
+    result['missing_residues'] = missing_residues
+    
+    if missing_residues:
+        result['valid'] = False
+        if logger:
+            logger.warning('=' * 60)
+            logger.warning('TOPOLOGY VALIDATION WARNING')
+            logger.warning('=' * 60)
+            logger.warning(f'Found {len(missing_residues)} residue type(s) in structure but NOT in topology:')
+            for resname in sorted(missing_residues):
+                indices = resname_to_indices.get(resname, [])
+                logger.warning(f'  - {resname}: {len(indices)} residue(s) at indices {indices[:5]}{"." if len(indices) > 5 else ""}')
+            logger.warning('')
+            logger.warning('This means GROMACS cannot calculate interaction energies for these residues.')
+            logger.warning('To fix this issue:')
+            logger.warning('  1. Ensure your topology file includes the ligand/molecule definition')
+            logger.warning('  2. Add the molecule\'s .itp file to your topology with #include')
+            logger.warning('  3. Add the molecule to the [ molecules ] section')
+            logger.warning('')
+            logger.warning('Pairs involving these residues will be EXCLUDED from energy calculation.')
+            logger.warning('=' * 60)
+    else:
+        if logger:
+            logger.info('Topology validation PASSED: All residue types are defined in topology')
+    
+    return result
+
+
 def find_gromacs_data_directories(gromacs_dir=None, logger=None):
     """
     Find GROMACS data directories containing force field files.
@@ -669,9 +871,12 @@ def parse_structure_file(filepath):
             return parsePDB(filepath)
         elif file_ext == '.gro':
             # Convert GRO to PDB using gmx editconf
+            # Use a proper temp directory since input may be read-only
+            import tempfile
             
-            # Create temporary PDB file
-            temp_pdb = filepath.replace('.gro', '_temp.pdb')
+            # Create temporary PDB file in system temp directory
+            basename = os.path.basename(filepath).replace('.gro', '_temp.pdb')
+            temp_pdb = os.path.join(tempfile.gettempdir(), basename)
             
             try:
                 # Use gmx editconf to convert GRO to PDB
@@ -698,10 +903,11 @@ def parse_structure_file(filepath):
                 return parsePDB(filepath)
             except:
                 # For unknown extensions, try GRO conversion
+                import tempfile
                 try:
-                    
-                    # Create temporary PDB file
-                    temp_pdb = filepath + '_temp.pdb'
+                    # Create temporary PDB file in system temp directory
+                    basename = os.path.basename(filepath) + '_temp.pdb'
+                    temp_pdb = os.path.join(tempfile.gettempdir(), basename)
                     
                     # Use gmx editconf to convert to PDB
                     gromacs.editconf(f=filepath, o=temp_pdb)
@@ -1297,20 +1503,23 @@ def run_gromacs_simulation(structure_filepath, mdp_files_folder, out_folder, ff_
     # Determine input file format and prepare for GROMACS
     input_ext = os.path.splitext(structure_filepath)[1].lower()
     
+    # Selection to include all relevant molecules (protein, nucleic, lipid, ligands) but exclude water/ions
+    _SIM_SELECTION = 'protein or nucleic or lipid or hetero and not water and not resname SOL and not ion'
+    
     if nofixpdb or input_ext == '.gro':
         # For GRO files or when PDB fixing is disabled
         if input_ext == '.gro':
             logger.info('Converting GRO file to PDB format for GROMACS processing...')
             structure = parse_structure_file(structure_filepath)
             fixed_pdb_filepath = os.path.join(out_folder, "protein.pdb")
-            writePDB(fixed_pdb_filepath, structure.select('protein'))
+            writePDB(fixed_pdb_filepath, structure.select(_SIM_SELECTION))
             logger.info("GRO file converted to PDB format.")
         else:
             # PDB file without fixing
             logger.info('Using PDB file without fixing...')
             structure = parse_structure_file(structure_filepath)
             fixed_pdb_filepath = os.path.join(out_folder, "protein.pdb")
-            writePDB(fixed_pdb_filepath, structure.select('protein'))
+            writePDB(fixed_pdb_filepath, structure.select(_SIM_SELECTION))
             logger.info("PDB file processed without fixing.")
     else:
         # Fix PDB file using PDBFixer
@@ -1319,7 +1528,9 @@ def run_gromacs_simulation(structure_filepath, mdp_files_folder, out_folder, ff_
         fixer.findMissingResidues()
         fixer.findNonstandardResidues()
         fixer.replaceNonstandardResidues()
-        fixer.removeHeterogens()
+        # NOTE: We do NOT call fixer.removeHeterogens() here because it removes ALL
+        # HETATM residues including ligands (UNK, etc.). Instead, we rely on _SIM_SELECTION
+        # to filter out only water and ions while preserving ligands.
         fixer.findMissingAtoms()
         fixer.addMissingAtoms()
         fixer.addMissingHydrogens(7.0)
@@ -1328,7 +1539,8 @@ def run_gromacs_simulation(structure_filepath, mdp_files_folder, out_folder, ff_
         PDBFile.writeFile(fixer.topology, fixer.positions, open(fixed_pdb_filepath, 'w'))
         logger.info("PDB file fixed.")
         system = parse_structure_file(fixed_pdb_filepath)
-        writePDB(fixed_pdb_filepath, system.select('protein'))
+        # Apply selection to filter out water/ions but keep ligands (hetero atoms)
+        writePDB(fixed_pdb_filepath, system.select(_SIM_SELECTION))
 
     if ff_folder is not None:
         ff = ff_folder
@@ -1520,28 +1732,35 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None, origi
         elif chains_likely_corrupted:
             if logger:
                 logger.info("Corrupted chain IDs detected (likely from GRO->PDB conversion). Reassigning chain IDs...")
-        # Method 1: Try to extract chain information from topology file
-        if topology_file and os.path.exists(topology_file):
-            try:
-                chain_assignments = extract_chains_from_topology(topology_file, system, logger)
-                if chain_assignments:
-                    apply_chain_assignments(system, chain_assignments, pdb_file, logger)
-                    return True
-            except Exception as e:
+        # Require topology file for chain assignment (no fallback methods)
+        if not topology_file or not os.path.exists(topology_file):
+            error_msg = ("Chain ID assignment requires a topology file. "
+                        "Please provide a topology file (--top) with molecule definitions, "
+                        "or use a PDB file with proper chain IDs.")
+            if logger:
+                logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Extract chain information from topology file
+        try:
+            chain_assignments = extract_chains_from_topology(topology_file, system, logger)
+            if chain_assignments:
+                apply_chain_assignments(system, chain_assignments, pdb_file, logger)
+                return True
+            else:
+                error_msg = ("Could not extract chain information from topology file. "
+                            "Ensure the topology contains [ molecules ] section and corresponding .itp files "
+                            "with [ atoms ] sections that define residue mappings.")
                 if logger:
-                    logger.warning(f"Could not extract chain info from topology: {str(e)}")
-        
-        # Method 2: Assign chains based on sequence breaks and molecule types
-        chain_assignments = detect_chains_from_sequence_breaks(system, logger)
-        if chain_assignments:
-            apply_chain_assignments(system, chain_assignments, pdb_file, logger)
-            return True
-        
-        # No reliable method worked - return error
-        error_msg = "Could not reliably assign chain IDs. Please provide a PDB file with proper chain IDs or ensure topology file contains molecule information."
-        if logger:
-            logger.error(error_msg)
-        raise ValueError(error_msg)
+                    logger.error(error_msg)
+                raise ValueError(error_msg)
+        except ValueError:
+            raise  # Re-raise ValueError as is
+        except Exception as e:
+            error_msg = f"Failed to extract chain info from topology: {str(e)}"
+            if logger:
+                logger.error(error_msg)
+            raise ValueError(error_msg)
         
     except Exception as e:
         if logger:
@@ -1555,9 +1774,9 @@ def extract_chains_from_topology(topology_file, system, logger=None):
     
     This function:
     1. Parses #include statements to find .itp files
-    2. Extracts residue names from each .itp file  
+    2. Extracts residue names and atom counts from each .itp file  
     3. Maps molecules to chain IDs based on the [ molecules ] section
-    4. Assigns chain IDs by matching residues to their corresponding molecule types
+    4. Assigns chain IDs using atom order from topology (most reliable method)
     
     Parameters:
     - topology_file (str): Path to the GROMACS topology file
@@ -1578,12 +1797,25 @@ def extract_chains_from_topology(topology_file, system, logger=None):
                 logger.warning("Could not parse comprehensive topology information")
             return None
         
-        # Get all residues from the system
+        # Primary method: Assign chains by atom order using topology atom counts
+        # This is the most reliable method as it doesn't depend on residue name matching
+        if 'itp_atom_counts' in topology_info and topology_info['itp_atom_counts']:
+            chain_assignments = assign_chains_by_atom_order(system, topology_info, logger)
+            if chain_assignments:
+                if logger:
+                    unique_chains = list(set(chain_assignments.values()))
+                    logger.info(f"Successfully assigned {len(unique_chains)} chains using atom-order method: {', '.join(sorted(unique_chains))}")
+                return chain_assignments
+            else:
+                if logger:
+                    logger.warning("Atom-order-based chain assignment failed, trying residue-name matching...")
+        
+        # Fallback method: Map residues to molecule types based on residue names
+        # This is less reliable but may work when atom counts are unavailable
         all_residues = system.select('all')
         all_resindices = np.unique(all_residues.getResindices())
         sorted_resindices = sorted(all_resindices)
         
-        # Map residues to molecule types based on residue names
         residue_to_molecule = map_residues_by_names(
             system, sorted_resindices, topology_info, logger
         )
@@ -1600,7 +1832,7 @@ def extract_chains_from_topology(topology_file, system, logger=None):
         
         if logger and chain_assignments:
             unique_chains = list(set(chain_assignments.values()))
-            logger.info(f"Successfully assigned {len(unique_chains)} chains from topology: {', '.join(sorted(unique_chains))}")
+            logger.info(f"Successfully assigned {len(unique_chains)} chains from topology (residue-name method): {', '.join(sorted(unique_chains))}")
             
             # Log molecule type distribution
             molecule_counts = {}
@@ -1623,11 +1855,14 @@ def extract_chains_from_topology(topology_file, system, logger=None):
 def parse_topology_comprehensive(topology_file, logger=None):
     """
     Comprehensively parse topology file to extract:
-    1. Included .itp files and their molecule names and residue names
-    2. Molecule definitions from [ molecules ] section
+    1. Inline molecule definitions ([ moleculetype ] and [ atoms ] in the main .top file)
+    2. Included .itp files and their molecule names, residue names, and atom counts
+    3. Molecule definitions from [ molecules ] section
     
     Returns:
-    - dict: Contains 'itp_residues' (mol_name -> set of residue names) and 'molecules' (ordered list)
+    - dict: Contains 'itp_residues' (mol_name -> set of residue names), 
+            'itp_atom_counts' (mol_name -> atom count per molecule), and 
+            'molecules' (ordered list)
     """
     try:
         topology_dir = os.path.dirname(topology_file)
@@ -1635,22 +1870,73 @@ def parse_topology_comprehensive(topology_file, logger=None):
         with open(topology_file, 'r') as f:
             top_content = f.read()
         
-        # Extract #include statements to find .itp files
+        # Initialize molecule dictionaries
+        itp_residues = {}
+        itp_atom_counts = {}
+        
+        # FIRST: Parse the main topology file itself for inline molecule definitions
+        # This is important for proteins which are often defined inline, not in separate .itp files
+        inline_molecules = parse_inline_molecules(top_content, logger)
+        if inline_molecules:
+            if logger:
+                logger.info(f"Found {len(inline_molecules)} inline molecule definition(s) in topology file:")
+            for mol_info in inline_molecules:
+                mol_name = mol_info['molecule_name']
+                residue_names = mol_info['residue_names']
+                atom_count = mol_info.get('atom_count', 0)
+                itp_residues[mol_name] = residue_names
+                itp_atom_counts[mol_name] = atom_count
+                if logger:
+                    logger.info(f"  Inline: molecule='{mol_name}', {atom_count} atoms, residues: {', '.join(sorted(residue_names)[:5])}{'...' if len(residue_names) > 5 else ''}")
+        
+        # SECOND: Extract #include statements to find .itp files
         itp_file_paths = extract_itp_includes(top_content, topology_dir, logger)
         
-        # Parse each .itp file to get molecule names and their residue names
-        itp_residues = {}
+        if logger:
+            logger.info(f"Found {len(itp_file_paths)} .itp files referenced in topology")
+        
+        # Parse each .itp file to get molecule names, their residue names, and atom counts
         for itp_path in itp_file_paths:
             itp_info = parse_itp_file_comprehensive(itp_path, logger)
             if itp_info:
                 mol_name = itp_info['molecule_name']
                 residue_names = itp_info['residue_names']
-                itp_residues[mol_name] = residue_names
-                if logger:
-                    logger.debug(f"Molecule '{mol_name}' contains residues: {', '.join(sorted(residue_names))}")
+                atom_count = itp_info.get('atom_count', 0)
+                # Don't overwrite inline definitions with ITP definitions
+                if mol_name not in itp_atom_counts:
+                    itp_residues[mol_name] = residue_names
+                    itp_atom_counts[mol_name] = atom_count
+                    if logger:
+                        logger.info(f"  ITP '{os.path.basename(itp_path)}': molecule='{mol_name}', {atom_count} atoms, residues: {', '.join(sorted(residue_names)[:5])}{'...' if len(residue_names) > 5 else ''}")
+                else:
+                    if logger:
+                        logger.debug(f"  Skipping ITP '{os.path.basename(itp_path)}': molecule='{mol_name}' already defined inline")
         
         # Parse [ molecules ] section to get molecule order and counts
         molecules = parse_molecules_section(top_content, logger)
+        
+        if logger:
+            logger.info(f"Found {len(molecules)} molecule entries in [ molecules ] section:")
+            for mol_name, mol_count in molecules:
+                logger.info(f"  '{mol_name}' x {mol_count}")
+        
+        # Validate: check if all molecules in [ molecules ] have atom counts
+        if logger:
+            molecules_in_section = set(mol_name for mol_name, _ in molecules)
+            molecules_with_atoms = set(itp_atom_counts.keys())
+            
+            # Check for exact matches
+            missing_exact = molecules_in_section - molecules_with_atoms
+            
+            if missing_exact:
+                # Try case-insensitive matching to provide better diagnostics
+                mol_names_lower = {name.lower(): name for name in molecules_with_atoms}
+                for missing_mol in missing_exact:
+                    if missing_mol.lower() in mol_names_lower:
+                        actual_name = mol_names_lower[missing_mol.lower()]
+                        logger.warning(f"Molecule name case mismatch: [ molecules ] has '{missing_mol}' but definition has '{actual_name}'")
+                    else:
+                        logger.warning(f"Molecule '{missing_mol}' in [ molecules ] has no matching definition (inline or ITP)")
         
         if not itp_residues or not molecules:
             if logger:
@@ -1658,14 +1944,121 @@ def parse_topology_comprehensive(topology_file, logger=None):
             return None
         
         return {
-            'itp_residues': itp_residues,  # mol_name -> set of residue names
-            'molecules': molecules          # [(mol_name, count), ...]
+            'itp_residues': itp_residues,      # mol_name -> set of residue names
+            'itp_atom_counts': itp_atom_counts, # mol_name -> atom count per molecule
+            'molecules': molecules              # [(mol_name, count), ...]
         }
         
     except Exception as e:
         if logger:
             logger.warning(f"Error parsing topology comprehensively: {str(e)}")
         return None
+
+
+def parse_inline_molecules(top_content, logger=None):
+    """
+    Parse the main topology file for inline molecule definitions.
+    
+    Many GROMACS topology files define proteins inline (not via #include) with:
+      [ moleculetype ]
+      Protein_chain_A   3
+      
+      [ atoms ]
+      1 N1 1 ALA N 1 ...
+      ...
+    
+    This function finds ALL such definitions in the main topology file.
+    
+    Returns:
+    - list: List of dicts with 'molecule_name', 'residue_names', 'atom_count'
+    """
+    molecules = []
+    
+    try:
+        current_molecule = None
+        current_residues = set()
+        current_atom_count = 0
+        in_moleculetype_section = False
+        in_atoms_section = False
+        
+        for line in top_content.split('\n'):
+            line = line.strip()
+            
+            # Skip empty lines and comments for section detection
+            if not line or line.startswith(';'):
+                continue
+            
+            # Detect section changes
+            if line.startswith('['):
+                # Extract section name
+                section_match = line.lower()
+                
+                if '[ moleculetype ]' in line.lower():
+                    # Save previous molecule if any
+                    if current_molecule and current_atom_count > 0:
+                        molecules.append({
+                            'molecule_name': current_molecule,
+                            'residue_names': current_residues,
+                            'atom_count': current_atom_count
+                        })
+                        if logger:
+                            logger.debug(f"Saved inline molecule '{current_molecule}' with {current_atom_count} atoms")
+                    
+                    # Start new molecule
+                    current_molecule = None
+                    current_residues = set()
+                    current_atom_count = 0
+                    in_moleculetype_section = True
+                    in_atoms_section = False
+                    
+                elif '[ atoms ]' in line.lower():
+                    in_moleculetype_section = False
+                    in_atoms_section = True
+                    
+                else:
+                    # Some other section - end atoms section but don't end molecule yet
+                    in_moleculetype_section = False
+                    in_atoms_section = False
+                continue
+            
+            # Parse molecule name from [ moleculetype ] section
+            if in_moleculetype_section:
+                parts = line.split()
+                if len(parts) >= 1:
+                    current_molecule = parts[0]
+                    if logger:
+                        logger.debug(f"Found inline molecule name '{current_molecule}'")
+                    in_moleculetype_section = False  # Only read first non-comment line
+            
+            # Parse atoms from [ atoms ] section
+            elif in_atoms_section:
+                parts = line.split()
+                # Format: nr type resnr residu atom cgnr charge mass
+                # Or: nr type resnr residu atom cgnr charge (7 columns minimum)
+                if len(parts) >= 4:
+                    try:
+                        residue_name = parts[3]  # 4th column is residue name
+                        current_residues.add(residue_name)
+                        current_atom_count += 1
+                    except (IndexError, ValueError):
+                        continue
+        
+        # Don't forget to save the last molecule
+        if current_molecule and current_atom_count > 0:
+            molecules.append({
+                'molecule_name': current_molecule,
+                'residue_names': current_residues,
+                'atom_count': current_atom_count
+            })
+            if logger:
+                logger.debug(f"Saved inline molecule '{current_molecule}' with {current_atom_count} atoms")
+        
+        return molecules
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Error parsing inline molecules: {str(e)}")
+        return []
 
 def extract_itp_includes(top_content, topology_dir, logger=None):
     """
@@ -1715,14 +2108,14 @@ def extract_itp_includes(top_content, topology_dir, logger=None):
 
 def parse_itp_file_comprehensive(itp_path, logger=None):
     """
-    Parse an .itp file to extract both molecule name and residue names.
+    Parse an .itp file to extract molecule name, residue names, and atom count.
     
     Parameters:
     - itp_path (str): Path to the .itp file
     - logger: Optional logger for output messages
     
     Returns:
-    - dict: Contains 'molecule_name' and 'residue_names' (set), or None if parsing fails
+    - dict: Contains 'molecule_name', 'residue_names' (set), and 'atom_count', or None if parsing fails
     """
     try:
         with open(itp_path, 'r') as f:
@@ -1730,6 +2123,7 @@ def parse_itp_file_comprehensive(itp_path, logger=None):
         
         molecule_name = None
         residue_names = set()
+        atom_count = 0
         in_moleculetype_section = False
         in_atoms_section = False
         
@@ -1761,7 +2155,7 @@ def parse_itp_file_comprehensive(itp_path, logger=None):
                     if logger:
                         logger.debug(f"Found molecule name '{molecule_name}' in {os.path.basename(itp_path)}")
             
-            # Parse residue names from [ atoms ] section
+            # Parse residue names and count atoms from [ atoms ] section
             elif in_atoms_section and line and not line.startswith(';'):
                 # Format: nr type resnr residu atom cgnr charge mass
                 # Example: 1    NH3    1    LYS    N    1    -0.300000    14.0070
@@ -1770,15 +2164,17 @@ def parse_itp_file_comprehensive(itp_path, logger=None):
                     try:
                         residue_name = parts[3]  # 4th column is residue name
                         residue_names.add(residue_name)
+                        atom_count += 1  # Count this atom
                     except (IndexError, ValueError):
                         continue
         
         if molecule_name and residue_names:
             if logger:
-                logger.debug(f"Molecule '{molecule_name}' contains {len(residue_names)} unique residue types: {', '.join(sorted(residue_names))}")
+                logger.debug(f"Molecule '{molecule_name}' contains {len(residue_names)} unique residue types, {atom_count} atoms: {', '.join(sorted(residue_names))}")
             return {
                 'molecule_name': molecule_name,
-                'residue_names': residue_names
+                'residue_names': residue_names,
+                'atom_count': atom_count
             }
         else:
             if logger:
@@ -1830,6 +2226,190 @@ def parse_molecules_section(top_content, logger=None):
         if logger:
             logger.warning(f"Error parsing [ molecules ] section: {str(e)}")
         return []
+
+def assign_chains_by_atom_order(system, topology_info, logger=None):
+    """
+    Assign chain IDs based on atom order using topology molecule definitions and atom counts.
+    
+    This is the most reliable method for chain assignment as it uses the exact atom counts
+    from the ITP files and the molecule order from the topology's [ molecules ] section.
+    
+    The algorithm:
+    1. Get total atom count from the structure
+    2. For each molecule in [ molecules ] section (in order):
+       - Get the atom count per molecule instance from ITP (with case-insensitive fallback)
+       - Assign consecutive atoms to that molecule/chain
+    3. Assign one chain per molecule instance
+    
+    Parameters:
+    - system: ProDy system object
+    - topology_info: dict containing 'molecules' and 'itp_atom_counts'
+    - logger: optional logger
+    
+    Returns:
+    - dict: Mapping of residue indices to chain IDs, or None if assignment fails
+    """
+    try:
+        molecules = topology_info['molecules']  # [(mol_name, count), ...]
+        itp_atom_counts = topology_info.get('itp_atom_counts', {})
+        
+        if not molecules:
+            if logger:
+                logger.warning("No molecules found in topology")
+            return None
+        
+        if not itp_atom_counts:
+            if logger:
+                logger.warning("No atom count information from ITP files")
+            return None
+        
+        # Build case-insensitive lookup for atom counts
+        # This handles mismatches like "UNK" vs "unk" or "Protein_chain_A" vs "PROTEIN_CHAIN_A"
+        itp_atom_counts_lower = {name.lower(): (name, count) for name, count in itp_atom_counts.items()}
+        
+        # Get all atoms from the structure, ordered by index
+        all_atoms = system.select('all')
+        total_atoms = len(all_atoms)
+        atom_indices = all_atoms.getIndices()  # Already sorted
+        
+        # First pass: resolve all molecule names and calculate expected total
+        resolved_molecules = []  # [(mol_name, mol_count, atoms_per_mol, used_case_insensitive), ...]
+        expected_total = 0
+        missing_molecules = []
+        
+        for mol_name, mol_count in molecules:
+            atoms_per_mol = itp_atom_counts.get(mol_name, 0)
+            used_case_insensitive = False
+            
+            if atoms_per_mol == 0:
+                # Try case-insensitive match
+                if mol_name.lower() in itp_atom_counts_lower:
+                    actual_name, atoms_per_mol = itp_atom_counts_lower[mol_name.lower()]
+                    used_case_insensitive = True
+                    if logger:
+                        logger.warning(f"Molecule name case mismatch resolved: '{mol_name}' matched to ITP molecule '{actual_name}' ({atoms_per_mol} atoms)")
+            
+            if atoms_per_mol == 0:
+                missing_molecules.append(mol_name)
+            else:
+                expected_total += atoms_per_mol * mol_count
+            
+            resolved_molecules.append((mol_name, mol_count, atoms_per_mol, used_case_insensitive))
+        
+        # Report missing molecules
+        if missing_molecules and logger:
+            logger.error(f"The following molecules in [ molecules ] have no matching ITP file with atom counts:")
+            for mol in missing_molecules:
+                logger.error(f"  - '{mol}' (not found in any parsed ITP file)")
+            logger.error("This will cause chain assignment to fail for these molecules!")
+            logger.error("Possible causes:")
+            logger.error("  1. The ITP file is not included in the topology (missing #include)")
+            logger.error("  2. The molecule name in the ITP [ moleculetype ] differs from [ molecules ]")
+            logger.error("  3. The ITP file doesn't have a proper [ atoms ] section")
+        
+        # Check atom count match
+        if expected_total != total_atoms:
+            if logger:
+                logger.warning(f"Atom count mismatch: structure has {total_atoms} atoms, "
+                              f"topology defines {expected_total} atoms (difference: {total_atoms - expected_total})")
+                if missing_molecules:
+                    logger.warning(f"This is likely because molecules {missing_molecules} could not be parsed")
+                else:
+                    logger.warning("This may indicate structure modification (e.g., waters/ions removed)")
+        
+        # Assign atoms to molecules/chains based on order
+        chain_letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        chain_idx = 0
+        current_atom_idx = 0
+        
+        # Track which residue indices belong to which chain
+        atom_to_chain = {}
+        
+        for mol_name, mol_count, atoms_per_mol, used_case_insensitive in resolved_molecules:
+            if atoms_per_mol == 0:
+                if logger:
+                    logger.warning(f"Skipping molecule '{mol_name}' (no atom count) - "
+                                  f"its atoms will be assigned to chain 'X'")
+                continue
+            
+            for instance in range(mol_count):
+                # Determine chain ID
+                if chain_idx < len(chain_letters):
+                    chain_id = chain_letters[chain_idx]
+                else:
+                    # Use double letters for chains beyond Z
+                    first_letter_idx = (chain_idx - 26) // 26
+                    second_letter_idx = (chain_idx - 26) % 26
+                    if first_letter_idx < len(chain_letters):
+                        chain_id = chain_letters[first_letter_idx] + chain_letters[second_letter_idx]
+                    else:
+                        chain_id = 'Z'  # Fallback for extremely large systems
+                
+                if logger and instance == 0:
+                    logger.debug(f"Molecule '{mol_name}' instance {instance+1}/{mol_count}: "
+                                f"atoms {current_atom_idx}-{current_atom_idx + atoms_per_mol - 1} -> chain {chain_id}")
+                
+                # Assign this chain to the next atoms_per_mol atoms
+                for _ in range(atoms_per_mol):
+                    if current_atom_idx < total_atoms:
+                        atom_to_chain[current_atom_idx] = chain_id
+                        current_atom_idx += 1
+                
+                chain_idx += 1
+        
+        if logger:
+            logger.info(f"Assigned {current_atom_idx} atoms to {chain_idx} chains based on topology atom order")
+            if current_atom_idx < total_atoms:
+                logger.warning(f"{total_atoms - current_atom_idx} atoms were not assigned (beyond topology definition)")
+        
+        # Convert atom assignments to residue assignments
+        residue_to_chain = {}
+        all_resindices = np.unique(all_atoms.getResindices())
+        unassigned_residues = []
+        
+        for res_idx in all_resindices:
+            res_atoms = system.select(f'resindex {res_idx}')
+            if res_atoms is not None and len(res_atoms) > 0:
+                first_atom_idx = res_atoms.getIndices()[0]
+                if first_atom_idx in atom_to_chain:
+                    residue_to_chain[res_idx] = atom_to_chain[first_atom_idx]
+                else:
+                    # Atom not assigned (beyond topology definition) - assign to 'X'
+                    residue_to_chain[res_idx] = 'X'
+                    res_name = res_atoms.getResnames()[0]
+                    unassigned_residues.append((res_idx, res_name))
+        
+        # Log unassigned residues (summarized)
+        if unassigned_residues and logger:
+            # Group by residue name
+            by_resname = {}
+            for res_idx, res_name in unassigned_residues:
+                if res_name not in by_resname:
+                    by_resname[res_name] = []
+                by_resname[res_name].append(res_idx)
+            
+            logger.warning(f"{len(unassigned_residues)} residues not covered by topology - assigned to chain X:")
+            for res_name, indices in by_resname.items():
+                if len(indices) <= 5:
+                    logger.warning(f"  {res_name}: residue indices {indices}")
+                else:
+                    logger.warning(f"  {res_name}: {len(indices)} residues (indices {indices[0]}-{indices[-1]})")
+        
+        # Log chain distribution
+        if logger:
+            chain_counts = {}
+            for chain in residue_to_chain.values():
+                chain_counts[chain] = chain_counts.get(chain, 0) + 1
+            logger.info(f"Chain distribution: {dict(sorted(chain_counts.items()))}")
+        
+        return residue_to_chain
+        
+    except Exception as e:
+        if logger:
+            logger.warning(f"Atom-order-based chain assignment failed: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
+        return None
 
 def map_residues_by_names(system, sorted_resindices, topology_info, logger=None):
     """
@@ -2132,97 +2712,6 @@ def is_ion_molecule(mol_name):
     ion_names = {'na', 'cl', 'k', 'mg', 'ca', 'zn', 'fe', 'na+', 'cl-', 'k+', 'mg2+', 'ca2+', 'zn2+'}
     return mol_name.lower() in ion_names
 
-def detect_chains_from_sequence_breaks(system, logger=None):
-    """
-    Detect chain breaks based on sequence gaps and molecule types.
-    Only returns assignments when confident about chain boundaries.
-    
-    Returns:
-    - dict: Mapping of residue indices to chain IDs, or None if not confident
-    """
-    try:
-        chain_assignments = {}
-        
-        # Get all residues
-        all_residues = system.select('all')
-        residue_indices = np.unique(all_residues.getResindices())
-        residue_numbers = []
-        residue_names = []
-        
-        for res_idx in residue_indices:
-            res_sel = system.select(f'resindex {res_idx}')
-            residue_numbers.append(res_sel.getResnums()[0])
-            residue_names.append(res_sel.getResnames()[0])
-        
-        # Count different molecule types to determine if we can confidently assign chains
-        protein_count = sum(1 for name in residue_names if is_protein_residue(name))
-        nucleic_count = sum(1 for name in residue_names if is_nucleic_residue(name))
-        
-        # Enhanced water/solvent detection for potentially truncated names from GRO conversion
-        water_count = sum(1 for name in residue_names if is_water_residue(name))
-        ion_count = sum(1 for name in residue_names if is_ion_residue(name))
-        
-        other_count = len(residue_names) - protein_count - nucleic_count - water_count - ion_count
-        
-        # Only proceed if we have clear molecular boundaries or sequence breaks
-        has_clear_boundaries = (protein_count > 0 and (nucleic_count > 0 or water_count > 0 or ion_count > 0 or other_count > 0))
-        
-        # Check for clear sequence breaks in protein/nucleic sequences
-        sequence_breaks = []
-        current_chain = 'A'
-        chain_counter = 0
-        
-        for i, res_idx in enumerate(residue_indices):
-            res_name = residue_names[i]
-            res_num = residue_numbers[i]
-            
-            # Check if this should be a new chain
-            should_start_new_chain = False
-            
-            if i > 0:
-                prev_res_num = residue_numbers[i-1]
-                prev_res_name = residue_names[i-1]
-                
-                # Check for significant sequence break (gap > 5 in residue numbering for proteins/nucleics)
-                if (is_protein_residue(res_name) or is_nucleic_residue(res_name)) and \
-                   (is_protein_residue(prev_res_name) or is_nucleic_residue(prev_res_name)):
-                    if res_num - prev_res_num > 5:
-                        should_start_new_chain = True
-                        sequence_breaks.append(i)
-                
-                # Check for molecule type change (strong indicator)
-                if (is_protein_residue(prev_res_name) != is_protein_residue(res_name) or
-                    is_nucleic_residue(prev_res_name) != is_nucleic_residue(res_name)):
-                    should_start_new_chain = True
-            
-            if should_start_new_chain:
-                chain_counter += 1
-                current_chain = chr(ord('A') + chain_counter % 26)
-            
-            # Assign chains based on molecule type
-            if is_water_residue(res_name):
-                chain_assignments[res_idx] = 'W'  # Water chain
-            elif is_ion_residue(res_name):
-                chain_assignments[res_idx] = 'I'  # Ion chain
-            else:
-                chain_assignments[res_idx] = current_chain
-        
-        # Only return assignments if we have confidence
-        if has_clear_boundaries or len(sequence_breaks) > 0:
-            if logger:
-                logger.info(f"Detected chain boundaries: {len(sequence_breaks)} sequence breaks, molecule types: "
-                           f"protein={protein_count}, nucleic={nucleic_count}, water={water_count}, ions={ion_count}, other={other_count}")
-            return chain_assignments
-        else:
-            if logger:
-                logger.info("No clear chain boundaries detected - cannot confidently assign chains")
-            return None
-        
-    except Exception as e:
-        if logger:
-            logger.warning(f"Sequence break detection failed: {str(e)}")
-        return None
-
 def is_water_residue(res_name):
     """Check if residue is water, including potentially truncated names from GRO conversion."""
     water_names = {
@@ -2319,15 +2808,29 @@ def apply_chain_assignments(system, chain_assignments, pdb_file, logger=None):
         with open(temp_pdb, 'r') as f:
             structure_lines = f.readlines()
         
-        # Write final file with preserved headers/footers
+        # Write final file with preserved headers/footers and proper TER records between chains
         with open(pdb_file, 'w') as f:
             # Write header lines (including CRYST1)
             f.writelines(header_lines)
             
             # Write structure lines (ATOM/HETATM records with new chain IDs)
+            # Group atoms by chain and insert TER records between chains
+            prev_chain = None
             for line in structure_lines:
                 if line.startswith(('ATOM', 'HETATM')):
+                    # Extract chain ID from column 22 (0-indexed: position 21)
+                    current_chain = line[21] if len(line) > 21 else ''
+                    
+                    # Insert TER record when chain changes (but not before first chain)
+                    if prev_chain is not None and current_chain != prev_chain:
+                        f.write('TER\n')
+                    
                     f.write(line)
+                    prev_chain = current_chain
+            
+            # Add final TER after last ATOM/HETATM
+            if prev_chain is not None:
+                f.write('TER\n')
             
             # Write footer lines (END, etc.)
             f.writelines(footer_lines)
@@ -2436,6 +2939,12 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
     
     logger.info('Source selection: %s (%d residues)' % (source_sel, numSource))
     logger.info('Target selection: %s (%d residues)' % (target_sel, numTarget))
+    
+    # Log unique residue names for debugging
+    source_resnames = np.unique(source.getResnames())
+    target_resnames = np.unique(target.getResnames())
+    logger.info(f'Source residue types ({len(source_resnames)}): {list(source_resnames)}')
+    logger.info(f'Target residue types ({len(target_resnames)}): {list(target_resnames)}')
 
     # Generate all possible unique pairwise residue-residue combinations
     pairProduct = itertools.product(sourceResids, targetResids)
@@ -2551,18 +3060,23 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
     if not os.path.exists(top_file):
         raise ValueError("Topology file required for detailed interaction energy calculation")
 
+        # NOTE: The code below is unreachable due to the raise statement above.
+        # Keeping for reference but should be removed in a future cleanup.
+        
         # Modify atom serial numbers to account for possible PDB files with more than 99999 atoms
         system = parsePDB(pdb_file)
         system.setSerials(np.arange(1, system.numAtoms() + 1))
 
-        system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
-        system_dry = system_dry.select('not resname SOL')
+        # Use 'system' directly for residue lookups (not a re-selected subset)
+        # to preserve consistent residue indices from perform_initial_filtering
 
         indicesFiltered = np.unique(np.hstack(initialFilter))
         allSerials = {}
 
         for index in indicesFiltered:
-            residue = system_dry.select('resindex %i' % index)
+            residue = system.select('resindex %i' % index)
+            if residue is None:
+                continue
             lenSerials = len(residue.getSerials())
             if lenSerials > 14:
                 residueSerials = residue.getSerials()
@@ -2678,14 +3192,19 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
     system = parsePDB(pdb_file)
     system.setSerials(np.arange(1, system.numAtoms() + 1))
 
-    system_dry = system.select('protein or nucleic or lipid or hetero and not water and not resname SOL and not ion')
-    system_dry = system_dry.select('not resname SOL')
+    # NOTE: We use 'system' directly for residue lookups, NOT a re-selected subset.
+    # The indicesFiltered already contains only residue indices that passed the 
+    # source_sel/target_sel filter in perform_initial_filtering (which excludes water/ions).
+    # Re-selecting would create a NEW AtomGroup with RENUMBERED indices, breaking lookups.
 
     indicesFiltered = np.unique(np.hstack(initialFilter))
     allSerials = {}
 
     for index in indicesFiltered:
-        residue = system_dry.select('resindex %i' % index)
+        residue = system.select('resindex %i' % index)
+        if residue is None:
+            logger.warning(f"Could not find residue with index {index} in system - skipping")
+            continue
         lenSerials = len(residue.getSerials())
         if lenSerials > 14:
             residueSerials = residue.getSerials()
@@ -3260,17 +3779,23 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
     
     # Validate structure file is provided and exists
     if not structure_file:
-        errors.append("ERROR: Structure file (PDB) is required")
+        errors.append("ERROR: Structure file (PDB/GRO) is required")
         return False, errors
     
     if not os.path.exists(structure_file):
         errors.append(f"ERROR: Structure file '{structure_file}' does not exist")
         return False, errors
     
-    # Validate structure file is PDB format
-    if not structure_file.lower().endswith('.pdb'):
-        errors.append(f"ERROR: Structure file must be in PDB format, got: {structure_file}")
-        errors.append("  Only PDB format is supported")
+    # Validate structure file format
+    structure_ext = os.path.splitext(structure_file)[1].lower()
+    if structure_ext not in ['.pdb', '.gro']:
+        errors.append(f"ERROR: Structure file must be in PDB or GRO format, got: {structure_file}")
+        errors.append("  Supported formats: .pdb, .gro")
+    
+    # GRO files require topology for chain ID assignment
+    if structure_ext == '.gro' and not top:
+        errors.append("ERROR: GRO files require a topology file (--top) for chain ID assignment")
+        errors.append("  GRO format does not contain chain ID information")
     
     # Try to parse the structure file
     try:
@@ -3747,7 +4272,69 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
             except Exception as e:
                 errors.append(f"ERROR: Unexpected error while validating structure file: {str(e)}")
         
-        # Test 3: If topology provided, test with gmx grompp
+        # Test 3: Chain ID validation
+        # If we have a structure file and topology, test chain ID assignment
+        if structure_file and os.path.exists(structure_file):
+            try:
+                # Determine input format
+                input_ext = os.path.splitext(structure_file)[1].lower()
+                test_pdb = structure_file
+                
+                # If input is GRO, convert to PDB first
+                if input_ext == '.gro':
+                    test_pdb = os.path.join(temp_dir, "test_chain.pdb")
+                    gromacs.editconf(f=structure_file, o=test_pdb)
+                    print(f"✓ GRO file can be converted to PDB")
+                
+                # Parse the PDB and check chain IDs
+                try:
+                    from prody import parsePDB
+                    system = parsePDB(test_pdb)
+                    chain_ids = system.getChids()
+                    unique_chains = np.unique(chain_ids)
+                    
+                    # Check if chain IDs are valid
+                    chains_valid = True
+                    if len(unique_chains) == 1 and (
+                        unique_chains[0] == '' or 
+                        unique_chains[0] == ' ' or 
+                        unique_chains[0] is None
+                    ):
+                        chains_valid = False
+                    
+                    if chains_valid:
+                        print(f"✓ Structure has valid chain IDs: {list(unique_chains)}")
+                    else:
+                        # Chain IDs missing - check if we can assign them from topology
+                        if top and os.path.exists(top):
+                            # Test topology-based chain assignment
+                            topology_info = parse_topology_comprehensive(top)
+                            if topology_info and 'itp_atom_counts' in topology_info:
+                                print(f"✓ Chain IDs can be assigned from topology (atom-order method)")
+                                print(f"  Molecules in topology: {[m[0] for m in topology_info['molecules']]}")
+                            elif topology_info:
+                                print(f"⚠ Chain IDs may be assignable from topology (residue-name method)")
+                                print(f"  Molecules in topology: {[m[0] for m in topology_info['molecules']]}")
+                            else:
+                                if input_ext == '.gro':
+                                    errors.append("ERROR: GRO file requires topology for chain ID assignment, but topology parsing failed")
+                                else:
+                                    print(f"⚠ No chain IDs in PDB and topology parsing failed - chain assignment may fail")
+                        else:
+                            if input_ext == '.gro':
+                                errors.append("ERROR: GRO file requires topology file (--top) for chain ID assignment")
+                            else:
+                                print(f"⚠ No chain IDs in PDB and no topology provided - chain assignment may fail")
+                                
+                except ImportError:
+                    print(f"⚠ ProDy not available - skipping chain ID validation")
+                except Exception as e:
+                    print(f"⚠ Could not validate chain IDs: {str(e)}")
+                    
+            except Exception as e:
+                print(f"⚠ Chain ID validation skipped: {str(e)}")
+        
+        # Test 4: If topology provided, test with gmx grompp
         if top and os.path.exists(top) and structure_file and os.path.exists(structure_file):
             try:
                 # Create a minimal mdp file for testing
@@ -3758,22 +4345,29 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
                     f.write("cutoff-scheme = Verlet\n")
                 
                 test_tpr = os.path.join(temp_dir, "test.tpr")
-                # Copy structure file to temp dir to ensure paths work
-                temp_pdb = os.path.join(temp_dir, "system.pdb")
-                shutil.copy(structure_file, temp_pdb)
                 
-                gromacs.grompp(f=test_mdp, c=temp_pdb, p=top, o=test_tpr, maxwarn=10)
-                print(f"✓ Topology file is valid and compatible with PDB")
+                # Handle GRO files - convert to PDB first, or use directly for grompp
+                input_ext = os.path.splitext(structure_file)[1].lower()
+                if input_ext == '.gro':
+                    # grompp can accept GRO files directly, no need to convert
+                    temp_structure = os.path.join(temp_dir, "system.gro")
+                    shutil.copy(structure_file, temp_structure)
+                else:
+                    temp_structure = os.path.join(temp_dir, "system.pdb")
+                    shutil.copy(structure_file, temp_structure)
+                
+                gromacs.grompp(f=test_mdp, c=temp_structure, p=top, o=test_tpr, maxwarn=10)
+                print(f"✓ Topology file is valid and compatible with structure")
             except Exception as e:
                 error_msg = str(e)
                 if "atom name" in error_msg.lower():
-                    errors.append(f"ERROR: Topology and PDB atom names don't match: {error_msg}")
+                    errors.append(f"ERROR: Topology and structure atom names don't match: {error_msg}")
                 elif "residue" in error_msg.lower():
-                    errors.append(f"ERROR: Topology and PDB residues don't match: {error_msg}")
+                    errors.append(f"ERROR: Topology and structure residues don't match: {error_msg}")
                 else:
-                    errors.append(f"ERROR: GROMACS cannot process topology with PDB: {error_msg}")
+                    errors.append(f"ERROR: GROMACS cannot process topology with structure: {error_msg}")
         
-        # Test 4: If trajectory provided, test with gmx check
+        # Test 5: If trajectory provided, test with gmx check
         if traj and os.path.exists(traj):
             try:
                 # Use gmx check to verify trajectory
@@ -3782,7 +4376,7 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
             except Exception as e:
                 errors.append(f"ERROR: GROMACS cannot read trajectory file: {str(e)}")
         
-        # Test 5: If custom force field provided, check if it has required files
+        # Test 6: If custom force field provided, check if it has required files
         if ff_folder and os.path.exists(ff_folder):
             required_ff_files = ['forcefield.itp', 'aminoacids.rtp']
             missing_ff_files = []
@@ -3952,7 +4546,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
     # Validate that we have a structure file
     if not structure_file:
         logger.error('No structure file provided')
-        logger.error('Please provide a PDB structure file')
+        logger.error('Please provide a PDB or GRO structure file')
         raise ValueError("No structure file available")
     
     # Validate structure file exists
@@ -3960,11 +4554,49 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         logger.error(f'Structure file not found: {structure_file}')
         raise ValueError(f"Structure file not found: {structure_file}")
     
-    # Check if structure file is PDB format (required)
-    if not structure_file.lower().endswith('.pdb'):
-        logger.error('Structure file must be in PDB format')
+    # Check structure file format
+    structure_ext = os.path.splitext(structure_file)[1].lower()
+    original_format = structure_ext.lstrip('.')  # 'gro' or 'pdb'
+    
+    if structure_ext not in ['.pdb', '.gro']:
+        logger.error('Structure file must be in PDB or GRO format')
         logger.error(f'Got: {structure_file}')
-        raise ValueError("Only PDB format is supported for structure files")
+        raise ValueError("Only PDB and GRO formats are supported for structure files")
+    
+    # Handle GRO file input: convert to PDB using gmx editconf
+    if structure_ext == '.gro':
+        logger.info('=' * 60)
+        logger.info('GRO FILE INPUT DETECTED')
+        logger.info('=' * 60)
+        
+        # GRO files require topology for chain assignment
+        if not top or not os.path.exists(top):
+            logger.error('GRO files require a topology file (--top) for chain ID assignment')
+            logger.error('GRO format does not contain chain ID information')
+            raise ValueError("GRO files require a topology file for chain ID assignment")
+        
+        logger.info('Converting GRO to PDB format using gmx editconf...')
+        logger.info('(This preserves CRYST1/box information)')
+        
+        # Create output PDB path
+        gro_basename = os.path.splitext(os.path.basename(structure_file))[0]
+        converted_pdb = os.path.join(out_folder, f'{gro_basename}_converted.pdb')
+        
+        # Run gmx editconf to convert GRO to PDB using the gromacs module
+        try:
+            gromacs.editconf(f=structure_file, o=converted_pdb)
+            
+            if not os.path.exists(converted_pdb):
+                raise RuntimeError(f"gmx editconf did not create output file: {converted_pdb}")
+            
+            logger.info(f'Successfully converted GRO to PDB: {converted_pdb}')
+            
+            # Update structure_file to use the converted PDB
+            structure_file = converted_pdb
+            
+        except Exception as e:
+            logger.error(f'GRO to PDB conversion failed: {str(e)}')
+            raise RuntimeError(f"Failed to convert GRO to PDB: {str(e)}")
     
     # Handle ensemble mode: multi-model PDB to XTC conversion
     if ensemble_mode:
@@ -4020,6 +4652,40 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             logger.info('Ensemble mode setup complete')
             logger.info(f'  Reference structure: {structure_file}')
             logger.info(f'  Trajectory: {traj}')
+            
+            # Validate chain IDs for ensemble mode
+            # Ensemble PDB files MUST have pre-assigned chain IDs
+            logger.info('Validating chain IDs for ensemble mode...')
+            try:
+                from prody import parsePDB
+                ensemble_system = parsePDB(structure_file)
+                chain_ids = ensemble_system.getChids()
+                unique_chains = np.unique(chain_ids)
+                
+                # Check if chain IDs are valid
+                chains_valid = True
+                if len(unique_chains) == 1 and (
+                    unique_chains[0] == '' or 
+                    unique_chains[0] == ' ' or 
+                    unique_chains[0] is None
+                ):
+                    chains_valid = False
+                
+                if chains_valid:
+                    logger.info(f'✓ Valid chain IDs found in ensemble PDB: {list(unique_chains)}')
+                else:
+                    logger.error('Ensemble mode requires PDB files with pre-assigned chain IDs')
+                    logger.error('The input PDB file does not have valid chain ID assignments')
+                    logger.error('Please pre-process your ensemble PDB to assign chain IDs before using ensemble mode')
+                    raise ValueError("Ensemble mode requires PDB files with pre-assigned chain IDs. "
+                                   "Please ensure your multi-model PDB has proper chain ID assignments.")
+            except ImportError:
+                logger.warning('ProDy not available - skipping chain ID validation for ensemble mode')
+            except ValueError:
+                raise  # Re-raise chain ID validation errors
+            except Exception as e:
+                logger.warning(f'Could not validate chain IDs: {str(e)}')
+                logger.warning('Proceeding with ensemble mode - chain assignment may need manual review')
             
         except Exception as e:
             logger.error(f'Failed to process ensemble PDB file: {str(e)}')
@@ -4172,8 +4838,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         # Detect and assign chain IDs if missing
         topology_file = os.path.join(out_folder, 'topol_dry.top') if top else None
         try:
-            # Pass the original input format to help with chain ID detection
-            original_format = 'gro' if input_ext == '.gro' else 'pdb'
+            # Use the original_format already determined at workflow start
             detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger, original_format)
         except ValueError as e:
             logger.warning(f"Chain ID assignment failed: {str(e)}")
@@ -4205,8 +4870,7 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             # Detect and assign chain IDs if missing
             topology_file = os.path.join(out_folder, 'topol_dry.top')
             try:
-                # Pass the original input format to help with chain ID detection
-                original_format = 'gro' if input_ext == '.gro' else 'pdb'
+                # Use the original_format already determined at workflow start
                 detect_and_assign_chain_ids(os.path.join(out_folder, 'system_dry.pdb'), topology_file, logger, original_format)
             except ValueError as e:
                 logger.warning(f"Chain ID assignment failed: {str(e)}")
@@ -4222,7 +4886,45 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
         
         if os.path.exists(topology_file):
             logger.info('Using topology file for detailed residue-residue interaction analysis')
+            
+            # Validate topology contains all residue types from structure
+            pdb_file = os.path.join(out_folder, 'system_dry.pdb')
+            validation_result = validate_topology_residues(pdb_file, topology_file, source_sel, target_sel, logger)
+            
+            # Store validation result for filtering pairs later
+            missing_resnames = validation_result.get('missing_residues', set())
+            if missing_resnames:
+                logger.warning(f'Will exclude pairs involving: {sorted(missing_resnames)}')
+            
             initialFilter = perform_initial_filtering(out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger)
+            
+            # Filter out pairs involving residues not in topology
+            if missing_resnames and len(initialFilter) > 0:
+                from prody import parsePDB
+                system = parsePDB(pdb_file)
+                
+                # Build set of residue indices that have missing topology
+                missing_indices = set()
+                for resname in missing_resnames:
+                    indices = validation_result.get('resname_to_indices', {}).get(resname, [])
+                    missing_indices.update(indices)
+                
+                if missing_indices:
+                    original_count = len(initialFilter)
+                    # Filter out pairs where either residue is in missing_indices
+                    initialFilter = [pair for pair in initialFilter 
+                                     if pair[0] not in missing_indices and pair[1] not in missing_indices]
+                    filtered_count = original_count - len(initialFilter)
+                    
+                    if filtered_count > 0:
+                        logger.warning(f'Excluded {filtered_count} residue pairs due to missing topology definitions')
+                        logger.warning(f'Remaining pairs for energy calculation: {len(initialFilter)}')
+            
+            if len(initialFilter) == 0:
+                logger.error('No valid residue pairs remaining after topology validation filtering')
+                logger.error('Check that your topology file includes all necessary molecule definitions')
+                raise ValueError('No valid residue pairs for energy calculation')
+            
             edrFiles, pairsFilteredChunks = calculate_interaction_energies(out_folder, initialFilter, nt, logger)
             parse_interaction_energies(edrFiles, pairsFilteredChunks, out_folder, logger)
         else:
