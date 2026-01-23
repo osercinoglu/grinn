@@ -4824,16 +4824,26 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
 
     if traj:
         logger.info('Copying input structure_file to output_folder as "system_dry.pdb"...')
-        
-        # Convert to PDB format if input is GRO
-        input_ext = os.path.splitext(structure_file)[1].lower()
-        if input_ext == '.gro':
-            logger.info('Input is GRO format, converting to PDB format with box information...')
-            # Use gmx editconf directly to preserve CRYST1 record with box information
-            gromacs.editconf(f=structure_file, o=os.path.join(out_folder, 'system_dry.pdb'))
+
+        # Check if topology was recreated with pdb2gmx, which creates protein_processed.pdb with hydrogens
+        protein_processed_path = os.path.join(out_folder, 'protein_processed.pdb')
+
+        if topology_result.get('topology_created', False) and os.path.exists(protein_processed_path):
+            # Use the processed structure file with hydrogens (matches the topology)
+            logger.info('Topology was recreated - using protein_processed.pdb (with hydrogens) as system_dry.pdb')
+            shutil.copy(protein_processed_path, os.path.join(out_folder, 'system_dry.pdb'))
         else:
-            # For PDB files, just copy
-            shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
+            # Use original structure file
+            # Convert to PDB format if input is GRO
+            input_ext = os.path.splitext(structure_file)[1].lower()
+            if input_ext == '.gro':
+                logger.info('Input is GRO format, converting to PDB format with box information...')
+                # Use gmx editconf directly to preserve CRYST1 record with box information
+                gromacs.editconf(f=structure_file, o=os.path.join(out_folder, 'system_dry.pdb'))
+            else:
+                # For PDB files, just copy
+                logger.info('Using original structure file (topology was provided or not recreated)')
+                shutil.copy(structure_file, os.path.join(out_folder, 'system_dry.pdb'))
 
         # Detect and assign chain IDs if missing
         topology_file = os.path.join(out_folder, 'topol_dry.top') if top else None
