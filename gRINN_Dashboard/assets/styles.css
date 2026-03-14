@@ -501,3 +501,31 @@ input[type="checkbox"] {
 .violin-plot-container {
     width: 100%;
 }
+
+/* Chatbot expand button */
+#expand-chatbot:hover {
+    opacity: 0.75;
+}
+
+/* Draggable card header in expanded mode */
+#chat-panel .card-header[style*="cursor: move"],
+#chat-panel .card-header[style*="cursor:move"] {
+    user-select: none;
+}
+
+/* Resize handles */
+#chat-resize-e, #chat-resize-s, #chat-resize-se {
+    position: absolute;
+    z-index: 10001;
+}
+
+/* Corner grip indicator */
+#chat-resize-se::after {
+    content: '';
+    position: absolute;
+    bottom: 4px; right: 4px;
+    width: 10px; height: 10px;
+    border-right: 2px solid rgba(0,0,0,0.25);
+    border-bottom: 2px solid rgba(0,0,0,0.25);
+    border-radius: 0 0 3px 0;
+}

@@ -984,6 +984,7 @@ def main():
     # Chatbot state stores
     session_store = dcc.Store(id='chat-session-id', storage_type='session')
     chatbot_visible_store = dcc.Store(id='chatbot-visible', data=False, storage_type='session')
+    chatbot_expanded_store = dcc.Store(id='chatbot-expanded', data=False, storage_type='session')
     cleanup_store = dcc.Store(id='chat-cleanup', storage_type='memory')
 
     def _maybe_load_env_file() -> None:
@@ -1266,6 +1267,7 @@ def main():
             # Store components for chatbot state
             session_store,
             chatbot_visible_store,
+            chatbot_expanded_store,
             cleanup_store,
             dcc.Interval(id='chat-cleanup-tick', interval=60_000, n_intervals=0),
         ]),
@@ -1937,16 +1939,28 @@ def main():
                         'alignItems': 'center'
                     }, children=[
                         html.H5('💬 gRINN Chatbot', className='mb-0', style={'color': 'white'}),
-                        html.Button('✕', id='close-chatbot', n_clicks=0, style={
-                            'backgroundColor': 'transparent',
-                            'border': 'none',
-                            'color': 'white',
-                            'fontSize': '16px',
-                            'cursor': 'pointer',
-                            'padding': '0',
-                            'width': '30px',
-                            'height': '30px'
-                        })
+                        html.Div([
+                            html.Button('⤢', id='expand-chatbot', n_clicks=0, title='Expand', style={
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'color': 'white',
+                                'fontSize': '16px',
+                                'cursor': 'pointer',
+                                'padding': '0',
+                                'width': '30px',
+                                'height': '30px',
+                            }),
+                            html.Button('✕', id='close-chatbot', n_clicks=0, style={
+                                'backgroundColor': 'transparent',
+                                'border': 'none',
+                                'color': 'white',
+                                'fontSize': '16px',
+                                'cursor': 'pointer',
+                                'padding': '0',
+                                'width': '30px',
+                                'height': '30px'
+                            }),
+                        ], style={'display': 'flex', 'alignItems': 'center', 'gap': '4px'})
                     ])
                 ], style={'backgroundColor': soft_palette['primary']}),
                 dbc.CardBody([
@@ -2104,6 +2118,7 @@ def main():
                             # Store for which chart index to display in modal
                             dcc.Store(id='chart-modal-index', data=None),
                         ],
+                        id='chat-body-scroller',
                         style={'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100vh - 280px)', 'minHeight': 0, 'overflow': 'hidden'}
                     )
                 ], style={'padding': '10px', 'overflow': 'hidden', 'height': '100%', 'display': 'flex', 'flexDirection': 'column'})
@@ -2769,9 +2784,11 @@ def main():
         Output('left-panel', 'width'),
         Output('viewer-panel', 'width'),
         Output('chatbot-visible', 'data'),
+        Output('chatbot-expanded', 'data', allow_duplicate=True),
         Input('toggle-chatbot', 'n_clicks'),
         Input('close-chatbot', 'n_clicks'),
-        State('chatbot-visible', 'data')
+        State('chatbot-visible', 'data'),
+        prevent_initial_call=True
     )
     def _toggle_chat(toggle_clicks, close_clicks, visible):
         if not toggle_clicks and not close_clicks and not visible:
@@ -2781,7 +2798,7 @@ def main():
             new_vis = False
         else:
             new_vis = not bool(visible)
-        
+
         # When chatbot is visible, allocate space for it on the right.
         if new_vis:
             chat_style = {'display': 'block'}
@@ -2792,7 +2809,204 @@ def main():
             left_width = 8
             viewer_width = 4
 
-        return chat_style, left_width, viewer_width, new_vis
+        # Always reset expanded state on open/close so panel starts collapsed
+        return chat_style, left_width, viewer_width, new_vis, False
+
+    # Clientside callback: expand/collapse toggle + drag wiring
+    app.clientside_callback(
+        """
+        function(n_clicks, isExpanded) {
+            if (!n_clicks) { return [false, '\u2922']; }
+
+            var newExpanded = !isExpanded;
+            var panel = document.getElementById('chat-panel');
+            if (!panel) { return [newExpanded, newExpanded ? '\u2921' : '\u2922']; }
+
+            if (newExpanded) {
+                /* ── EXPAND: make panel a fixed floating overlay ── */
+                var expandW = Math.max(500, Math.min(1100, Math.round(window.innerWidth  * 0.75)));
+                var expandH = Math.max(400, Math.min(900,  Math.round(window.innerHeight * 0.80)));
+                var rect = panel.getBoundingClientRect();
+                panel.style.position    = 'fixed';
+                panel.style.top         = '80px';
+                panel.style.left        = '50%';
+                panel.style.transform   = 'translateX(-50%)';
+                panel.style.width       = expandW + 'px';
+                panel.style.height      = expandH + 'px';
+                panel.style.zIndex      = '9999';
+                panel.style.boxShadow   = '0 16px 48px rgba(0,0,0,0.35)';
+                panel.style.borderRadius = '12px';
+                panel.style.overflow    = 'hidden';
+                panel.style.display     = 'block';
+                panel.style.flex        = 'none';
+
+                /* Adjust inner body scroller height */
+                var scroller = document.getElementById('chat-body-scroller');
+                if (scroller) {
+                    scroller._origHeight = scroller.style.height;
+                    scroller.style.height = (expandH - 180) + 'px';
+                }
+
+                /* ── Inject resize handles ── */
+                function makeResizer(resizeW, resizeH) {
+                    return function(e) {
+                        e.preventDefault(); e.stopPropagation();
+                        var startX = e.clientX, startY = e.clientY;
+                        var startW = panel.offsetWidth, startH = panel.offsetHeight;
+                        function onMove(ev) {
+                            if (resizeW) {
+                                panel.style.width = Math.max(400, startW + (ev.clientX - startX)) + 'px';
+                            }
+                            if (resizeH) {
+                                var newH = Math.max(300, startH + (ev.clientY - startY));
+                                panel.style.height = newH + 'px';
+                                var sc = document.getElementById('chat-body-scroller');
+                                if (sc) sc.style.height = (newH - 180) + 'px';
+                            }
+                        }
+                        function onUp() {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup', onUp);
+                        }
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup', onUp);
+                    };
+                }
+                var rightHandle  = document.createElement('div');
+                rightHandle.id   = 'chat-resize-e';
+                rightHandle.style.cssText = 'position:absolute;top:0;right:0;width:8px;height:100%;cursor:ew-resize;z-index:10001;background:transparent;';
+                var bottomHandle  = document.createElement('div');
+                bottomHandle.id   = 'chat-resize-s';
+                bottomHandle.style.cssText = 'position:absolute;bottom:0;left:0;width:100%;height:8px;cursor:ns-resize;z-index:10001;background:transparent;';
+                var cornerHandle  = document.createElement('div');
+                cornerHandle.id   = 'chat-resize-se';
+                cornerHandle.style.cssText = 'position:absolute;bottom:0;right:0;width:18px;height:18px;cursor:nwse-resize;z-index:10002;background:transparent;';
+                rightHandle.addEventListener('mousedown',  makeResizer(true,  false));
+                bottomHandle.addEventListener('mousedown', makeResizer(false, true));
+                cornerHandle.addEventListener('mousedown', makeResizer(true,  true));
+                panel.appendChild(rightHandle);
+                panel.appendChild(bottomHandle);
+                panel.appendChild(cornerHandle);
+
+                /* ── Attach drag handler to card header ── */
+                var header = panel.querySelector('.card-header');
+                if (header && !header._dragHandler) {
+                    header.style.cursor = 'move';
+                    header._dragHandler = function(e) {
+                        if (e.target.tagName === 'BUTTON') return;
+                        e.preventDefault();
+                        /* Resolve absolute position once, removing centering transform */
+                        var r = panel.getBoundingClientRect();
+                        panel.style.left      = r.left + 'px';
+                        panel.style.top       = r.top  + 'px';
+                        panel.style.transform = 'none';
+                        var startX = e.clientX;
+                        var startY = e.clientY;
+                        function onMove(ev) {
+                            var dx = ev.clientX - startX;
+                            var dy = ev.clientY - startY;
+                            startX = ev.clientX;
+                            startY = ev.clientY;
+                            panel.style.left = (parseFloat(panel.style.left) + dx) + 'px';
+                            panel.style.top  = (parseFloat(panel.style.top)  + dy) + 'px';
+                        }
+                        function onUp() {
+                            document.removeEventListener('mousemove', onMove);
+                            document.removeEventListener('mouseup',   onUp);
+                        }
+                        document.addEventListener('mousemove', onMove);
+                        document.addEventListener('mouseup',   onUp);
+                    };
+                    header.addEventListener('mousedown', header._dragHandler);
+                }
+
+            } else {
+                /* ── COLLAPSE: restore panel to normal Bootstrap flow ── */
+                panel.style.position    = '';
+                panel.style.top         = '';
+                panel.style.left        = '';
+                panel.style.transform   = '';
+                panel.style.width       = '';
+                panel.style.maxWidth    = '';
+                panel.style.height      = '';
+                panel.style.maxHeight   = '';
+                panel.style.zIndex      = '';
+                panel.style.boxShadow   = '';
+                panel.style.borderRadius = '';
+                panel.style.flex        = '';
+
+                /* Restore inner body scroller height */
+                var scroller = document.getElementById('chat-body-scroller');
+                if (scroller && scroller._origHeight !== undefined) {
+                    scroller.style.height = scroller._origHeight;
+                }
+
+                /* ── Remove resize handles ── */
+                ['chat-resize-e', 'chat-resize-s', 'chat-resize-se'].forEach(function(id) {
+                    var el = document.getElementById(id);
+                    if (el && el.parentNode) el.parentNode.removeChild(el);
+                });
+
+                /* ── Remove drag handler ── */
+                var header = panel.querySelector('.card-header');
+                if (header) {
+                    header.style.cursor = '';
+                    if (header._dragHandler) {
+                        header.removeEventListener('mousedown', header._dragHandler);
+                        header._dragHandler = null;
+                    }
+                }
+            }
+
+            return [newExpanded, newExpanded ? '\u2921' : '\u2922'];
+        }
+        """,
+        Output('chatbot-expanded', 'data'),
+        Output('expand-chatbot', 'children'),
+        Input('expand-chatbot', 'n_clicks'),
+        State('chatbot-expanded', 'data'),
+        prevent_initial_call=True
+    )
+
+    # Clientside callback: reset panel geometry + icon when Python closes/opens the panel
+    app.clientside_callback(
+        """
+        function(isExpanded) {
+            if (isExpanded) { return window.dash_clientside.no_update; }
+            var panel = document.getElementById('chat-panel');
+            if (panel) {
+                panel.style.position    = '';
+                panel.style.top         = '';
+                panel.style.left        = '';
+                panel.style.transform   = '';
+                panel.style.width       = '';
+                panel.style.maxWidth    = '';
+                panel.style.height      = '';
+                panel.style.maxHeight   = '';
+                panel.style.zIndex      = '';
+                panel.style.boxShadow   = '';
+                panel.style.borderRadius = '';
+                panel.style.flex        = '';
+                var header = panel.querySelector('.card-header');
+                if (header) {
+                    header.style.cursor = '';
+                    if (header._dragHandler) {
+                        header.removeEventListener('mousedown', header._dragHandler);
+                        header._dragHandler = null;
+                    }
+                }
+                var scroller = document.getElementById('chat-body-scroller');
+                if (scroller && scroller._origHeight !== undefined) {
+                    scroller.style.height = scroller._origHeight;
+                }
+            }
+            return '\u2922';
+        }
+        """,
+        Output('expand-chatbot', 'children', allow_duplicate=True),
+        Input('chatbot-expanded', 'data'),
+        prevent_initial_call=True
+    )
 
     @app.callback(
         Output('chat-cleanup', 'data'),
