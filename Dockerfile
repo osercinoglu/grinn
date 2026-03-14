@@ -422,7 +422,7 @@ RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
         echo '        # Enable real-time output with multiple techniques' >> /app/entrypoint.sh; \
         echo '        export PYTHONUNBUFFERED=1' >> /app/entrypoint.sh; \
         echo '        export PYTHONIOENCODING=utf-8' >> /app/entrypoint.sh; \
-        echo '        conda run --no-capture-output -n grinn-env python -u grinn_workflow.py "$@"' >> /app/entrypoint.sh; \
+        echo '        conda run --no-capture-output -n grinn-env python -u /app/grinn_workflow.py "$@"' >> /app/entrypoint.sh; \
     fi && \
     echo '        ;;' >> /app/entrypoint.sh && \
     echo '    "dashboard")' >> /app/entrypoint.sh && \

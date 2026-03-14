@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 from functools import lru_cache
+from flask import request as flask_request
 from dash import Dash, dcc, html, dash_table, Input, Output, State, no_update, ctx, ALL
 import dash
 from dash_chat import ChatComponent
@@ -440,6 +441,42 @@ def main():
                 
                 trajectory_coords[frame_idx] = frame_coords
             
+            # Supplement trajectory_coords with nodes from pen_precomputed/nodes.csv
+            # that are absent from first_res_list (e.g. HSP residues with no energy CSV entry)
+            pen_nodes_csv = os.path.join(data_dir, 'pen_precomputed', 'nodes.csv')
+            if os.path.exists(pen_nodes_csv):
+                try:
+                    nodes_df = pd.read_csv(pen_nodes_csv)
+                    sample_frame = next(iter(trajectory_coords)) if trajectory_coords else None
+                    already_mapped = set(trajectory_coords[sample_frame].keys()) if sample_frame is not None else set()
+                    supplemented = 0
+                    for _, row in nodes_df.iterrows():
+                        res_name = str(row['residue'])
+                        if res_name in already_mapped:
+                            continue
+                        resnum = int(row['resnum'])
+                        chain_id = str(row['chain'])
+                        for residue in traj.topology.residues:
+                            if residue.resSeq == resnum and residue.chain.chain_id == chain_id:
+                                atom_indices = [atom.index for atom in residue.atoms]
+                                if atom_indices:
+                                    masses = np.array([atom.element.mass for atom in residue.atoms])
+                                    total_mass = np.sum(masses)
+                                    for frame_idx in list(trajectory_coords.keys()):
+                                        coords_nm = traj.xyz[frame_idx, atom_indices, :]
+                                        coords_ang = coords_nm * 10.0
+                                        if total_mass > 0:
+                                            com = np.sum(coords_ang * masses[:, np.newaxis], axis=0) / total_mass
+                                        else:
+                                            com = np.mean(coords_ang, axis=0)
+                                        trajectory_coords[frame_idx][res_name] = com.tolist()
+                                    supplemented += 1
+                                break
+                    if supplemented > 0:
+                        print(f"      ✓ Supplemented {supplemented} PEN node(s) missing from energy CSV", flush=True)
+                except Exception as sup_e:
+                    print(f"      ⚠ Warning: Could not supplement PEN node coordinates: {sup_e}", flush=True)
+
             print(f"      ✓ Loaded center of mass coordinates for {len(trajectory_coords)} frames", flush=True)
         else:
             # Use static structure coordinates (no trajectory available)
@@ -492,6 +529,45 @@ def main():
             for frame_idx in range(frame_min, frame_max + 1):
                 trajectory_coords[frame_idx] = static_coords.copy()
             
+            # Supplement static_coords with nodes from pen_precomputed/nodes.csv
+            # that are absent from first_res_list (e.g. HSP residues with no energy CSV entry)
+            pen_nodes_csv = os.path.join(data_dir, 'pen_precomputed', 'nodes.csv')
+            if os.path.exists(pen_nodes_csv):
+                try:
+                    nodes_df = pd.read_csv(pen_nodes_csv)
+                    already_mapped = set(static_coords.keys())
+                    supplemented = 0
+                    for _, row in nodes_df.iterrows():
+                        res_name = str(row['residue'])
+                        if res_name in already_mapped:
+                            continue
+                        resnum = int(row['resnum'])
+                        chain_id = str(row['chain'])
+                        for residue in pdb_traj.topology.residues:
+                            if residue.resSeq == resnum and residue.chain.chain_id == chain_id:
+                                atom_indices = [atom.index for atom in residue.atoms]
+                                if atom_indices:
+                                    masses = np.array([atom.element.mass for atom in residue.atoms])
+                                    total_mass = np.sum(masses)
+                                    coords_nm = pdb_traj.xyz[0, atom_indices, :]
+                                    coords_ang = coords_nm * 10.0
+                                    if total_mass > 0:
+                                        com = np.sum(coords_ang * masses[:, np.newaxis], axis=0) / total_mass
+                                    else:
+                                        com = np.mean(coords_ang, axis=0)
+                                    static_coords[res_name] = com.tolist()
+                                    supplemented += 1
+                                break
+                    if supplemented > 0:
+                        # Propagate newly added coords to all already-written frame dicts
+                        for frame_idx in list(trajectory_coords.keys()):
+                            for res_name, coords in static_coords.items():
+                                if res_name not in trajectory_coords[frame_idx]:
+                                    trajectory_coords[frame_idx][res_name] = coords
+                        print(f"      ✓ Supplemented {supplemented} PEN node(s) missing from energy CSV", flush=True)
+                except Exception as sup_e:
+                    print(f"      ⚠ Warning: Could not supplement PEN node coordinates: {sup_e}", flush=True)
+
             print(f"      ✓ Loaded static center of mass coordinates for {len(static_coords)} residues", flush=True)
     except Exception as e:
         print(f"      ⚠ Warning: Could not load trajectory coordinates: {e}", flush=True)
@@ -4070,6 +4146,7 @@ def main():
                     console.log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight);
                     
                     // Use new constructor syntax - start simple without custom node objects
+                    try {{
                     console.log('Creating ForceGraph3D instance...');
                     const Graph = ForceGraph3D()(container);
                     console.log('ForceGraph3D instance created:', Graph);
@@ -4116,14 +4193,17 @@ def main():
                     console.log('Graph initialized (basic mode)');
                     
                     // If coordinates are provided, fix node positions and disable animation
-                    if (graphData.nodes.length > 0 && graphData.nodes[0].x !== undefined) {{
+                    const nodesWithCoords = graphData.nodes.filter(
+                        n => n.x !== undefined && n.y !== undefined && n.z !== undefined
+                    );
+                    if (nodesWithCoords.length > 0) {{
                         console.log('Using provided coordinates - fixing positions');
-                        
+
                         // Calculate bounding box for proper camera positioning
-                        const xs = graphData.nodes.map(n => n.x);
-                        const ys = graphData.nodes.map(n => n.y);
-                        const zs = graphData.nodes.map(n => n.z);
-                        
+                        const xs = nodesWithCoords.map(n => n.x);
+                        const ys = nodesWithCoords.map(n => n.y);
+                        const zs = nodesWithCoords.map(n => n.z);
+
                         const minX = Math.min(...xs), maxX = Math.max(...xs);
                         const minY = Math.min(...ys), maxY = Math.max(...ys);
                         const minZ = Math.min(...zs), maxZ = Math.max(...zs);
@@ -4147,11 +4227,13 @@ def main():
                             .d3VelocityDecay(1)
                             .warmupTicks(0);
                         
-                        // Fix all node positions to prevent movement
+                        // Fix all node positions to prevent movement (only for nodes with coordinates)
                         graphData.nodes.forEach(node => {{
-                            node.fx = node.x;
-                            node.fy = node.y;
-                            node.fz = node.z;
+                            if (node.x !== undefined) {{
+                                node.fx = node.x;
+                                node.fy = node.y;
+                                node.fz = node.z;
+                            }}
                         }});
                         
                         // Update with fixed positions
@@ -4169,6 +4251,13 @@ def main():
                         console.log('Camera positioned at distance:', cameraDistance);
                     }} else {{
                         console.log('No coordinates provided, using force-directed layout');
+                    }}
+                    }} catch (e) {{
+                        container.innerHTML = `<div style="padding:20px;color:red;font-family:monospace;">
+                            <b>3D Network Error:</b> ${{e.message}}<br/>
+                            <small>Check browser console for details.</small>
+                        </div>`;
+                        console.error('3D Network initialization failed:', e);
                     }}
                 </script>
             </body>
