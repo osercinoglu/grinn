@@ -3147,16 +3147,6 @@ def main():
         used = token_data.get('used', 0)
         limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
         
-        # Helper to build error response with consistent token display
-        def _make_error_response(error_text):
-            if limit <= 0:
-                display = f"Tokens: {used:,} / ∞"
-                style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
-            else:
-                display = f"Tokens: {used:,} / {limit:,}"
-                style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
-            return messages, token_data, display, style
-        
         try:
             # Normalize filter values
             residue_filter = residue_filter or []
@@ -3174,8 +3164,8 @@ def main():
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '⚠️ Token budget exhausted for this session. Please refresh the page to start a new session.'}})
                 style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace'}
                 display = f"Tokens: {used:,} / {limit:,} (EXCEEDED)"
-                return messages, token_data, display, style
-            
+                return messages, token_data, display, style, charts_store, no_update, no_update
+
             # normalize user message
             if isinstance(new_message, str):
                 user_msg = {'role': 'user', 'content': new_message}
