@@ -529,3 +529,7 @@ input[type="checkbox"] {
     border-bottom: 2px solid rgba(0,0,0,0.25);
     border-radius: 0 0 3px 0;
 }
+
+/* Raise Bootstrap modal above the expanded chatbot panel (z-index 9999) */
+.modal          { z-index: 10050 !important; }
+.modal-backdrop { z-index: 10049 !important; }

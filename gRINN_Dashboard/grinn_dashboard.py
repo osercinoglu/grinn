@@ -2047,6 +2047,66 @@ def main():
                                             html.Span(id='chat-stride-display', children=f'Stride: 1 → {frame_max - frame_min + 1} frames', style={'fontSize': '10px', 'color': soft_palette['text'], 'fontStyle': 'italic'}),
                                         ], style={'display': 'flex', 'alignItems': 'center'}),
                                     ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                                    # Chat mode selector
+                                    html.Div([
+                                        html.Label('Data Mode', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                        dcc.RadioItems(
+                                            id='chat-mode',
+                                            options=[
+                                                {'label': ' Summary (mean/std/min/max)', 'value': 'summary'},
+                                                {'label': ' Time Series (strided frames)', 'value': 'timeseries'},
+                                                {'label': ' Snapshot (single frame)', 'value': 'snapshot'},
+                                            ],
+                                            value='summary',
+                                            persistence=True,
+                                            persistence_type='session',
+                                            labelStyle={'fontSize': '11px', 'display': 'block', 'marginBottom': '2px'},
+                                            inputStyle={'marginRight': '4px'}
+                                        ),
+                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                                    # Snapshot frame input (only shown in snapshot mode)
+                                    html.Div([
+                                        html.Label('Snapshot Frame', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                        dcc.Input(
+                                            id='chat-snapshot-frame',
+                                            type='number',
+                                            value=frame_min,
+                                            min=frame_min,
+                                            max=frame_max,
+                                            placeholder='Frame #',
+                                            persistence=True,
+                                            persistence_type='session',
+                                            style={'width': '80px', 'fontSize': '11px'}
+                                        ),
+                                    ], id='chat-snapshot-frame-div', style={'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'none'}),
+                                    # Energy threshold input
+                                    html.Div([
+                                        html.Label('Min |IE| Threshold (kJ/mol)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                        dcc.Input(
+                                            id='chat-energy-threshold',
+                                            type='number',
+                                            value=0.5,
+                                            min=0.0,
+                                            step=0.1,
+                                            placeholder='0.0 = no filter',
+                                            persistence=True,
+                                            persistence_type='session',
+                                            style={'width': '100px', 'fontSize': '11px'}
+                                        ),
+                                        html.Span(' kJ/mol', style={'fontSize': '11px', 'color': soft_palette['text'], 'marginLeft': '4px'}),
+                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                                    # Literature search toggle
+                                    html.Div([
+                                        dbc.Checklist(
+                                            id='chat-search-literature',
+                                            options=[{'label': ' 🔬 Search PubMed on query', 'value': 'pubmed'}],
+                                            value=[],
+                                            persistence=True,
+                                            persistence_type='session',
+                                            inputStyle={'marginRight': '4px'},
+                                            labelStyle={'fontSize': '11px', 'color': soft_palette['text']}
+                                        ),
+                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
                                     # DataFrame selector (multi-select, max 4) - placed after filters to show filtered sizes
                                     html.Div([
                                         html.Label('DataFrames (max 4)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
@@ -2063,6 +2123,8 @@ def main():
                                             maxHeight=200
                                         ),
                                     ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
+                                    # Estimated size badge
+                                    html.Div(id='chat-size-badge', children='', style={'fontSize': '10px', 'marginTop': '4px'}),
                                 ]),
                                 id='chat-settings-collapse',
                                 is_open=True
@@ -2092,6 +2154,15 @@ def main():
                                 ),
                                 id='chat-component-wrap',
                                 style={'flex': '1 1 0', 'minHeight': 0, 'overflow': 'hidden', 'display': 'flex', 'flexDirection': 'column'}
+                            ),
+                            # "Explain biologically" button
+                            dbc.Button(
+                                '✨ Explain biologically',
+                                id='explain-bio-btn',
+                                size='sm',
+                                color='success',
+                                outline=True,
+                                style={'display': 'none', 'marginTop': '4px', 'fontSize': '11px', 'flex': '0 0 auto'}
                             ),
                             # Chart gallery: shows buttons for all generated charts
                             html.Div([
@@ -2286,29 +2357,34 @@ def main():
                 pass
             return w
 
-    def _filter_dataframe_for_chat(df: pd.DataFrame, df_key: str, residue_filter: list[str], 
-                                    frame_min_val: int, frame_max_val: int, stride: int) -> pd.DataFrame:
+    def _filter_dataframe_for_chat(df: pd.DataFrame, df_key: str, residue_filter: list[str],
+                                    frame_min_val: int, frame_max_val: int, stride: int,
+                                    mode: str = 'timeseries', snapshot_frame: int = None,
+                                    min_abs_energy: float = 0.0) -> pd.DataFrame:
         """
         Filter a DataFrame for chatbot queries based on residue filter and frame range.
-        
+
         Args:
             df: The original DataFrame to filter
             df_key: The key identifying the DataFrame type (e.g., 'IE_Total', 'Metrics_...')
             residue_filter: List of residues to filter by (empty = no filter)
             frame_min_val: Minimum frame number (inclusive)
             frame_max_val: Maximum frame number (inclusive)
-            stride: Frame stride (e.g., 2 = every 2nd frame)
-            
+            stride: Frame stride (e.g., 2 = every 2nd frame) — used only for timeseries mode
+            mode: 'timeseries', 'snapshot', or 'summary'
+            snapshot_frame: Frame number to use for snapshot mode (None = middle frame)
+            min_abs_energy: Minimum absolute IE value to keep rows (0.0 = no filter)
+
         Returns:
             Filtered DataFrame
         """
         import math
         result = df.copy()
-        
+
         # Determine column names based on DataFrame type
         is_ie = df_key.startswith('IE_')
         is_metrics = df_key.startswith('Metrics_')
-        
+
         # Apply residue filter
         if residue_filter:
             if is_ie:
@@ -2320,8 +2396,8 @@ def main():
                 # Metrics DataFrames have 'residue' column
                 if 'residue' in result.columns:
                     result = result[result['residue'].isin(residue_filter)]
-        
-        # Apply frame filter with stride
+
+        # Apply frame filter
         # For IE DataFrames, frame data is in columns (wide format)
         # For Metrics DataFrames, frame is a column
         if is_ie:
@@ -2330,8 +2406,7 @@ def main():
                               'res1_chain', 'res2_chain', 'res1_resnum', 'res2_resnum',
                               'res1_resname', 'res2_resname']
             frame_cols = [c for c in result.columns if c not in non_frame_cols]
-            
-            # Filter frame columns by range and stride
+
             try:
                 frame_nums = []
                 for c in frame_cols:
@@ -2339,38 +2414,88 @@ def main():
                         frame_nums.append((int(c), c))
                     except ValueError:
                         pass
-                
-                # Filter by range and apply stride
-                filtered_frames = []
+
                 frame_nums_sorted = sorted([fn for fn, _ in frame_nums])
                 frame_nums_in_range = [fn for fn in frame_nums_sorted if frame_min_val <= fn <= frame_max_val]
-                
-                # Apply stride
-                for i, fn in enumerate(frame_nums_in_range):
-                    if i % stride == 0:
-                        filtered_frames.append(str(fn))
-                
-                # Keep only non-frame cols + filtered frame cols
-                keep_cols = [c for c in result.columns if c in non_frame_cols or c in filtered_frames]
-                result = result[keep_cols]
+
+                if mode == 'snapshot':
+                    # Pick single frame closest to snapshot_frame
+                    if not frame_nums_in_range:
+                        pass  # keep all if no frames in range
+                    else:
+                        if snapshot_frame is None:
+                            target = frame_nums_in_range[len(frame_nums_in_range) // 2]
+                        else:
+                            target = min(frame_nums_in_range, key=lambda fn: abs(fn - snapshot_frame))
+                        keep_frame_cols = [str(target)]
+                        keep_cols = [c for c in result.columns if c in non_frame_cols or c in keep_frame_cols]
+                        result = result[keep_cols]
+                elif mode == 'summary':
+                    # Compute mean/std/min/max across frame columns in range
+                    range_frame_cols = [str(fn) for fn in frame_nums_in_range if str(fn) in result.columns]
+                    if range_frame_cols:
+                        numeric_data = result[range_frame_cols].apply(pd.to_numeric, errors='coerce')
+                        summary_df = pd.DataFrame()
+                        # Keep non-frame identifier columns that exist
+                        for col in ['res1', 'res2', 'Pair']:
+                            if col in result.columns:
+                                summary_df[col] = result[col].values
+                        summary_df['mean_ie'] = numeric_data.mean(axis=1).values
+                        summary_df['std_ie'] = numeric_data.std(axis=1).values
+                        summary_df['min_ie'] = numeric_data.min(axis=1).values
+                        summary_df['max_ie'] = numeric_data.max(axis=1).values
+                        result = summary_df
+                    else:
+                        # No frame cols in range — return identifier cols with NaN stats
+                        summary_df = pd.DataFrame()
+                        for col in ['res1', 'res2', 'Pair']:
+                            if col in result.columns:
+                                summary_df[col] = result[col].values
+                        for stat_col in ['mean_ie', 'std_ie', 'min_ie', 'max_ie']:
+                            summary_df[stat_col] = float('nan')
+                        result = summary_df
+                else:
+                    # timeseries: existing stride logic
+                    filtered_frames = []
+                    for i, fn in enumerate(frame_nums_in_range):
+                        if i % stride == 0:
+                            filtered_frames.append(str(fn))
+                    keep_cols = [c for c in result.columns if c in non_frame_cols or c in filtered_frames]
+                    result = result[keep_cols]
             except Exception:
                 pass  # If frame parsing fails, keep all columns
-                
+
+            # Apply energy threshold filter for IE DataFrames
+            if min_abs_energy > 0.0 and len(result) > 0:
+                try:
+                    if mode == 'summary' and 'mean_ie' in result.columns:
+                        mask = result['mean_ie'].abs() >= min_abs_energy
+                        result = result[mask]
+                    else:
+                        # For timeseries/snapshot: compute row-wise mean across frame columns
+                        frame_cols_present = [c for c in result.columns if c not in non_frame_cols and c not in ['res1', 'res2', 'Pair', 'mean_ie', 'std_ie', 'min_ie', 'max_ie']]
+                        if frame_cols_present:
+                            row_means = result[frame_cols_present].apply(pd.to_numeric, errors='coerce').mean(axis=1)
+                            mask = row_means.abs() >= min_abs_energy
+                            result = result[mask]
+                except Exception:
+                    pass
+
         elif is_metrics:
-            # Long format: 'frame' column
+            # Long format: 'frame' column — all modes behave the same
             if 'frame' in result.columns:
                 try:
                     # Filter by frame range
                     result = result[(result['frame'] >= frame_min_val) & (result['frame'] <= frame_max_val)]
-                    
-                    # Apply stride
-                    if stride > 1:
+
+                    # Apply stride (only for timeseries mode)
+                    if mode == 'timeseries' and stride > 1:
                         all_frames = sorted(result['frame'].unique())
                         keep_frames = [f for i, f in enumerate(all_frames) if i % stride == 0]
                         result = result[result['frame'].isin(keep_frames)]
                 except Exception:
                     pass  # If filtering fails, keep original
-        
+
         return result
 
     def _compute_chat_stride(frame_min_val: int, frame_max_val: int, max_frames: int = 20) -> int:
@@ -2381,19 +2506,25 @@ def main():
             return 1
         return math.ceil(total_frames / max_frames)
 
-    def _estimate_filtered_size(df_key: str, residue_filter: list[str], 
-                                 frame_min_val: int, frame_max_val: int) -> tuple[int, int]:
-        """Estimate filtered DataFrame size without copying data."""
+    def _estimate_filtered_size(df_key: str, residue_filter: list[str],
+                                 frame_min_val: int, frame_max_val: int,
+                                 mode: str = 'timeseries',
+                                 min_abs_energy: float = 0.0) -> tuple[int, int, int]:
+        """Estimate filtered DataFrame size without copying data.
+
+        Returns:
+            (est_rows, est_cols, est_tokens)
+        """
         import math
         info = _CHATBOT_DATAFRAMES.get(df_key)
         if info is None:
-            return (0, 0)
-        
+            return (0, 0, 1)
+
         df = info['df']
         orig_rows, orig_cols = info['rows'], info['cols']
         is_ie = df_key.startswith('IE_')
         is_metrics = df_key.startswith('Metrics_')
-        
+
         # Estimate row count after residue filter
         if residue_filter:
             if is_ie and 'res1' in df.columns and 'res2' in df.columns:
@@ -2405,16 +2536,21 @@ def main():
                 est_rows = orig_rows
         else:
             est_rows = orig_rows
-        
+
         # Estimate column count after frame filter (for IE wide format)
         stride = _compute_chat_stride(frame_min_val, frame_max_val, max_frames=20)
         total_frames_in_range = frame_max_val - frame_min_val + 1
         frames_after_stride = math.ceil(total_frames_in_range / stride)
-        
+
         if is_ie:
-            # Wide format: non-frame cols + filtered frame cols
-            non_frame_cols = 3  # res1, res2, Pair typically
-            est_cols = non_frame_cols + frames_after_stride
+            if mode == 'summary':
+                est_cols = 7  # res1, res2, Pair, mean_ie, std_ie, min_ie, max_ie
+            elif mode == 'snapshot':
+                est_cols = 4  # res1, res2, Pair, one frame col
+            else:
+                # timeseries: non-frame cols + filtered frame cols
+                non_frame_cols_count = 3  # res1, res2, Pair typically
+                est_cols = non_frame_cols_count + frames_after_stride
         elif is_metrics:
             # Long format: same columns, but rows are reduced by frame filter
             est_cols = orig_cols
@@ -2426,12 +2562,17 @@ def main():
                     est_rows = int(rows_per_frame * frames_after_stride)
         else:
             est_cols = orig_cols
-        
-        return (max(0, est_rows), max(1, est_cols))
+
+        est_rows = max(0, est_rows)
+        est_cols = max(1, est_cols)
+        est_tokens = max(1, (est_rows * est_cols * 6) // 4)
+        return (est_rows, est_cols, est_tokens)
 
     def _build_session_context_for_dfs(selected_df_keys: list[str], model: Optional[str] = None,
                                         residue_filter: list[str] = None, frame_min_val: int = None,
-                                        frame_max_val: int = None) -> _SessionCtx:
+                                        frame_max_val: int = None, mode: str = 'timeseries',
+                                        snapshot_frame: int = None,
+                                        min_abs_energy: float = 0.0) -> _SessionCtx:
         """Build session context with selected DataFrames from registry."""
         print(f"[DEBUG _build_session_context_for_dfs] Starting with keys={selected_df_keys}, model={model}", flush=True)
         
@@ -2474,11 +2615,11 @@ def main():
                 pass
             raise
         
-        # Compute stride if frame range is specified
+        # Compute stride if frame range is specified (only used for timeseries mode)
         stride = 1
-        if frame_min_val is not None and frame_max_val is not None:
+        if mode == 'timeseries' and frame_min_val is not None and frame_max_val is not None:
             stride = _compute_chat_stride(frame_min_val, frame_max_val, max_frames=20)
-        
+
         # Collect selected DataFrames with optional filtering
         pai_dfs = []
         df_names = []
@@ -2487,7 +2628,7 @@ def main():
             if info is None:
                 continue
             df = info['df']
-            
+
             # Apply filtering if residue filter or frame range is specified
             if residue_filter or (frame_min_val is not None and frame_max_val is not None):
                 df = _filter_dataframe_for_chat(
@@ -2495,7 +2636,10 @@ def main():
                     residue_filter=residue_filter or [],
                     frame_min_val=frame_min_val if frame_min_val is not None else 0,
                     frame_max_val=frame_max_val if frame_max_val is not None else 999999,
-                    stride=stride
+                    stride=stride,
+                    mode=mode,
+                    snapshot_frame=snapshot_frame,
+                    min_abs_energy=min_abs_energy,
                 )
             
             df_name = key.replace('-', '_').replace(' ', '_')
@@ -2523,7 +2667,19 @@ def main():
             'Set result to a string for narrative answers, a pandas DataFrame for tabular outputs, or a matplotlib chart (when asked to plot). '
             'When returning tables/lists: return a concise result (prefer a pandas DataFrame or list of dicts), '
             'limit to relevant columns and at most ~50 rows, and include a short textual summary when appropriate. '
-            'When plotting charts, use matplotlib: plt.figure(figsize=(6, 4), dpi=300) and plt.tight_layout().'
+            'When plotting charts, use matplotlib: plt.figure(figsize=(6, 4), dpi=300) and plt.tight_layout(). '
+            '\n\n--- Scientific Context ---\n'
+            'These DataFrames contain Residue Interaction Energies (IEs) computed from molecular dynamics (MD) simulations. '
+            'IE values are in kJ/mol. Negative values indicate attractive interactions; positive values indicate repulsion. '
+            'Typical biologically significant IE values are stronger than -2 to -5 kJ/mol. '
+            'IE columns include: IE_Total (total interaction energy), IE_VdW (van der Waals component), IE_Elec (electrostatic component). '
+            'VdW interactions reflect steric/hydrophobic contacts; Electrostatic interactions reflect charge-charge and hydrogen bond effects. '
+            'For IE DataFrames in summary mode: mean_ie is the time-averaged IE, std_ie reflects fluctuations, min_ie/max_ie show extremes. '
+            'For Metrics DataFrames: these contain Protein Energy Network (PEN) node metrics including betweenness_centrality (how often a residue is on shortest paths), '
+            'closeness_centrality (how close a residue is to all others), and degree (number of significant interaction partners). '
+            'High betweenness/closeness centrality residues are often functionally important (e.g., allosteric hubs). '
+            'When interpreting results, mention units (kJ/mol), note whether interactions are attractive or repulsive, '
+            'and flag residues/interactions that may be biologically significant.'
         )
         
         agent = Agent(pai_dfs, config={
@@ -3008,6 +3164,20 @@ def main():
         prevent_initial_call=True
     )
 
+    # Clientside callback: convert "Explain biologically" button click into a
+    # synthetic new_message so ChatComponent shows its typing indicator.
+    app.clientside_callback(
+        """
+        function(n_clicks) {
+            if (!n_clicks) return window.dash_clientside.no_update;
+            return {role: 'user', content: '__explain_biologically__', _ts: Date.now()};
+        }
+        """,
+        Output('chat', 'new_message'),
+        Input('explain-bio-btn', 'n_clicks'),
+        prevent_initial_call=True
+    )
+
     @app.callback(
         Output('chat-cleanup', 'data'),
         Input('chat-cleanup-tick', 'n_intervals')
@@ -3073,9 +3243,11 @@ def main():
         Output('chat-dataframe-selector', 'options'),
         Input('chat-residue-filter', 'value'),
         Input('chat-frame-min', 'value'),
-        Input('chat-frame-max', 'value')
+        Input('chat-frame-max', 'value'),
+        Input('chat-mode', 'value'),
+        Input('chat-energy-threshold', 'value'),
     )
-    def _update_dataframe_options_with_filtered_sizes(residue_filter, fmin, fmax):
+    def _update_dataframe_options_with_filtered_sizes(residue_filter, fmin, fmax, mode, energy_threshold):
         residue_filter = residue_filter or []
         fmin = fmin if fmin is not None else frame_min
         fmax = fmax if fmax is not None else frame_max
@@ -3083,13 +3255,106 @@ def main():
         fmax = max(frame_min, min(fmax, frame_max))
         if fmin > fmax:
             fmin, fmax = fmax, fmin
-        
+        mode = mode or 'summary'
+        energy_threshold = energy_threshold if energy_threshold is not None else 0.0
+
         options = []
         for key, info in _CHATBOT_DATAFRAMES.items():
-            est_rows, est_cols = _estimate_filtered_size(key, residue_filter, fmin, fmax)
-            label = f"{info['label']} ({est_rows}×{est_cols})"
+            est_rows, est_cols, est_tokens = _estimate_filtered_size(key, residue_filter, fmin, fmax, mode=mode, min_abs_energy=energy_threshold)
+            label = f"{info['label']} ({est_rows}×{est_cols}, ~{est_tokens:,} tok)"
             options.append({'label': label, 'value': key})
         return options
+
+    # Callback to toggle snapshot frame input visibility
+    @app.callback(
+        Output('chat-snapshot-frame-div', 'style'),
+        Input('chat-mode', 'value')
+    )
+    def _toggle_snapshot_frame_visibility(mode):
+        if mode == 'snapshot':
+            return {'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'block'}
+        return {'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'none'}
+
+    # Callback to update size badge
+    @app.callback(
+        Output('chat-size-badge', 'children'),
+        Output('chat-size-badge', 'style'),
+        Input('chat-dataframe-selector', 'value'),
+        Input('chat-residue-filter', 'value'),
+        Input('chat-frame-min', 'value'),
+        Input('chat-frame-max', 'value'),
+        Input('chat-mode', 'value'),
+        Input('chat-energy-threshold', 'value'),
+    )
+    def _update_size_badge(selected_dfs, residue_filter, fmin, fmax, mode, energy_threshold):
+        residue_filter = residue_filter or []
+        fmin = fmin if fmin is not None else frame_min
+        fmax = fmax if fmax is not None else frame_max
+        fmin = max(frame_min, min(fmin, frame_max))
+        fmax = max(frame_min, min(fmax, frame_max))
+        if fmin > fmax:
+            fmin, fmax = fmax, fmin
+        mode = mode or 'summary'
+        energy_threshold = energy_threshold if energy_threshold is not None else 0.0
+        selected_dfs = selected_dfs or DEFAULT_DATAFRAMES[:4]
+
+        total_tokens = 0
+        for key in selected_dfs[:4]:
+            est_rows, est_cols, est_tokens = _estimate_filtered_size(key, residue_filter, fmin, fmax, mode=mode, min_abs_energy=energy_threshold)
+            total_tokens += est_tokens
+
+        if total_tokens < 5000:
+            color = '#28a745'
+            label = f'Est. size: ~{total_tokens:,} tokens \u2713'
+        elif total_tokens < 20000:
+            color = '#ffc107'
+            label = f'Est. size: ~{total_tokens:,} tokens \u26a0'
+        else:
+            color = '#dc3545'
+            label = f'Est. size: ~{total_tokens:,} tokens \u2717 (large)'
+
+        style = {'fontSize': '10px', 'marginTop': '4px', 'color': color, 'fontFamily': 'monospace'}
+        return label, style
+
+    def _search_pubmed(query: str, max_results: int = 3) -> list:
+        import urllib.request
+        import urllib.parse
+        import json
+        try:
+            # Search for PMIDs
+            search_url = (
+                'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?'
+                + urllib.parse.urlencode({'db': 'pubmed', 'term': query, 'retmax': max_results, 'retmode': 'json'})
+            )
+            with urllib.request.urlopen(search_url, timeout=5) as resp:
+                search_data = json.loads(resp.read().decode())
+            pmids = search_data.get('esearchresult', {}).get('idlist', [])
+            if not pmids:
+                return []
+
+            # Fetch abstracts
+            fetch_url = (
+                'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?'
+                + urllib.parse.urlencode({'db': 'pubmed', 'id': ','.join(pmids), 'retmode': 'xml', 'rettype': 'abstract'})
+            )
+            with urllib.request.urlopen(fetch_url, timeout=5) as resp:
+                xml_data = resp.read().decode()
+
+            # Parse XML for titles and abstracts
+            import re as _re2
+            results = []
+            articles = _re2.findall(r'<PubmedArticle>(.*?)</PubmedArticle>', xml_data, _re2.DOTALL)
+            for i, art in enumerate(articles[:max_results]):
+                pmid_match = _re2.search(r'<PMID[^>]*>(\d+)</PMID>', art)
+                title_match = _re2.search(r'<ArticleTitle>(.*?)</ArticleTitle>', art, _re2.DOTALL)
+                abstract_match = _re2.search(r'<AbstractText[^>]*>(.*?)</AbstractText>', art, _re2.DOTALL)
+                pmid_val = pmid_match.group(1) if pmid_match else pmids[i] if i < len(pmids) else '?'
+                title_val = _re2.sub(r'<[^>]+>', '', title_match.group(1)) if title_match else 'No title'
+                abstract_val = _re2.sub(r'<[^>]+>', '', abstract_match.group(1)) if abstract_match else 'No abstract'
+                results.append({'pmid': pmid_val, 'title': title_val.strip(), 'abstract': abstract_val.strip()[:500]})
+            return results
+        except Exception:
+            return []
 
     # Helper to extract token usage from PandasAI response
     def _extract_token_usage(resp) -> int:
@@ -3117,6 +3382,17 @@ def main():
             pass
         return 500  # Conservative default estimate per query
 
+    def _build_token_display(used, limit, palette):
+        if limit <= 0:
+            return f"Tokens: {used:,} / \u221e", {'fontSize': '11px', 'color': palette['text'], 'fontFamily': 'monospace'}
+        pct = (used / limit) * 100
+        if pct >= 100:
+            return f"Tokens: {used:,} / {limit:,} (EXCEEDED)", {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace', 'fontWeight': 'bold'}
+        elif pct >= 80:
+            return f"Tokens: {used:,} / {limit:,} ({pct:.0f}%)", {'fontSize': '11px', 'color': '#ffc107', 'fontFamily': 'monospace'}
+        else:
+            return f"Tokens: {used:,} / {limit:,}", {'fontSize': '11px', 'color': palette['text'], 'fontFamily': 'monospace'}
+
     @app.callback(
         Output('chat', 'messages'),
         Output('chat-token-usage', 'data'),
@@ -3125,6 +3401,7 @@ def main():
         Output('chat-charts-store', 'data'),
         Output('chat-chart-gallery', 'children'),
         Output('chat-chart-gallery-container', 'style'),
+        Output('explain-bio-btn', 'style'),
         Input('chat', 'new_message'),
         State('chat', 'messages'),
         State('chat-session-id', 'data'),
@@ -3134,19 +3411,122 @@ def main():
         State('chat-residue-filter', 'value'),
         State('chat-frame-min', 'value'),
         State('chat-frame-max', 'value'),
-        State('chat-charts-store', 'data')
+        State('chat-charts-store', 'data'),
+        State('chat-mode', 'value'),
+        State('chat-energy-threshold', 'value'),
+        State('chat-snapshot-frame', 'value'),
+        State('chat-search-literature', 'value'),
+        prevent_initial_call=True
     )
     def _on_chat_msg(new_message, messages, sid, selected_model, selected_dfs, token_data,
-                     residue_filter, chat_frame_min_val, chat_frame_max_val, charts_store):
+                     residue_filter, chat_frame_min_val, chat_frame_max_val, charts_store,
+                     chat_mode, energy_threshold, snapshot_frame, search_literature):
         if not new_message:
-            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
+            return (no_update,) * 8
         
         messages = list(messages or [])
         charts_store = list(charts_store or [])
         token_data = dict(token_data) if token_data else {'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}
         used = token_data.get('used', 0)
         limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
-        
+
+        EXPLAIN_SENTINEL = '__explain_biologically__'
+        is_explain = (
+            isinstance(new_message, dict) and
+            new_message.get('content', '') == EXPLAIN_SENTINEL
+        )
+
+        # --- Explain biologically branch ---
+        if is_explain:
+            last_user = ''
+            last_assistant = ''
+            for msg in reversed(messages):
+                role = msg.get('role', '')
+                content = msg.get('content', '')
+                if isinstance(content, dict):
+                    content = content.get('text', str(content))
+                if role == 'assistant' and not last_assistant:
+                    last_assistant = str(content)
+                elif role == 'user' and not last_user:
+                    last_user = str(content)
+                if last_user and last_assistant:
+                    break
+            if not last_assistant:
+                return (no_update,) * 8
+            CHART_PLACEHOLDER = '📊 Chart generated!'
+            is_chart_response = last_assistant.startswith(CHART_PLACEHOLDER)
+            chart_uri = (charts_store or [None])[-1]
+            try:
+                import litellm
+                chosen_model = _resolve_model_selection(selected_model)
+                m = (chosen_model or '').strip().lower()
+                is_claude = ('claude' in m) or m.startswith('anthropic/')
+                if is_claude:
+                    api_key = os.getenv('ANTHROPIC_API_KEY')
+                    if not chosen_model.startswith('anthropic/'):
+                        chosen_model = f'anthropic/{chosen_model}'
+                    litellm_kwargs = {'api_key': api_key}
+                else:
+                    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+                    litellm_kwargs = {'api_key': api_key}
+                system_prompt = (
+                    "You are an expert biophysicist and structural biologist specializing in protein-protein and protein-ligand interactions. "
+                    "The user is analyzing molecular dynamics simulation data using gRINN (get Residue Interaction Energies and Networks). "
+                    "Provide a concise, scientifically grounded biological interpretation of the data result shown. "
+                    "Discuss what the interaction energies (in kJ/mol) suggest about the protein's structure/function, "
+                    "mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces), "
+                    "and note any caveats. Be specific and cite units. Keep your response under 200 words."
+                )
+                if is_chart_response and chart_uri:
+                    b64_data = chart_uri.split(',', 1)[1] if ',' in chart_uri else chart_uri
+                    user_content = [
+                        {
+                            'type': 'text',
+                            'text': (
+                                f"Original question: {last_user}\n\n"
+                                "A chart was generated from molecular dynamics data. "
+                                "Please provide a biological interpretation of what it shows."
+                            )
+                        },
+                        {
+                            'type': 'image_url',
+                            'image_url': {'url': f'data:image/png;base64,{b64_data}'}
+                        }
+                    ]
+                elif is_chart_response:
+                    user_content = (
+                        f"Original question: {last_user}\n\n"
+                        "A chart was generated from molecular dynamics data, but the image is unavailable. "
+                        "Please provide a general biological interpretation of what such a chart might show."
+                    )
+                else:
+                    user_content = (
+                        f"Original question: {last_user}\n\n"
+                        f"Data result:\n{last_assistant}\n\n"
+                        "Please provide a biological interpretation of this result."
+                    )
+                response = litellm.completion(
+                    model=chosen_model,
+                    messages=[
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_content},
+                    ],
+                    max_tokens=400,
+                    **litellm_kwargs
+                )
+                explanation = response.choices[0].message.content
+                tokens_used = getattr(response.usage, 'total_tokens', 300) if hasattr(response, 'usage') else 300
+                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'**Biological interpretation:**\n\n{explanation}'}})
+                new_used = used + tokens_used
+                token_data['used'] = new_used
+                display, disp_style = _build_token_display(new_used, limit, soft_palette)
+                return (messages, token_data, display, disp_style,
+                        charts_store, no_update, no_update, {'display': 'none'})
+            except Exception as e:
+                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'\u26a0\ufe0f Explanation failed: {str(e)}'}})
+                return (messages, token_data, no_update, no_update,
+                        charts_store, no_update, no_update, {'display': 'none'})
+
         try:
             # Normalize filter values
             residue_filter = residue_filter or []
@@ -3164,7 +3544,7 @@ def main():
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '⚠️ Token budget exhausted for this session. Please refresh the page to start a new session.'}})
                 style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace'}
                 display = f"Tokens: {used:,} / {limit:,} (EXCEEDED)"
-                return messages, token_data, display, style, charts_store, no_update, no_update
+                return messages, token_data, display, style, charts_store, no_update, no_update, {'display': 'none'}
 
             # normalize user message
             if isinstance(new_message, str):
@@ -3178,18 +3558,23 @@ def main():
             
             # Determine DataFrames to use
             selected_df_keys = selected_dfs if selected_dfs else DEFAULT_DATAFRAMES[:4]
-            
+            mode = chat_mode or 'summary'
+            min_abs_energy = energy_threshold if energy_threshold is not None else 0.0
+            snap_frame = snapshot_frame
+
             # create/reuse session - include selected_dfs AND filter settings in session key
             chosen_model = _resolve_model_selection(selected_model)
             dfs_sig = '|'.join(sorted(selected_df_keys[:4]))
             filter_sig = f"res{'_'.join(sorted(residue_filter)) if residue_filter else 'ALL'}_f{fmin}-{fmax}"
+            mode_sig = f"mode{mode}_thr{min_abs_energy}"
             pen_folder = _pen_folder_from_dashboard()
-            skey = f"{sid}|{pen_folder}|{dfs_sig}|{filter_sig}|{chosen_model}"
-            
+            skey = f"{sid}|{pen_folder}|{dfs_sig}|{filter_sig}|{mode_sig}|{chosen_model}"
+
             tokens_used_this_query = 0
             ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                 selected_df_keys, model=chosen_model,
-                residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax
+                residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
+                mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
             ))
             try:
                 resp = ctxobj.agent.chat(user_text)
@@ -3201,7 +3586,8 @@ def main():
                         registry.reset(skey)
                         ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                             selected_df_keys, model=chosen_model,
-                            residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax
+                            residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
+                            mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
                         ))
                         retry_prompt = (
                             user_text
@@ -3223,7 +3609,8 @@ def main():
                     registry.reset(skey)
                     ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                         selected_df_keys, model=chosen_model,
-                        residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax
+                        residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
+                        mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
                     ))
                     retry_prompt = (
                         user_text
@@ -3245,7 +3632,8 @@ def main():
                     registry.reset(skey)
                     ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                         selected_df_keys, model=chosen_model,
-                        residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax
+                        residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
+                        mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
                     ))
                     retry_prompt = (
                         user_text
@@ -3263,12 +3651,27 @@ def main():
             if chart_fig is not None:
                 chart_idx = len(charts_store)
                 charts_store.append(chart_fig)
+
+            # PubMed literature search (if enabled)
+            if search_literature and 'pubmed' in (search_literature or []):
+                try:
+                    pubmed_results = _search_pubmed(f"{user_text} protein interaction energy MD simulation", max_results=3)
+                    if pubmed_results:
+                        lit_lines = ['**\U0001f4da Related literature:**\n']
+                        for art in pubmed_results:
+                            lit_lines.append(f"- **PMID {art['pmid']}**: {art['title']}\n  _{art['abstract'][:300]}..._")
+                        lit_text = '\n'.join(lit_lines)
+                        messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': lit_text}})
+                except Exception:
+                    pass  # Silently ignore PubMed errors
+
+            explain_btn_style = {'display': 'inline-block', 'marginTop': '4px', 'fontSize': '11px'}
         except Exception as e:
             err_str = str(e)
             # Detect HTML error responses (typically from proxy/server failures)
             if '<!doctype html>' in err_str.lower() or '<html' in err_str.lower():
                 if '500' in err_str or 'internal server error' in err_str.lower():
-                    assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': 
+                    assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
                         '⚠️ Server error: The AI service returned an internal error. This may be due to:\n'
                         '• Docker sandbox not running or inaccessible\n'
                         '• Invalid API key or model configuration\n'
@@ -3276,26 +3679,27 @@ def main():
                         'Please check Docker is running and try again.'
                     }}
                 else:
-                    assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': 
+                    assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
                         f'⚠️ Unexpected server response. Please verify your configuration and try again.'
                     }}
             elif 'docker' in err_str.lower() or 'sandbox' in err_str.lower():
-                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': 
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
                     f'⚠️ Docker sandbox error: {_strip_ansi(e)}\n\nEnsure Docker is running and accessible.'
                 }}
             elif 'api' in err_str.lower() and ('key' in err_str.lower() or 'auth' in err_str.lower()):
-                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': 
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
                     f'⚠️ API authentication error: {_strip_ansi(e)}\n\nPlease check your API key configuration.'
                 }}
             else:
                 assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {_strip_ansi(e)}'}}
             messages.append(assistant_msg)
             tokens_used_this_query = 0  # Reset on error
-        
+            explain_btn_style = {'display': 'none'}
+
         # Update token usage
         new_used = used + tokens_used_this_query
         token_data['used'] = new_used
-        
+
         # Build chart gallery buttons
         gallery_buttons = []
         for i in range(len(charts_store)):
@@ -3318,24 +3722,10 @@ def main():
             'borderRadius': '4px',
             'flex': '0 0 auto'
         }
-        
-        # Determine display style based on usage percentage
-        if limit <= 0:
-            display = f"Tokens: {new_used:,} / ∞"
-            style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
-        else:
-            pct = (new_used / limit) * 100
-            if pct >= 100:
-                display = f"Tokens: {new_used:,} / {limit:,} (EXCEEDED)"
-                style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace', 'fontWeight': 'bold'}
-            elif pct >= 80:
-                display = f"Tokens: {new_used:,} / {limit:,} ({pct:.0f}%)"
-                style = {'fontSize': '11px', 'color': '#ffc107', 'fontFamily': 'monospace'}
-            else:
-                display = f"Tokens: {new_used:,} / {limit:,}"
-                style = {'fontSize': '11px', 'color': soft_palette['text'], 'fontFamily': 'monospace'}
-        
-        return messages, token_data, display, style, charts_store, gallery_buttons, gallery_style
+
+        display, style = _build_token_display(new_used, limit, soft_palette)
+
+        return messages, token_data, display, style, charts_store, gallery_buttons, gallery_style, explain_btn_style
 
     # Callback to open chart modal when a chart button is clicked
     @app.callback(
