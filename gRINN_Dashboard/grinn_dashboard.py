@@ -2249,6 +2249,45 @@ def main():
                             ], id='chart-view-modal', size='xl', centered=True, is_open=False),
                             # Store for which chart index to display in modal
                             dcc.Store(id='chart-modal-index', data=None),
+                            # DataFrame gallery: shows buttons for all returned DataFrames
+                            html.Div([
+                                html.Div('Tables:', style={'fontSize': '10px', 'color': soft_palette['muted'], 'marginBottom': '4px'}),
+                                html.Div(id='chat-df-gallery', children=[], style={
+                                    'display': 'flex', 'flexWrap': 'wrap', 'gap': '4px', 'maxHeight': '60px', 'overflowY': 'auto'
+                                })
+                            ], id='chat-df-gallery-container', style={
+                                'display': 'none', 'marginTop': '8px', 'padding': '6px',
+                                'backgroundColor': soft_palette['surface'], 'borderRadius': '4px', 'flex': '0 0 auto'
+                            }),
+                            # Store for DataFrame gallery (list of {'columns': [...], 'data': [...], 'label': '...'})
+                            dcc.Store(id='chat-dataframes-store', data=[], storage_type='session'),
+                            # Store for which DataFrame index is currently open in the modal
+                            dcc.Store(id='df-modal-index', data=None),
+                            # Modal for full DataFrame display with download
+                            dbc.Modal([
+                                dbc.ModalHeader(
+                                    dbc.ModalTitle('Table View', style={'fontSize': '14px'}),
+                                    close_button=True
+                                ),
+                                dbc.ModalBody([
+                                    dash_table.DataTable(
+                                        id='df-modal-table',
+                                        page_size=20,
+                                        sort_action='native',
+                                        filter_action='native',
+                                        style_table={'overflowX': 'auto'},
+                                        style_cell={'fontSize': '11px', 'padding': '4px 8px', 'textAlign': 'left'},
+                                        style_header={'fontWeight': 'bold', 'fontSize': '11px'},
+                                    ),
+                                    html.Div(
+                                        dbc.Button('⬇ Download CSV', id='df-download-btn', size='sm',
+                                                   color='secondary', outline=True,
+                                                   style={'marginTop': '10px', 'fontSize': '11px'}),
+                                        style={'textAlign': 'right'}
+                                    ),
+                                    dcc.Download(id='df-download'),
+                                ]),
+                            ], id='df-view-modal', size='xl', centered=True, is_open=False),
                         ],
                         id='chat-body-scroller',
                         style={'display': 'flex', 'flexDirection': 'column', 'height': 'calc(100vh - 280px)', 'minHeight': 0, 'overflow': 'hidden'}
@@ -2987,8 +3026,20 @@ def main():
         except Exception:
             return False
 
+    def _df_to_store_entry(df: pd.DataFrame) -> dict:
+        """Serialize a DataFrame to a dict suitable for dcc.Store and DataTable."""
+        nrows, ncols = df.shape
+        cols = [{'name': str(c), 'id': str(c)} for c in df.columns]
+        data = df.to_dict('records')
+        return {
+            'columns': cols,
+            'data': data,
+            'label': f'{nrows}r\u00d7{ncols}c',
+            'shape': [nrows, ncols],
+        }
+
     def _normalize_response(resp):
-        """Normalize PandasAI response. Returns (message_dict, chart_base64_or_None)."""
+        """Normalize PandasAI response. Returns (message_dict, chart_base64_or_None, df_entry_or_None)."""
         rtype = getattr(resp, 'type', None)
         if rtype == 'chart':
             # Extract base64 data URI directly from PandasAI response
@@ -3000,27 +3051,30 @@ def main():
                 # Return a placeholder message and the data URI for storage
                 return (
                     {'role': 'assistant', 'content': {'type': 'text', 'text': '📊 Chart generated! Click the button below to view.'}},
-                    data_uri
+                    data_uri,
+                    None
                 )
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': '(Failed to render chart)'}}, None)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': '(Failed to render chart)'}}, None, None)
         if rtype == 'dataframe':
             val = getattr(resp, 'value', None)
             df = _coerce_tabular(val)
             if df is not None and not df.empty:
-                # Use markdown table for better responsiveness in narrow chat panel
-                md_table = _df_to_markdown(df)
-                return ({'role': 'assistant', 'content': {'type': 'text', 'text': md_table}}, None)
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': str(val)}}, None)
+                nrows, ncols = df.shape
+                entry = _df_to_store_entry(df)
+                placeholder = f'📋 Table returned ({nrows} rows \u00d7 {ncols} cols). Click the button below to view and download the full data.'
+                return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, entry)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': str(val)}}, None, None)
         if rtype == 'error':
             err = getattr(resp, 'error', None)
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {_strip_ansi(err or resp)}'}}, None)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {_strip_ansi(err or resp)}'}}, None, None)
         val = getattr(resp, 'value', None)
         df = _coerce_tabular(val)
         if df is not None and not df.empty:
-            # Use markdown table for better responsiveness in narrow chat panel
-            md_table = _df_to_markdown(df)
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': md_table}}, None)
-        return ({'role': 'assistant', 'content': {'type': 'text', 'text': _downgrade_md_headers(_strip_ansi(val if val is not None else resp))}}, None)
+            nrows, ncols = df.shape
+            entry = _df_to_store_entry(df)
+            placeholder = f'📋 Table returned ({nrows} rows \u00d7 {ncols} cols). Click the button below to view and download the full data.'
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, entry)
+        return ({'role': 'assistant', 'content': {'type': 'text', 'text': _downgrade_md_headers(_strip_ansi(val if val is not None else resp))}}, None, None)
 
     # --- Chatbot callbacks ---
     @app.callback(
@@ -3553,6 +3607,9 @@ def main():
         Output('chat-charts-store', 'data'),
         Output('chat-chart-gallery', 'children'),
         Output('chat-chart-gallery-container', 'style'),
+        Output('chat-dataframes-store', 'data'),
+        Output('chat-df-gallery', 'children'),
+        Output('chat-df-gallery-container', 'style'),
         Output('explain-bio-btn', 'style'),
         Input('chat', 'new_message'),
         State('chat', 'messages'),
@@ -3564,6 +3621,7 @@ def main():
         State('chat-frame-min', 'value'),
         State('chat-frame-max', 'value'),
         State('chat-charts-store', 'data'),
+        State('chat-dataframes-store', 'data'),
         State('chat-mode', 'value'),
         State('chat-energy-threshold', 'value'),
         State('chat-snapshot-frame', 'value'),
@@ -3575,14 +3633,15 @@ def main():
         prevent_initial_call=True
     )
     def _on_chat_msg(new_message, messages, sid, selected_model, selected_dfs, token_data,
-                     residue_filter, chat_frame_min, chat_frame_max, charts_store,
+                     residue_filter, chat_frame_min, chat_frame_max, charts_store, dfs_store,
                      chat_mode, energy_threshold, snapshot_frame, search_literature,
                      stride_mode_auto, stride_manual, pairs_store, energy_threshold_snapshot):
         if not new_message:
-            return (no_update,) * 8
-        
+            return (no_update,) * 11
+
         messages = list(messages or [])
         charts_store = list(charts_store or [])
+        dfs_store = dfs_store or []
         token_data = dict(token_data) if token_data else {'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}
         used = token_data.get('used', 0)
         limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
@@ -3609,7 +3668,7 @@ def main():
                 if last_user and last_assistant:
                     break
             if not last_assistant:
-                return (no_update,) * 8
+                return (no_update,) * 11
             CHART_PLACEHOLDER = '📊 Chart generated!'
             is_chart_response = last_assistant.startswith(CHART_PLACEHOLDER)
             chart_uri = (charts_store or [None])[-1]
@@ -3679,7 +3738,7 @@ def main():
                 token_data['used'] = new_used
                 display, disp_style = _build_token_display(new_used, limit, soft_palette)
                 return (messages, token_data, display, disp_style,
-                        charts_store, no_update, no_update, {'display': 'none'})
+                        charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'})
             except Exception as e:
                 err_str = str(e).lower()
                 if any(k in err_str for k in ('504', 'gateway timeout', 'timed out', 'timeout', 'read timeout')):
@@ -3694,7 +3753,7 @@ def main():
                     explain_err = f'⚠️ Explanation failed: {str(e)}'
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': explain_err}})
                 return (messages, token_data, no_update, no_update,
-                        charts_store, no_update, no_update, {'display': 'none'})
+                        charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'})
 
         try:
             # Normalize filter values
@@ -3713,7 +3772,7 @@ def main():
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '⚠️ Token budget exhausted for this session. Please refresh the page to start a new session.'}})
                 style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace'}
                 display = f"Tokens: {used:,} / {limit:,} (EXCEEDED)"
-                return messages, token_data, display, style, charts_store, no_update, no_update, {'display': 'none'}
+                return messages, token_data, display, style, charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'}
 
             # normalize user message
             if isinstance(new_message, str):
@@ -3753,7 +3812,7 @@ def main():
                     err = (f"\u26a0\ufe0f Manual stride would send ~{total_values:,} values "
                            f"(limit: {MAX_CHAT_VALUES:,}). Increase stride or switch to Auto mode.")
                     new_messages = list(messages or []) + [{'role': 'assistant', 'content': err}]
-                    return new_messages, token_data, no_update, no_update, no_update, no_update, no_update, no_update
+                    return new_messages, token_data, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
             # create/reuse session - include selected_dfs AND filter settings in session key
             chosen_model = _resolve_model_selection(selected_model)
@@ -3840,12 +3899,14 @@ def main():
                     tokens_used_this_query += _extract_token_usage(resp)
                 else:
                     raise
-            assistant_msg, chart_fig = _normalize_response(resp)
+            assistant_msg, chart_fig, df_result = _normalize_response(resp)
             messages.append(assistant_msg)
             # If a chart was generated, store it and update the message
             if chart_fig is not None:
                 chart_idx = len(charts_store)
                 charts_store.append(chart_fig)
+            if df_result is not None:
+                dfs_store.append(df_result)
 
             # PubMed literature search (if enabled)
             if search_literature and 'pubmed' in (search_literature or []):
@@ -3937,9 +3998,33 @@ def main():
             'flex': '0 0 auto'
         }
 
+        # Build DataFrame gallery buttons
+        df_gallery_buttons = []
+        for i, entry in enumerate(dfs_store):
+            label = entry.get('label', str(i + 1))
+            df_gallery_buttons.append(
+                dbc.Button(
+                    f'📋 {label}',
+                    id={'type': 'view-df-btn', 'index': i},
+                    size='sm',
+                    color='warning',
+                    outline=True,
+                    style={'fontSize': '10px', 'padding': '2px 6px'}
+                )
+            )
+        df_gallery_style = {
+            'display': 'block' if dfs_store else 'none',
+            'marginTop': '8px',
+            'padding': '6px',
+            'backgroundColor': soft_palette['surface'],
+            'borderRadius': '4px',
+            'flex': '0 0 auto',
+        }
+
         display, style = _build_token_display(new_used, limit, soft_palette)
 
-        return messages, token_data, display, style, charts_store, gallery_buttons, gallery_style, explain_btn_style
+        return (messages, token_data, display, style, charts_store, gallery_buttons, gallery_style,
+                dfs_store, df_gallery_buttons, df_gallery_style, explain_btn_style)
 
     # Callback to open chart modal when a chart button is clicked
     @app.callback(
@@ -3966,6 +4051,42 @@ def main():
         # Get the chart base64 data URI and return it
         chart_src = charts_store[chart_idx]
         return True, chart_src
+
+    @app.callback(
+        Output('df-view-modal', 'is_open'),
+        Output('df-modal-table', 'data'),
+        Output('df-modal-table', 'columns'),
+        Output('df-modal-index', 'data'),
+        Input({'type': 'view-df-btn', 'index': ALL}, 'n_clicks'),
+        State('chat-dataframes-store', 'data'),
+        prevent_initial_call=True
+    )
+    def _open_df_modal(n_clicks_list, dfs_store):
+        from dash import ctx
+        if not n_clicks_list or not any(n_clicks_list):
+            return False, [], [], None
+        triggered = ctx.triggered_id
+        if triggered is None or not isinstance(triggered, dict):
+            return False, [], [], None
+        df_idx = triggered.get('index')
+        if df_idx is None or dfs_store is None or df_idx >= len(dfs_store):
+            return False, [], [], None
+        entry = dfs_store[df_idx]
+        return True, entry['data'], entry['columns'], df_idx
+
+    @app.callback(
+        Output('df-download', 'data'),
+        Input('df-download-btn', 'n_clicks'),
+        State('df-modal-index', 'data'),
+        State('chat-dataframes-store', 'data'),
+        prevent_initial_call=True
+    )
+    def _download_df(n_clicks, df_idx, dfs_store):
+        if not n_clicks or df_idx is None or not dfs_store:
+            return no_update
+        entry = dfs_store[df_idx]
+        df = pd.DataFrame(entry['data'])
+        return dcc.send_data_frame(df.to_csv, 'grinn_table.csv', index=False)
 
     # Pairwise & Viewer - Split into separate callbacks for better performance
     @app.callback(
