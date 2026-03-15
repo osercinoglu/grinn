@@ -2192,6 +2192,21 @@ def main():
                             dcc.Store(id='chat-token-usage', data={'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}, storage_type='session'),
                             dcc.Store(id='chat-pairs-store', storage_type='memory', data={'total': 0}),
                             dcc.Store(id='chat-max-values-store', data=MAX_CHAT_VALUES),
+                            # Watchdog interval — ticks every 3 s to detect hung callbacks
+                            dcc.Interval(id='chat-watchdog', interval=3000, disabled=False),
+                            # Error banner shown when a request has been pending for too long
+                            html.Div([
+                                html.Span('⚠️ The request is taking too long — this is likely a network issue (e.g. 504 Gateway Timeout). '
+                                          'You can try sending your message again.'),
+                                html.Span(' ✕', id='chat-timeout-dismiss',
+                                          style={'cursor': 'pointer', 'marginLeft': '8px', 'fontWeight': 'bold'}),
+                            ], id='chat-timeout-error', style={
+                                'display': 'none',
+                                'backgroundColor': '#fff3cd', 'color': '#856404',
+                                'border': '1px solid #ffc107', 'borderRadius': '4px',
+                                'padding': '6px 10px', 'fontSize': '11px',
+                                'flex': '0 0 auto', 'marginBottom': '4px',
+                            }),
                             html.Div(
                                 ChatComponent(
                                     id='chat',
@@ -3445,6 +3460,50 @@ def main():
         Input('chat-energy-threshold-snapshot', 'value'),
     )
 
+    # Clientside callback: watchdog to detect network-level timeouts (e.g. 504)
+    app.clientside_callback(
+        """
+        function(new_message, messages, n_intervals, dismiss_clicks) {
+            const ctx = window.dash_clientside.callback_context;
+            const triggered = ctx.triggered[0] ? ctx.triggered[0].prop_id : '';
+
+            // User dismissed the banner manually
+            if (triggered === 'chat-timeout-dismiss.n_clicks' && dismiss_clicks) {
+                window._grinn_pending_ts = null;
+                return {'display': 'none'};
+            }
+
+            // New message sent — record timestamp, hide any existing banner
+            if (triggered === 'chat.new_message' && new_message) {
+                window._grinn_pending_ts = Date.now();
+                return {'display': 'none'};
+            }
+
+            // Response received — clear pending state, hide banner
+            if (triggered === 'chat.messages') {
+                window._grinn_pending_ts = null;
+                return {'display': 'none'};
+            }
+
+            // Watchdog tick — check if pending for > 90 s
+            if (window._grinn_pending_ts && (Date.now() - window._grinn_pending_ts > 90000)) {
+                window._grinn_pending_ts = null;
+                return {'display': 'flex', 'backgroundColor': '#fff3cd', 'color': '#856404',
+                        'border': '1px solid #ffc107', 'borderRadius': '4px',
+                        'padding': '6px 10px', 'fontSize': '11px',
+                        'flex': '0 0 auto', 'marginBottom': '4px'};
+            }
+
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('chat-timeout-error', 'style'),
+        Input('chat', 'new_message'),
+        Input('chat', 'messages'),
+        Input('chat-watchdog', 'n_intervals'),
+        Input('chat-timeout-dismiss', 'n_clicks'),
+        prevent_initial_call=True,
+    )
 
     # Callback to populate chat-pairs-store
     @app.callback(
