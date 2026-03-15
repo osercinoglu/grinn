@@ -1072,6 +1072,8 @@ def main():
     # Load env file before reading PANDASAI_MODELS/default model.
     _maybe_load_env_file()
 
+    MAX_CHAT_VALUES: int = int(os.getenv('GRINN_CHAT_MAX_VALUES', '5000'))
+
     def _parse_models_env(raw: str) -> list[str]:
         import json
 
@@ -1191,7 +1193,7 @@ def main():
             cat = info['category']
             if cat not in categories:
                 categories[cat] = []
-            categories[cat].append({'label': f"{info['label']} ({info['rows']}×{info['cols']})", 'value': key})
+            categories[cat].append({'label': info['label'], 'value': key})
         # Flatten with category headers
         for cat in ['Pairwise Energies', 'Network Metrics', 'Network Edges']:
             if cat in categories:
@@ -1968,6 +1970,7 @@ def main():
                         [
                             # Token usage display (right-aligned in header area) - always visible
                             html.Div([
+                                html.Span(id='chat-size-display', style={'fontSize': '11px', 'color': '#888', 'marginRight': '8px'}),
                                 html.Span(
                                     "Tokens: 0 / ∞" if PANDASAI_TOKEN_LIMIT <= 0 else f"Tokens: 0 / {PANDASAI_TOKEN_LIMIT:,}",
                                     id='token-usage-display',
@@ -1986,9 +1989,9 @@ def main():
                             # Collapsible settings container
                             dbc.Collapse(
                                 html.Div([
-                                    # Model selector
+                                    # Global settings (always visible)
                                     html.Div([
-                                        html.Label('Model', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                        html.Label('Model:', style={'fontSize': '11px', 'color': '#aaa', 'marginBottom': '2px'}),
                                         dcc.Dropdown(
                                             id='llm-model',
                                             options=[{'label': m, 'value': m} for m in AVAILABLE_MODELS],
@@ -1999,10 +2002,22 @@ def main():
                                             persistence_type='session',
                                             style={'fontSize': '12px'}
                                         ),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Residue filter (multi-select)
-                                    html.Div([
-                                        html.Label('Residue Filter (optional)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
+                                        dbc.Tooltip("AI model used for all chatbot queries.", target='llm-model', placement='right'),
+                                        html.Label('DataFrames:', style={'fontSize': '11px', 'color': '#aaa', 'marginBottom': '2px', 'marginTop': '6px'}),
+                                        dcc.Dropdown(
+                                            id='chat-dataframe-selector',
+                                            options=DATAFRAME_OPTIONS,
+                                            value=DEFAULT_DATAFRAMES[:4],
+                                            multi=True,
+                                            clearable=False,
+                                            searchable=True,
+                                            persistence=True,
+                                            persistence_type='session',
+                                            style={'fontSize': '11px'},
+                                            maxHeight=200
+                                        ),
+                                        dbc.Tooltip("Energy types passed to the AI (max 4 for timeseries). Fewer = faster.", target='chat-dataframe-selector', placement='right'),
+                                        html.Label('Residue filter:', style={'fontSize': '11px', 'color': '#aaa', 'marginBottom': '2px', 'marginTop': '6px'}),
                                         dcc.Dropdown(
                                             id='chat-residue-filter',
                                             options=[{'label': r, 'value': r} for r in first_res_list],
@@ -2016,121 +2031,167 @@ def main():
                                             style={'fontSize': '11px'},
                                             maxHeight=200
                                         ),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Frame range inputs
-                                    html.Div([
-                                        html.Label('Frame Range', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
-                                        html.Div([
-                                            dcc.Input(
-                                                id='chat-frame-min',
-                                                type='number',
-                                                value=frame_min,
-                                                min=frame_min,
-                                                max=frame_max,
-                                                placeholder='Min',
-                                                persistence=True,
-                                                persistence_type='session',
-                                                style={'width': '80px', 'fontSize': '11px', 'marginRight': '8px'}
-                                            ),
-                                            html.Span('to', style={'fontSize': '11px', 'color': soft_palette['text'], 'marginRight': '8px'}),
-                                            dcc.Input(
-                                                id='chat-frame-max',
-                                                type='number',
-                                                value=frame_max,
-                                                min=frame_min,
-                                                max=frame_max,
-                                                placeholder='Max',
-                                                persistence=True,
-                                                persistence_type='session',
-                                                style={'width': '80px', 'fontSize': '11px', 'marginRight': '8px'}
-                                            ),
-                                            html.Span(id='chat-stride-display', children=f'Stride: 1 → {frame_max - frame_min + 1} frames', style={'fontSize': '10px', 'color': soft_palette['text'], 'fontStyle': 'italic'}),
-                                        ], style={'display': 'flex', 'alignItems': 'center'}),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Chat mode selector
-                                    html.Div([
-                                        html.Label('Data Mode', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
-                                        dcc.RadioItems(
-                                            id='chat-mode',
-                                            options=[
-                                                {'label': ' Summary (mean/std/min/max)', 'value': 'summary'},
-                                                {'label': ' Time Series (strided frames)', 'value': 'timeseries'},
-                                                {'label': ' Snapshot (single frame)', 'value': 'snapshot'},
-                                            ],
-                                            value='summary',
-                                            persistence=True,
-                                            persistence_type='session',
-                                            labelStyle={'fontSize': '11px', 'display': 'block', 'marginBottom': '2px'},
-                                            inputStyle={'marginRight': '4px'}
-                                        ),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Snapshot frame input (only shown in snapshot mode)
-                                    html.Div([
-                                        html.Label('Snapshot Frame', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
-                                        dcc.Input(
-                                            id='chat-snapshot-frame',
-                                            type='number',
-                                            value=frame_min,
-                                            min=frame_min,
-                                            max=frame_max,
-                                            placeholder='Frame #',
-                                            persistence=True,
-                                            persistence_type='session',
-                                            style={'width': '80px', 'fontSize': '11px'}
-                                        ),
-                                    ], id='chat-snapshot-frame-div', style={'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'none'}),
-                                    # Energy threshold input
-                                    html.Div([
-                                        html.Label('Min |IE| Threshold (kJ/mol)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
-                                        dcc.Input(
-                                            id='chat-energy-threshold',
-                                            type='number',
-                                            value=0.5,
-                                            min=0.0,
-                                            step=0.1,
-                                            placeholder='0.0 = no filter',
-                                            persistence=True,
-                                            persistence_type='session',
-                                            style={'width': '100px', 'fontSize': '11px'}
-                                        ),
-                                        html.Span(' kJ/mol', style={'fontSize': '11px', 'color': soft_palette['text'], 'marginLeft': '4px'}),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Literature search toggle
-                                    html.Div([
+                                        dbc.Tooltip("Restrict analysis to specific residues. Leave empty for all.", target='chat-residue-filter', placement='right'),
+                                        html.Label('\U0001f52c PubMed search:', style={'fontSize': '11px', 'color': '#aaa', 'marginBottom': '2px', 'marginTop': '6px'}),
                                         dbc.Checklist(
                                             id='chat-search-literature',
-                                            options=[{'label': ' 🔬 Search PubMed on query', 'value': 'pubmed'}],
+                                            options=[{'label': ' Search PubMed on query', 'value': 'pubmed'}],
                                             value=[],
                                             persistence=True,
                                             persistence_type='session',
                                             inputStyle={'marginRight': '4px'},
                                             labelStyle={'fontSize': '11px', 'color': soft_palette['text']}
                                         ),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # DataFrame selector (multi-select, max 4) - placed after filters to show filtered sizes
+                                        dbc.Tooltip("Append relevant PubMed citations to the AI response.", target='chat-search-literature', placement='right'),
+                                    ]),
+                                    html.Hr(style={'borderColor': 'rgba(255,255,255,0.1)', 'margin': '8px 0'}),
+                                    # Mode radio
                                     html.Div([
-                                        html.Label('DataFrames (max 4)', style={'fontSize': '12px', 'color': soft_palette['text'], 'marginBottom': '4px'}),
-                                        dcc.Dropdown(
-                                            id='chat-dataframe-selector',
-                                            options=DATAFRAME_OPTIONS,
-                                            value=DEFAULT_DATAFRAMES[:4],
-                                            multi=True,
-                                            clearable=False,
-                                            searchable=True,
+                                        html.Label('Data mode:', style={'fontSize': '11px', 'color': '#444', 'marginRight': '8px'}),
+                                        dcc.RadioItems(
+                                            id='chat-mode',
+                                            options=[
+                                                {'label': ' Summary', 'value': 'summary'},
+                                                {'label': ' Timeseries', 'value': 'timeseries'},
+                                                {'label': ' Snapshot', 'value': 'snapshot'},
+                                            ],
+                                            value='summary',
+                                            inline=True,
                                             persistence=True,
                                             persistence_type='session',
-                                            style={'fontSize': '11px'},
-                                            maxHeight=200
+                                            style={'display': 'inline-flex', 'gap': '12px'},
+                                            labelStyle={'fontSize': '12px', 'color': '#444'},
+                                            inputStyle={'marginRight': '4px'},
                                         ),
-                                    ], style={'flex': '0 0 auto', 'marginBottom': '8px'}),
-                                    # Estimated size badge
-                                    html.Div(id='chat-size-badge', children='', style={'fontSize': '10px', 'marginTop': '4px'}),
+                                    ], style={'display': 'flex', 'alignItems': 'center', 'flexWrap': 'wrap'}),
+                                    html.Div([
+                                        # Shared frame range (shown for summary and timeseries, hidden for snapshot)
+                                        html.Div([
+                                            html.Div([
+                                                html.Span('Frame range:', className='chat-form-label'),
+                                                dcc.Input(
+                                                    id='chat-frame-min', type='number',
+                                                    value=frame_min, min=frame_min, max=frame_max,
+                                                    placeholder='Min', debounce=True,
+                                                    persistence=True, persistence_type='session',
+                                                    style={'width': '70px', 'fontSize': '11px'},
+                                                ),
+                                                html.Span('–', className='chat-form-unit'),
+                                                dcc.Input(
+                                                    id='chat-frame-max', type='number',
+                                                    value=frame_max, min=frame_min, max=frame_max,
+                                                    placeholder='Max', debounce=True,
+                                                    persistence=True, persistence_type='session',
+                                                    style={'width': '70px', 'fontSize': '11px'},
+                                                ),
+                                            ], className='chat-form-row'),
+                                            dbc.Tooltip("Trajectory frame range to include.", target='chat-frame-min', placement='right'),
+                                        ], id='chat-frame-range-section', style={'marginBottom': '8px'}),
+                                        # Summary mode settings
+                                        html.Div([
+                                            html.Span("Mean / std / min / max computed over all pairs in the frame range.", className='chat-hint'),
+                                        ], id='chat-summary-settings', style={'marginBottom': '8px'}),
+                                        # Timeseries mode settings
+                                        html.Div([
+                                            html.Div([
+                                                html.Div([
+                                                    html.Span('Energy threshold: ', style={'fontSize': '11px', 'color': '#444'}),
+                                                    html.Span('0.5', id='chat-et-val',
+                                                              style={'fontSize': '11px', 'color': '#333', 'fontFamily': 'monospace'}),
+                                                    html.Span(' kcal/mol', style={'fontSize': '11px', 'color': '#666'}),
+                                                ], style={'marginBottom': '3px'}),
+                                                dcc.Slider(
+                                                    id='chat-energy-threshold',
+                                                    min=0.0, max=5.0, step=0.1, value=0.5,
+                                                    marks=None,
+                                                    tooltip={'always_visible': False},
+                                                    updatemode='mouseup',
+                                                    className='chat-slider',
+                                                    persistence=True, persistence_type='session',
+                                                ),
+                                                dbc.Tooltip("Pairs with |mean energy| below this threshold are excluded.", target='chat-energy-threshold', placement='right'),
+                                            ], style={'marginBottom': '8px'}),
+                                            html.Div([
+                                                html.Div([
+                                                    html.Span('Stride:', className='chat-form-label'),
+                                                    dbc.Switch(
+                                                        id='chat-stride-mode',
+                                                        label='Auto',
+                                                        value=True,
+                                                        persistence=True, persistence_type='session',
+                                                        style={'display': 'inline-block', 'marginRight': '8px', 'fontSize': '11px'},
+                                                        label_style={'fontSize': '11px', 'color': '#444'},
+                                                    ),
+                                                    html.Div(
+                                                        dcc.Input(
+                                                            id='chat-stride-manual',
+                                                            type='number', min=1, step=1, value=1,
+                                                            placeholder='e.g. 5',
+                                                            style={'width': '70px', 'fontSize': '11px'},
+                                                            persistence=True, persistence_type='session',
+                                                            debounce=True,
+                                                        ),
+                                                        id='chat-stride-manual-div',
+                                                        style={'display': 'none'},
+                                                    ),
+                                                ], className='chat-form-row'),
+                                                dbc.Tooltip(f"Auto: stride computed to stay within {MAX_CHAT_VALUES:,} values. Manual: set stride explicitly.", target='chat-stride-mode', placement='right'),
+                                                dbc.Tooltip("Every Nth frame is kept. Stride of 1 = all frames.", target='chat-stride-manual', placement='right'),
+                                            ], style={'marginBottom': '5px'}),
+                                            html.Span(id='chat-stride-display', style={'fontSize': '11px', 'color': '#666', 'display': 'block', 'marginTop': '2px'}),
+                                            html.Span(id='chat-size-badge-ts', style={'fontSize': '11px', 'display': 'none'}),
+                                            html.Span(
+                                                f"Auto stride targets \u2264 {MAX_CHAT_VALUES:,} values (pairs \u00d7 frames). Filter residues to get more frames with large datasets.",
+                                                className='chat-hint',
+                                            ),
+                                        ], id='chat-timeseries-settings', style={'display': 'none'}),
+                                        # Snapshot mode settings
+                                        html.Div([
+                                            html.Div([
+                                                html.Div([
+                                                    html.Span('Frame #:', className='chat-form-label'),
+                                                    dcc.Input(
+                                                        id='chat-snapshot-frame', type='number',
+                                                        value=frame_min, min=frame_min, max=frame_max,
+                                                        placeholder='Frame #', debounce=True,
+                                                        persistence=True, persistence_type='session',
+                                                        style={'width': '80px', 'fontSize': '11px'},
+                                                    ),
+                                                ], className='chat-form-row'),
+                                                dbc.Tooltip("Frame number to use for snapshot mode.", target='chat-snapshot-frame', placement='right'),
+                                            ], style={'marginBottom': '5px'}),
+                                            html.Div([
+                                                html.Div([
+                                                    html.Span('Energy threshold: ', style={'fontSize': '11px', 'color': '#444'}),
+                                                    html.Span('0.5', id='chat-et-snapshot-val',
+                                                              style={'fontSize': '11px', 'color': '#333', 'fontFamily': 'monospace'}),
+                                                    html.Span(' kcal/mol', style={'fontSize': '11px', 'color': '#666'}),
+                                                ], style={'marginBottom': '3px'}),
+                                                dcc.Slider(
+                                                    id='chat-energy-threshold-snapshot',
+                                                    min=0.0, max=5.0, step=0.1, value=0.5,
+                                                    marks=None,
+                                                    tooltip={'always_visible': False},
+                                                    updatemode='mouseup',
+                                                    className='chat-slider',
+                                                    persistence=True, persistence_type='session',
+                                                ),
+                                                dbc.Tooltip("Pairs with |energy| below this threshold are excluded.", target='chat-energy-threshold-snapshot', placement='right'),
+                                            ], style={'marginBottom': '5px'}),
+                                            html.Span(
+                                                "Single frame sent to the AI. No stride or size limit applies.",
+                                                className='chat-hint',
+                                            ),
+                                        ], id='chat-snapshot-settings', style={'display': 'none'}),
+                                    ], className='chat-mode-box'),
                                 ]),
                                 id='chat-settings-collapse',
                                 is_open=True
                             ),
                             # Store for token usage tracking per session
                             dcc.Store(id='chat-token-usage', data={'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}, storage_type='session'),
+                            dcc.Store(id='chat-pairs-store', storage_type='memory', data={'total': 0}),
+                            dcc.Store(id='chat-max-values-store', data=MAX_CHAT_VALUES),
                             html.Div(
                                 ChatComponent(
                                     id='chat',
@@ -2498,10 +2559,15 @@ def main():
 
         return result
 
-    def _compute_chat_stride(frame_min_val: int, frame_max_val: int, max_frames: int = 20) -> int:
-        """Compute stride to achieve at most max_frames frames."""
+    def _compute_chat_stride(frame_min_val: int, frame_max_val: int,
+                             n_pairs: int = 1, max_values: int = 5000) -> int:
+        """Compute stride so that (n_pairs × frames_kept) ≤ max_values."""
         import math
-        total_frames = frame_max_val - frame_min_val + 1
+        total_frames = max(1, frame_max_val - frame_min_val + 1)
+        if n_pairs <= 0:
+            return 1
+        # How many frames can we afford?
+        max_frames = max(1, max_values // n_pairs)
         if total_frames <= max_frames:
             return 1
         return math.ceil(total_frames / max_frames)
@@ -2537,8 +2603,29 @@ def main():
         else:
             est_rows = orig_rows
 
+        # Apply energy threshold filter for IE DataFrames
+        if min_abs_energy > 0.0 and is_ie:
+            non_frame_cols_set = {
+                'res1', 'res2', 'Pair', 'Unnamed: 0', 'res1_index', 'res2_index',
+                'res1_chain', 'res2_chain', 'res1_resnum', 'res2_resnum',
+                'res1_resname', 'res2_resname',
+            }
+            frame_cols = [c for c in df.columns if c not in non_frame_cols_set]
+            if frame_cols:
+                try:
+                    if residue_filter and 'res1' in df.columns and 'res2' in df.columns:
+                        row_mask = df['res1'].isin(residue_filter) | df['res2'].isin(residue_filter)
+                        row_means = df.loc[row_mask, frame_cols].apply(
+                            pd.to_numeric, errors='coerce').mean(axis=1).abs()
+                    else:
+                        row_means = df[frame_cols].apply(
+                            pd.to_numeric, errors='coerce').mean(axis=1).abs()
+                    est_rows = int((row_means >= min_abs_energy).sum())
+                except Exception:
+                    pass  # leave est_rows unchanged if something goes wrong
+
         # Estimate column count after frame filter (for IE wide format)
-        stride = _compute_chat_stride(frame_min_val, frame_max_val, max_frames=20)
+        stride = _compute_chat_stride(frame_min_val, frame_max_val, n_pairs=max(1, est_rows), max_values=MAX_CHAT_VALUES)
         total_frames_in_range = frame_max_val - frame_min_val + 1
         frames_after_stride = math.ceil(total_frames_in_range / stride)
 
@@ -2572,7 +2659,8 @@ def main():
                                         residue_filter: list[str] = None, frame_min_val: int = None,
                                         frame_max_val: int = None, mode: str = 'timeseries',
                                         snapshot_frame: int = None,
-                                        min_abs_energy: float = 0.0) -> _SessionCtx:
+                                        min_abs_energy: float = 0.0,
+                                        stride: Optional[int] = None) -> _SessionCtx:
         """Build session context with selected DataFrames from registry."""
         print(f"[DEBUG _build_session_context_for_dfs] Starting with keys={selected_df_keys}, model={model}", flush=True)
         
@@ -2616,9 +2704,12 @@ def main():
             raise
         
         # Compute stride if frame range is specified (only used for timeseries mode)
-        stride = 1
-        if mode == 'timeseries' and frame_min_val is not None and frame_max_val is not None:
-            stride = _compute_chat_stride(frame_min_val, frame_max_val, max_frames=20)
+        if stride is None:
+            stride = 1
+            if mode == 'timeseries' and frame_min_val is not None and frame_max_val is not None:
+                stride = _compute_chat_stride(frame_min_val, frame_max_val, max_values=MAX_CHAT_VALUES)
+        else:
+            stride = max(1, int(stride))
 
         # Collect selected DataFrames with optional filtering
         pai_dfs = []
@@ -2629,8 +2720,8 @@ def main():
                 continue
             df = info['df']
 
-            # Apply filtering if residue filter or frame range is specified
-            if residue_filter or (frame_min_val is not None and frame_max_val is not None):
+            # Apply filtering if residue filter, frame range, or energy threshold is specified
+            if residue_filter or (frame_min_val is not None and frame_max_val is not None) or min_abs_energy > 0.0:
                 df = _filter_dataframe_for_chat(
                     df, key,
                     residue_filter=residue_filter or [],
@@ -2670,15 +2761,15 @@ def main():
             'When plotting charts, use matplotlib: plt.figure(figsize=(6, 4), dpi=300) and plt.tight_layout(). '
             '\n\n--- Scientific Context ---\n'
             'These DataFrames contain Residue Interaction Energies (IEs) computed from molecular dynamics (MD) simulations. '
-            'IE values are in kJ/mol. Negative values indicate attractive interactions; positive values indicate repulsion. '
-            'Typical biologically significant IE values are stronger than -2 to -5 kJ/mol. '
+            'IE values are in kcal/mol. Negative values indicate attractive interactions; positive values indicate repulsion. '
+            'Typical biologically significant IE values are stronger than -1 to -2 kcal/mol. '
             'IE columns include: IE_Total (total interaction energy), IE_VdW (van der Waals component), IE_Elec (electrostatic component). '
             'VdW interactions reflect steric/hydrophobic contacts; Electrostatic interactions reflect charge-charge and hydrogen bond effects. '
             'For IE DataFrames in summary mode: mean_ie is the time-averaged IE, std_ie reflects fluctuations, min_ie/max_ie show extremes. '
             'For Metrics DataFrames: these contain Protein Energy Network (PEN) node metrics including betweenness_centrality (how often a residue is on shortest paths), '
             'closeness_centrality (how close a residue is to all others), and degree (number of significant interaction partners). '
             'High betweenness/closeness centrality residues are often functionally important (e.g., allosteric hubs). '
-            'When interpreting results, mention units (kJ/mol), note whether interactions are attractive or repulsive, '
+            'When interpreting results, mention units (kcal/mol), note whether interactions are attractive or repulsive, '
             'and flag residues/interactions that may be biologically significant.'
         )
         
@@ -3208,120 +3299,174 @@ def main():
             return new_state, icon
         return is_open, '▼' if is_open else '▲'
 
-    # Callback to limit DataFrame selection to max 4
+    # Callback to toggle mode-specific settings visibility
+    @app.callback(
+        Output('chat-frame-range-section', 'style'),
+        Output('chat-summary-settings', 'style'),
+        Output('chat-timeseries-settings', 'style'),
+        Output('chat-snapshot-settings', 'style'),
+        Input('chat-mode', 'value'),
+    )
+    def _toggle_mode_settings_visibility(mode):
+        show = {'marginBottom': '8px'}
+        hide = {'display': 'none'}
+        frame_range_style = hide if mode == 'snapshot' else show
+        return (
+            frame_range_style,
+            show if mode == 'summary' else hide,
+            show if mode == 'timeseries' else hide,
+            show if mode == 'snapshot' else hide,
+        )
+
+    # Callback to limit DataFrame selection to max 4 for timeseries
     @app.callback(
         Output('chat-dataframe-selector', 'value'),
         Input('chat-dataframe-selector', 'value'),
+        State('chat-mode', 'value'),
         prevent_initial_call=True
     )
-    def _limit_dataframe_selection(selected):
-        if not selected:
-            return DEFAULT_DATAFRAMES[:4]
-        if len(selected) > 4:
-            return selected[:4]
-        return selected
+    def _limit_dataframe_selection(selected, mode):
+        max_dfs = 4 if (mode == 'timeseries') else len(DATAFRAME_OPTIONS)
+        return (selected or [])[:max_dfs]
 
-    # Callback to update stride display when frame range changes
-    @app.callback(
+    # Clientside callback to update stride display and size badge
+    app.clientside_callback(
+        """
+        function(fmin, fmax, mode, autoStride, manualStride, pairsStore, maxValues) {
+            const MAX_VALUES = maxValues || 5000;
+            const NO_UPDATE = window.dash_clientside.no_update;
+            if (!pairsStore) return [NO_UPDATE, NO_UPDATE, NO_UPDATE];
+
+            const totalPairs = pairsStore.total || 1;
+            const frameRange = Math.max(1, (fmax || 0) - (fmin || 0) + 1);
+
+            if (mode !== 'timeseries') {
+                return ['', {display:'none'}, {display:'none'}];
+            }
+
+            let stride;
+            if (autoStride) {
+                const maxFrames = Math.max(1, Math.floor(MAX_VALUES / totalPairs));
+                stride = Math.max(1, Math.ceil(frameRange / maxFrames));
+            } else {
+                stride = Math.max(1, manualStride || 1);
+            }
+
+            const framesKept = Math.ceil(frameRange / stride);
+            const totalValues = totalPairs * framesKept;
+            const overLimit = totalValues > MAX_VALUES;
+            const modeLabel = autoStride ? ' (auto)' : ' (manual)';
+            let strideText = `Stride ${stride}${modeLabel} \u2192 ${framesKept} frame${framesKept===1?'':'s'}`;
+            if (autoStride && framesKept === 1 && overLimit) {
+                strideText += ' \u2014 filter residues for more frames';
+            }
+            const badgeText = `~${totalValues.toLocaleString()} / ${MAX_VALUES.toLocaleString()} values`
+                              + (overLimit ? ' \u26a0\ufe0f' : ' \u2713');
+            const badgeStyle = {fontSize:'11px', color: overLimit ? '#d9534f':'#5cb85c', display:'inline'};
+            return [strideText, badgeStyle, badgeText];
+        }
+        """,
         Output('chat-stride-display', 'children'),
-        Input('chat-frame-min', 'value'),
-        Input('chat-frame-max', 'value')
-    )
-    def _update_stride_display(fmin, fmax):
-        import math
-        # Use defaults if values are None or invalid
-        fmin = fmin if fmin is not None else frame_min
-        fmax = fmax if fmax is not None else frame_max
-        
-        # Ensure valid range
-        fmin = max(frame_min, min(fmin, frame_max))
-        fmax = max(frame_min, min(fmax, frame_max))
-        if fmin > fmax:
-            fmin, fmax = fmax, fmin
-        
-        total_frames = fmax - fmin + 1
-        stride = _compute_chat_stride(fmin, fmax, max_frames=20)
-        actual_frames = math.ceil(total_frames / stride)
-        
-        return f'Stride: {stride} → {actual_frames} frames'
-
-    # Callback to update DataFrame options with filtered sizes
-    @app.callback(
-        Output('chat-dataframe-selector', 'options'),
-        Input('chat-residue-filter', 'value'),
+        Output('chat-size-badge-ts', 'style'),
+        Output('chat-size-badge-ts', 'children'),
         Input('chat-frame-min', 'value'),
         Input('chat-frame-max', 'value'),
         Input('chat-mode', 'value'),
+        Input('chat-stride-mode', 'value'),
+        Input('chat-stride-manual', 'value'),
+        Input('chat-pairs-store', 'data'),
+        Input('chat-max-values-store', 'data'),
+    )
+
+    app.clientside_callback(
+        """
+        function(v1, v2) {
+            function fmt(v) { return v != null ? parseFloat(v).toFixed(1) : '0.5'; }
+            return [fmt(v1), fmt(v2)];
+        }
+        """,
+        Output('chat-et-val', 'children'),
+        Output('chat-et-snapshot-val', 'children'),
         Input('chat-energy-threshold', 'value'),
+        Input('chat-energy-threshold-snapshot', 'value'),
     )
-    def _update_dataframe_options_with_filtered_sizes(residue_filter, fmin, fmax, mode, energy_threshold):
-        residue_filter = residue_filter or []
-        fmin = fmin if fmin is not None else frame_min
-        fmax = fmax if fmax is not None else frame_max
-        fmin = max(frame_min, min(fmin, frame_max))
-        fmax = max(frame_min, min(fmax, frame_max))
-        if fmin > fmax:
-            fmin, fmax = fmax, fmin
-        mode = mode or 'summary'
-        energy_threshold = energy_threshold if energy_threshold is not None else 0.0
 
-        options = []
-        for key, info in _CHATBOT_DATAFRAMES.items():
-            est_rows, est_cols, est_tokens = _estimate_filtered_size(key, residue_filter, fmin, fmax, mode=mode, min_abs_energy=energy_threshold)
-            label = f"{info['label']} ({est_rows}×{est_cols}, ~{est_tokens:,} tok)"
-            options.append({'label': label, 'value': key})
-        return options
 
-    # Callback to toggle snapshot frame input visibility
+    # Callback to populate chat-pairs-store
     @app.callback(
-        Output('chat-snapshot-frame-div', 'style'),
-        Input('chat-mode', 'value')
-    )
-    def _toggle_snapshot_frame_visibility(mode):
-        if mode == 'snapshot':
-            return {'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'block'}
-        return {'flex': '0 0 auto', 'marginBottom': '8px', 'display': 'none'}
-
-    # Callback to update size badge
-    @app.callback(
-        Output('chat-size-badge', 'children'),
-        Output('chat-size-badge', 'style'),
+        Output('chat-pairs-store', 'data'),
+        Input('chat-residue-filter', 'value'),
+        Input('chat-energy-threshold', 'value'),
+        Input('chat-energy-threshold-snapshot', 'value'),
         Input('chat-dataframe-selector', 'value'),
-        Input('chat-residue-filter', 'value'),
         Input('chat-frame-min', 'value'),
         Input('chat-frame-max', 'value'),
         Input('chat-mode', 'value'),
-        Input('chat-energy-threshold', 'value'),
+        prevent_initial_call=False,
     )
-    def _update_size_badge(selected_dfs, residue_filter, fmin, fmax, mode, energy_threshold):
+    def _update_size_store(residue_filter, energy_threshold, energy_threshold_snapshot, selected_dfs, fmin_val, fmax_val, mode):
         residue_filter = residue_filter or []
-        fmin = fmin if fmin is not None else frame_min
-        fmax = fmax if fmax is not None else frame_max
-        fmin = max(frame_min, min(fmin, frame_max))
-        fmax = max(frame_min, min(fmax, frame_max))
-        if fmin > fmax:
-            fmin, fmax = fmax, fmin
         mode = mode or 'summary'
-        energy_threshold = energy_threshold if energy_threshold is not None else 0.0
-        selected_dfs = selected_dfs or DEFAULT_DATAFRAMES[:4]
-
-        total_tokens = 0
-        for key in selected_dfs[:4]:
-            est_rows, est_cols, est_tokens = _estimate_filtered_size(key, residue_filter, fmin, fmax, mode=mode, min_abs_energy=energy_threshold)
-            total_tokens += est_tokens
-
-        if total_tokens < 5000:
-            color = '#28a745'
-            label = f'Est. size: ~{total_tokens:,} tokens \u2713'
-        elif total_tokens < 20000:
-            color = '#ffc107'
-            label = f'Est. size: ~{total_tokens:,} tokens \u26a0'
+        if mode == 'snapshot':
+            min_abs = float(energy_threshold_snapshot or 0.0)
         else:
-            color = '#dc3545'
-            label = f'Est. size: ~{total_tokens:,} tokens \u2717 (large)'
+            min_abs = float(energy_threshold or 0.0)
+        fmin_val = fmin_val if fmin_val is not None else frame_min
+        fmax_val = fmax_val if fmax_val is not None else frame_max
+        keys = selected_dfs or DEFAULT_DATAFRAMES[:4]
+        total_pairs = 0
+        for key in keys[:4]:
+            info = _CHATBOT_DATAFRAMES.get(key, {})
+            if info.get('category') == 'Network Metrics':
+                # Metrics DataFrames count nodes, not pairs
+                est_rows, _, _ = _estimate_filtered_size(
+                    key, residue_filter, fmin_val, fmax_val,
+                    mode='summary', min_abs_energy=0.0
+                )
+            else:
+                est_rows, _, _ = _estimate_filtered_size(
+                    key, residue_filter, fmin_val, fmax_val,
+                    mode='timeseries', min_abs_energy=min_abs
+                )
+            total_pairs += est_rows
+        return {'total': max(1, total_pairs)}
 
-        style = {'fontSize': '10px', 'marginTop': '4px', 'color': color, 'fontFamily': 'monospace'}
-        return label, style
+    # Callback to update size display badge
+    @app.callback(
+        Output('chat-size-display', 'children'),
+        Input('chat-pairs-store', 'data'),
+        Input('chat-mode', 'value'),
+        Input('chat-frame-min', 'value'),
+        Input('chat-frame-max', 'value'),
+        Input('chat-stride-mode', 'value'),
+        Input('chat-stride-manual', 'value'),
+    )
+    def _update_size_display(size_store, mode, fmin_v, fmax_v, auto_stride, manual_stride):
+        import math
+        n_rows = (size_store or {}).get('total', 0)
+        if n_rows <= 0:
+            return ''
+        mode = mode or 'summary'
+        if mode == 'timeseries':
+            fmin_v = fmin_v if fmin_v is not None else frame_min
+            fmax_v = fmax_v if fmax_v is not None else frame_max
+            auto = auto_stride if auto_stride is not None else True
+            stride = _compute_chat_stride(fmin_v, fmax_v, n_pairs=n_rows, max_values=MAX_CHAT_VALUES) \
+                     if auto else max(1, int(manual_stride or 1))
+            total_frames = max(1, fmax_v - fmin_v + 1)
+            frames_kept = math.ceil(total_frames / stride)
+            total_values = n_rows * frames_kept
+            return f'~{total_values:,} data points ({n_rows:,} pairs \u00d7 {frames_kept:,} frames)'
+        else:
+            return f'~{n_rows:,} data points'
+
+    # Callback to show/hide manual stride input
+    @app.callback(
+        Output('chat-stride-manual-div', 'style'),
+        Input('chat-stride-mode', 'value'),
+    )
+    def _toggle_manual_stride_visibility(auto):
+        return {'display': 'none'} if auto else {'display': 'inline-block'}
 
     def _search_pubmed(query: str, max_results: int = 3) -> list:
         import urllib.request
@@ -3423,11 +3568,16 @@ def main():
         State('chat-energy-threshold', 'value'),
         State('chat-snapshot-frame', 'value'),
         State('chat-search-literature', 'value'),
+        State('chat-stride-mode', 'value'),
+        State('chat-stride-manual', 'value'),
+        State('chat-pairs-store', 'data'),
+        State('chat-energy-threshold-snapshot', 'value'),
         prevent_initial_call=True
     )
     def _on_chat_msg(new_message, messages, sid, selected_model, selected_dfs, token_data,
-                     residue_filter, chat_frame_min_val, chat_frame_max_val, charts_store,
-                     chat_mode, energy_threshold, snapshot_frame, search_literature):
+                     residue_filter, chat_frame_min, chat_frame_max, charts_store,
+                     chat_mode, energy_threshold, snapshot_frame, search_literature,
+                     stride_mode_auto, stride_manual, pairs_store, energy_threshold_snapshot):
         if not new_message:
             return (no_update,) * 8
         
@@ -3480,7 +3630,7 @@ def main():
                     "You are an expert biophysicist and structural biologist specializing in protein-protein and protein-ligand interactions. "
                     "The user is analyzing molecular dynamics simulation data using gRINN (get Residue Interaction Energies and Networks). "
                     "Provide a concise, scientifically grounded biological interpretation of the data result shown. "
-                    "Discuss what the interaction energies (in kJ/mol) suggest about the protein's structure/function, "
+                    "Discuss what the interaction energies (in kcal/mol) suggest about the protein's structure/function, "
                     "mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces), "
                     "and note any caveats. Be specific and cite units. Keep your response under 200 words."
                 )
@@ -3549,8 +3699,8 @@ def main():
         try:
             # Normalize filter values
             residue_filter = residue_filter or []
-            fmin = chat_frame_min_val if chat_frame_min_val is not None else frame_min
-            fmax = chat_frame_max_val if chat_frame_max_val is not None else frame_max
+            fmin = chat_frame_min if chat_frame_min is not None else frame_min
+            fmax = chat_frame_max if chat_frame_max is not None else frame_max
             # Ensure valid range
             fmin = max(frame_min, min(fmin, frame_max))
             fmax = max(frame_min, min(fmax, frame_max))
@@ -3578,14 +3728,38 @@ def main():
             # Determine DataFrames to use
             selected_df_keys = selected_dfs if selected_dfs else DEFAULT_DATAFRAMES[:4]
             mode = chat_mode or 'summary'
-            min_abs_energy = energy_threshold if energy_threshold is not None else 0.0
+            if mode == 'snapshot':
+                min_abs_energy = float(energy_threshold_snapshot or 0.0)
+            else:
+                min_abs_energy = float(energy_threshold if energy_threshold is not None else 0.0)
             snap_frame = snapshot_frame
+
+            # Compute stride based on auto/manual mode
+            auto_stride = stride_mode_auto if stride_mode_auto is not None else True
+            if auto_stride or mode != 'timeseries':
+                n_pairs = (pairs_store or {}).get('total', 1)
+                chat_stride = _compute_chat_stride(fmin, fmax, n_pairs=n_pairs, max_values=MAX_CHAT_VALUES)
+            else:
+                chat_stride = max(1, int(stride_manual or 1))
+
+            # Block over-budget manual timeseries queries
+            if mode == 'timeseries' and not auto_stride:
+                import math as _math
+                n_pairs = (pairs_store or {}).get('total', 1)
+                total_frames = max(1, fmax - fmin + 1)
+                frames_kept = _math.ceil(total_frames / chat_stride)
+                total_values = n_pairs * frames_kept
+                if total_values > MAX_CHAT_VALUES:
+                    err = (f"\u26a0\ufe0f Manual stride would send ~{total_values:,} values "
+                           f"(limit: {MAX_CHAT_VALUES:,}). Increase stride or switch to Auto mode.")
+                    new_messages = list(messages or []) + [{'role': 'assistant', 'content': err}]
+                    return new_messages, token_data, no_update, no_update, no_update, no_update, no_update, no_update
 
             # create/reuse session - include selected_dfs AND filter settings in session key
             chosen_model = _resolve_model_selection(selected_model)
             dfs_sig = '|'.join(sorted(selected_df_keys[:4]))
             filter_sig = f"res{'_'.join(sorted(residue_filter)) if residue_filter else 'ALL'}_f{fmin}-{fmax}"
-            mode_sig = f"mode{mode}_thr{min_abs_energy}"
+            mode_sig = f"mode{mode}_thr{min_abs_energy}_s{chat_stride}"
             pen_folder = _pen_folder_from_dashboard()
             skey = f"{sid}|{pen_folder}|{dfs_sig}|{filter_sig}|{mode_sig}|{chosen_model}"
 
@@ -3593,7 +3767,8 @@ def main():
             ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                 selected_df_keys, model=chosen_model,
                 residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
-                mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
+                mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy,
+                stride=chat_stride
             ))
             try:
                 resp = ctxobj.agent.chat(user_text)
@@ -3606,7 +3781,8 @@ def main():
                         ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                             selected_df_keys, model=chosen_model,
                             residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
-                            mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy
+                            mode=mode, snapshot_frame=snap_frame, min_abs_energy=min_abs_energy,
+                            stride=chat_stride
                         ))
                         retry_prompt = (
                             user_text

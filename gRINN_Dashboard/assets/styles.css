@@ -206,6 +206,27 @@ body {
     flex-shrink: 0 !important;
 }
 
+/* Inline form rows for chatbot settings (narrow inputs) */
+.chat-form-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    font-size: 11px;
+}
+.chat-form-label {
+    flex: 0 0 108px;
+    font-size: 11px;
+    color: #444;
+    text-align: left;
+    white-space: nowrap;
+}
+.chat-form-unit {
+    font-size: 11px;
+    color: #555;
+    white-space: nowrap;
+}
+
 #chat-component-wrap .chat-input,
 #chat-component-wrap .input-container,
 #chat-component-wrap form {
@@ -570,3 +591,80 @@ input[type="checkbox"] {
 /* Raise Bootstrap modal above the expanded chatbot panel (z-index 9999) */
 .modal          { z-index: 10050 !important; }
 .modal-backdrop { z-index: 10049 !important; }
+
+/* Chat data mode radio — inline */
+#chat-mode { display: flex; gap: 12px; flex-wrap: wrap; }
+#chat-mode .form-check { margin-bottom: 0; }
+
+/* Mode settings section separator */
+.chat-mode-section { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 4px; }
+
+/* Chat input textarea — match rest of UI */
+#chat textarea,
+#chat input[type="text"],
+.dash-chat-input textarea {
+    font-size: 12px !important;
+}
+
+/* Stride switch "Auto" label and stride number input — match 11px panel text */
+.chat-form-row .form-check-label {
+    font-size: 11px !important;
+    color: #444;
+}
+#chat-stride-manual {
+    font-size: 11px !important;
+}
+
+/* Chat hint text (replaces html.Small) */
+.chat-hint {
+    font-size: 11px;
+    color: #888;
+    display: block;
+    margin-top: 3px;
+    line-height: 1.4;
+}
+
+/* Mode-specific settings box */
+.chat-mode-box {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 5px;
+    padding: 8px 10px;
+    margin-top: 2px;
+}
+
+/* Compact slider for chat settings energy threshold controls */
+.chat-slider {
+    padding: 5px 0 3px !important;
+}
+.chat-slider .rc-slider {
+    padding: 0 !important;
+}
+.chat-slider .rc-slider-rail,
+.chat-slider .rc-slider-track {
+    height: 2px !important;
+}
+.chat-slider .rc-slider-rail {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+}
+.chat-slider .rc-slider-track {
+    background-color: rgba(124, 152, 133, 0.7) !important;
+}
+.chat-slider .rc-slider-handle {
+    width: 10px !important;
+    height: 10px !important;
+    margin-top: -4px !important;
+    background-color: #7C9885 !important;
+    border-color: #7C9885 !important;
+    opacity: 1 !important;
+    box-shadow: none !important;
+}
+.chat-slider .rc-slider-handle:hover,
+.chat-slider .rc-slider-handle:active {
+    border-color: #A8C4A2 !important;
+    box-shadow: 0 0 0 3px rgba(124, 152, 133, 0.25) !important;
+}
+.chat-slider .rc-slider-tooltip-inner {
+    font-size: 11px !important;
+    padding: 2px 5px !important;
+    min-height: auto !important;
+}
