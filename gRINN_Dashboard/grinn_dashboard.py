@@ -2339,7 +2339,7 @@ def main():
                 raise RuntimeError('Missing API key: set GEMINI_API_KEY (or GOOGLE_API_KEY)')
             print(f"[DEBUG _build_llm] Using Gemini model: {chosen_model}, API key present: {bool(api_key)}", flush=True)
         try:
-            llm = LiteLLM(model=chosen_model, api_key=api_key)
+            llm = LiteLLM(model=chosen_model, api_key=api_key, timeout=120)
             print(f"[DEBUG _build_llm] LiteLLM instance created successfully", flush=True)
             return llm
         except Exception as llm_err:
@@ -2751,6 +2751,13 @@ def main():
         )
         return fig
 
+    def _downgrade_md_headers(text: str) -> str:
+        """Replace markdown headers with bold text to avoid disproportionate font sizes in chat."""
+        import re
+        if not isinstance(text, str):
+            return text
+        return re.sub(r'^#{1,6}\s+(.+)$', r'**\1**', text, flags=re.MULTILINE)
+
     def _sanitize_user_text(s: str) -> str:
         if not isinstance(s, str):
             s = str(s)
@@ -2922,7 +2929,7 @@ def main():
             # Use markdown table for better responsiveness in narrow chat panel
             md_table = _df_to_markdown(df)
             return ({'role': 'assistant', 'content': {'type': 'text', 'text': md_table}}, None)
-        return ({'role': 'assistant', 'content': {'type': 'text', 'text': _strip_ansi(val if val is not None else resp)}}, None)
+        return ({'role': 'assistant', 'content': {'type': 'text', 'text': _downgrade_md_headers(_strip_ansi(val if val is not None else resp))}}, None)
 
     # --- Chatbot callbacks ---
     @app.callback(
@@ -3512,18 +3519,30 @@ def main():
                         {'role': 'user', 'content': user_content},
                     ],
                     max_tokens=400,
+                    timeout=120,
                     **litellm_kwargs
                 )
                 explanation = response.choices[0].message.content
                 tokens_used = getattr(response.usage, 'total_tokens', 300) if hasattr(response, 'usage') else 300
-                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'**Biological interpretation:**\n\n{explanation}'}})
+                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'**Biological interpretation:**\n\n{_downgrade_md_headers(explanation)}'}})
                 new_used = used + tokens_used
                 token_data['used'] = new_used
                 display, disp_style = _build_token_display(new_used, limit, soft_palette)
                 return (messages, token_data, display, disp_style,
                         charts_store, no_update, no_update, {'display': 'none'})
             except Exception as e:
-                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'\u26a0\ufe0f Explanation failed: {str(e)}'}})
+                err_str = str(e).lower()
+                if any(k in err_str for k in ('504', 'gateway timeout', 'timed out', 'timeout', 'read timeout')):
+                    explain_err = '⚠️ Request timed out — the AI service took too long to respond. Please try again in a moment.'
+                elif any(k in err_str for k in ('429', 'rate limit', 'rate_limit', 'too many requests')):
+                    explain_err = '⚠️ Rate limit reached. Please wait a moment before sending another message.'
+                elif any(k in err_str for k in ('503', 'service unavailable')):
+                    explain_err = '⚠️ AI service temporarily unavailable (503). Please try again shortly.'
+                elif any(k in err_str for k in ('connectionerror', 'connection refused', 'network')):
+                    explain_err = '⚠️ Something went wrong while contacting the AI service. This is likely a temporary issue — please try again in a moment.'
+                else:
+                    explain_err = f'⚠️ Explanation failed: {str(e)}'
+                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': explain_err}})
                 return (messages, token_data, no_update, no_update,
                         charts_store, no_update, no_update, {'display': 'none'})
 
@@ -3667,9 +3686,28 @@ def main():
 
             explain_btn_style = {'display': 'inline-block', 'marginTop': '4px', 'fontSize': '11px'}
         except Exception as e:
-            err_str = str(e)
+            err_str = str(e).lower()
+            # Detect specific HTTP/network errors first, in priority order
+            if any(k in err_str for k in ('504', 'gateway timeout', 'timed out', 'timeout', 'read timeout')):
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
+                    '⚠️ Request timed out — the AI service took too long to respond. '
+                    'Please try again in a moment.'
+                }}
+            elif any(k in err_str for k in ('429', 'rate limit', 'rate_limit', 'too many requests')):
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
+                    '⚠️ Rate limit reached. Please wait a moment before sending another message.'
+                }}
+            elif any(k in err_str for k in ('503', 'service unavailable')):
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
+                    '⚠️ AI service temporarily unavailable (503). Please try again shortly.'
+                }}
+            elif any(k in err_str for k in ('connectionerror', 'connection refused', 'network')):
+                assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
+                    '⚠️ Something went wrong while contacting the AI service. '
+                    'This is likely a temporary issue — please try again in a moment.'
+                }}
             # Detect HTML error responses (typically from proxy/server failures)
-            if '<!doctype html>' in err_str.lower() or '<html' in err_str.lower():
+            elif '<!doctype html>' in err_str or '<html' in err_str:
                 if '500' in err_str or 'internal server error' in err_str.lower():
                     assistant_msg = {'role': 'assistant', 'content': {'type': 'text', 'text':
                         '⚠️ Server error: The AI service returned an internal error. This may be due to:\n'

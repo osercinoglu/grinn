@@ -497,6 +497,43 @@ input[type="checkbox"] {
     font-size: 12px !important;
 }
 
+/* Normalize heading sizes in chat messages to stay proportional to 12px body text */
+#chat-panel h1,
+#chat-component-wrap h1 {
+    font-size: 15px !important;
+    font-weight: 700;
+    margin: 6px 0 4px;
+    line-height: 1.3;
+}
+
+#chat-panel h2,
+#chat-component-wrap h2 {
+    font-size: 14px !important;
+    font-weight: 600;
+    margin: 5px 0 3px;
+    line-height: 1.3;
+}
+
+#chat-panel h3,
+#chat-component-wrap h3 {
+    font-size: 13px !important;
+    font-weight: 600;
+    margin: 4px 0 2px;
+    line-height: 1.3;
+}
+
+#chat-panel h4,
+#chat-panel h5,
+#chat-panel h6,
+#chat-component-wrap h4,
+#chat-component-wrap h5,
+#chat-component-wrap h6 {
+    font-size: 12px !important;
+    font-weight: 600;
+    margin: 3px 0 2px;
+    line-height: 1.3;
+}
+
 /* Violin plot container */
 .violin-plot-container {
     width: 100%;
