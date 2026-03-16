@@ -136,7 +136,8 @@ def main():
     
     # Setup data paths
     data_dir, display_name, pdb_path, total_csv, vdw_csv, elec_csv, avg_csv, traj_xtc = setup_data_paths(args.results_folder, args.job_id)
-    
+    _uniprot_cache: dict = {}   # accession → parsed context dict
+
     # Load and transform interaction energy data
     print("\n" + "="*60, flush=True)
     print("🍀 gRINN Dashboard Initialization", flush=True)
@@ -986,6 +987,7 @@ def main():
     chatbot_visible_store = dcc.Store(id='chatbot-visible', data=False, storage_type='session')
     chatbot_expanded_store = dcc.Store(id='chatbot-expanded', data=False, storage_type='session')
     cleanup_store = dcc.Store(id='chat-cleanup', storage_type='memory')
+    pmid_link_dummy = dcc.Store(id='_pmid-link-dummy', storage_type='memory')
 
     def _maybe_load_env_file() -> None:
         """Best-effort load of KEY=VALUE pairs from a local env file.
@@ -1271,6 +1273,7 @@ def main():
             chatbot_visible_store,
             chatbot_expanded_store,
             cleanup_store,
+            pmid_link_dummy,
             dcc.Interval(id='chat-cleanup-tick', interval=60_000, n_intervals=0),
         ]),
         html.Div([
@@ -2032,17 +2035,44 @@ def main():
                                             maxHeight=200
                                         ),
                                         dbc.Tooltip("Restrict analysis to specific residues. Leave empty for all.", target='chat-residue-filter', placement='right'),
-                                        html.Label('\U0001f52c PubMed search:', style={'fontSize': '11px', 'color': '#aaa', 'marginBottom': '2px', 'marginTop': '6px'}),
-                                        dbc.Checklist(
-                                            id='chat-search-literature',
-                                            options=[{'label': ' Search PubMed on query', 'value': 'pubmed'}],
-                                            value=[],
-                                            persistence=True,
-                                            persistence_type='session',
-                                            inputStyle={'marginRight': '4px'},
-                                            labelStyle={'fontSize': '11px', 'color': soft_palette['text']}
+                                        html.Label('\U0001f9ec Protein context:', style={'fontSize': '11px', 'color': '#aaa',
+                                                                                          'marginBottom': '2px', 'marginTop': '6px'}),
+                                        dcc.Textarea(
+                                            id='chat-user-context',
+                                            placeholder='Optional: describe your protein(s), mutation, conditions\u2026',
+                                            value='',
+                                            persistence=True, persistence_type='session',
+                                            style={'width': '100%', 'fontSize': '11px', 'minHeight': '52px',
+                                                   'resize': 'vertical', 'borderRadius': '4px',
+                                                   'border': '1px solid #ccc', 'padding': '4px'},
                                         ),
-                                        dbc.Tooltip("Append relevant PubMed citations to the AI response.", target='chat-search-literature', placement='right'),
+                                        dbc.Tooltip(
+                                            "Free-text description of the protein(s). Injected into the AI system prompt.",
+                                            target='chat-user-context', placement='right'
+                                        ),
+                                        html.Label('UniProt ID(s) by chain:', style={'fontSize': '11px', 'color': '#aaa',
+                                                                                      'marginBottom': '2px', 'marginTop': '6px'}),
+                                        html.Div([
+                                            html.Div([
+                                                html.Span(f'Chain {ch}:', style={'fontSize': '11px', 'width': '52px',
+                                                                                  'display': 'inline-block', 'color': '#666'}),
+                                                dcc.Input(
+                                                    id={'type': 'chat-uniprot-chain', 'chain': ch},
+                                                    type='text',
+                                                    placeholder='UniProt accession (optional)',
+                                                    value='',
+                                                    debounce=True,
+                                                    persistence=True, persistence_type='session',
+                                                    style={'fontSize': '11px', 'width': 'calc(100% - 58px)'},
+                                                ),
+                                            ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '3px'})
+                                            for ch in protein_chains
+                                        ], id='chat-uniprot-chain-inputs'),
+                                        dbc.Tooltip(
+                                            "UniProt accession for each chain (leave blank to skip). Used to fetch protein "
+                                            "description and curated PubMed references for that chain.",
+                                            target='chat-uniprot-chain-inputs', placement='right'
+                                        ),
                                     ]),
                                     html.Hr(style={'borderColor': 'rgba(255,255,255,0.1)', 'margin': '8px 0'}),
                                     # Mode radio
@@ -2192,6 +2222,7 @@ def main():
                             dcc.Store(id='chat-token-usage', data={'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}, storage_type='session'),
                             dcc.Store(id='chat-pairs-store', storage_type='memory', data={'total': 0}),
                             dcc.Store(id='chat-max-values-store', data=MAX_CHAT_VALUES),
+                            dcc.Store(id='explain-stage-store', storage_type='memory', data=None),
                             # Watchdog interval — ticks every 3 s to detect hung callbacks
                             dcc.Interval(id='chat-watchdog', interval=3000, disabled=False),
                             # Error banner shown when a request has been pending for too long
@@ -2239,6 +2270,11 @@ def main():
                                 color='success',
                                 outline=True,
                                 style={'display': 'none', 'marginTop': '4px', 'fontSize': '11px', 'flex': '0 0 auto'}
+                            ),
+                            html.Div(
+                                id='explain-progress-text',
+                                style={'display': 'none'},
+                                children=[]
                             ),
                             # Chart gallery: shows buttons for all generated charts
                             html.Div([
@@ -3505,6 +3541,57 @@ def main():
         prevent_initial_call=True,
     )
 
+    # Clientside callback: make PMID citations clickable hyperlinks
+    app.clientside_callback(
+        """
+        function(messages) {
+            if (!messages || !messages.length) return window.dash_clientside.no_update;
+            setTimeout(function() {
+                var container = document.getElementById('chat-component-wrap');
+                if (!container) return;
+                var pmidRe = /\\bPMID\\s*(\\d{4,8})\\b/g;
+                var walker = document.createTreeWalker(
+                    container,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: function(node) {
+                            var p = node.parentNode;
+                            while (p) {
+                                if (p.nodeName === 'A') return NodeFilter.FILTER_REJECT;
+                                p = p.parentNode;
+                            }
+                            pmidRe.lastIndex = 0;
+                            return pmidRe.test(node.nodeValue)
+                                ? NodeFilter.FILTER_ACCEPT
+                                : NodeFilter.FILTER_SKIP;
+                        }
+                    },
+                    false
+                );
+                var toReplace = [];
+                var node;
+                while ((node = walker.nextNode())) {
+                    toReplace.push(node);
+                }
+                toReplace.forEach(function(textNode) {
+                    var span = document.createElement('span');
+                    span.innerHTML = textNode.nodeValue.replace(
+                        /\\bPMID\\s*(\\d{4,8})\\b/g,
+                        '<a href="https://pubmed.ncbi.nlm.nih.gov/$1/" ' +
+                        'target="_blank" rel="noopener noreferrer" ' +
+                        'style="color:#4a9eda;text-decoration:underline;">PMID $1</a>'
+                    );
+                    textNode.parentNode.replaceChild(span, textNode);
+                });
+            }, 300);
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('_pmid-link-dummy', 'data'),
+        Input('chat', 'messages'),
+        prevent_initial_call=True,
+    )
+
     # Callback to populate chat-pairs-store
     @app.callback(
         Output('chat-pairs-store', 'data'),
@@ -3621,6 +3708,133 @@ def main():
         except Exception:
             return []
 
+    def _fetch_uniprot_context(accession: str) -> dict | None:
+        """Fetch UniProt flat file and extract fields useful for LLM context.
+        Returns dict with keys: name, gene, organism, function, pmids (list[str]),
+        features (list of dicts with type/start/end/note/pmids).
+        Returns None on any error.
+        """
+        import urllib.request, re as _re
+        acc = accession.strip().upper()
+        if acc in _uniprot_cache:
+            return _uniprot_cache[acc]
+        try:
+            url = f'https://rest.uniprot.org/uniprotkb/{acc}.txt'
+            with urllib.request.urlopen(url, timeout=8) as resp:
+                txt = resp.read().decode('utf-8', errors='replace')
+        except Exception:
+            return None
+
+        def _lines(code):
+            return ' '.join(
+                ln[5:].strip()
+                for ln in txt.splitlines()
+                if ln.startswith(code + '   ')
+            )
+
+        # Protein name — first DE RecName full
+        name_m = _re.search(r'RecName: Full=([^;{]+)', txt)
+        name = name_m.group(1).strip() if name_m else acc
+
+        # Gene name(s)
+        gene_m = _re.findall(r'Name=([^;{\s]+)', _lines('GN'))
+        gene = ', '.join(gene_m[:2]) if gene_m else ''
+
+        # Organism
+        os_line = _lines('OS').rstrip('.')
+        organism = os_line[:80] if os_line else ''
+
+        # Function comment — CC lines starting with "-!- FUNCTION:"
+        func_m = _re.search(r'-!- FUNCTION:\s*(.*?)(?=-!-|\Z)', txt, _re.DOTALL)
+        function = _re.sub(r'\s+', ' ', func_m.group(1)).strip()[:600] if func_m else ''
+
+        # --- FT feature parsing ---
+        HIGH_VALUE_FT = {'MUTAGEN', 'VARIANT', 'MOD_RES', 'ACT_SITE', 'BINDING', 'REGION'}
+        ft_lines = [ln for ln in txt.splitlines() if ln.startswith('FT ')]
+        ft_text = '\n'.join(ft_lines)
+
+        features = []
+        raw_blocks = _re.split(r'\nFT   (?=[A-Z])', ft_text)
+        for block in raw_blocks:
+            first_line = block.split('\n')[0]
+            parts = first_line.lstrip('FT').strip().split()
+            if not parts:
+                continue
+            ftype = parts[0]
+            if ftype not in HIGH_VALUE_FT:
+                continue
+            pos_str = parts[1] if len(parts) > 1 else ''
+            pos_m = _re.match(r'(\d+)(?:\.\.(\d+))?', pos_str)
+            start = int(pos_m.group(1)) if pos_m else None
+            end = int(pos_m.group(2)) if pos_m and pos_m.group(2) else start
+            block_joined = ' '.join(block.split('\n'))
+            note_m = _re.search(r'/note="(.*?)(?:"|$)', block_joined)
+            note = note_m.group(1).strip().rstrip('"') if note_m else ''
+            ft_pmids = _re.findall(r'PubMed:(\d+)', block_joined)
+            if start is not None:
+                features.append({
+                    'type': ftype,
+                    'start': start,
+                    'end': end,
+                    'note': note[:200],
+                    'pmids': ft_pmids,
+                })
+        PRIORITY = {'MUTAGEN': 0, 'VARIANT': 1, 'MOD_RES': 2,
+                    'ACT_SITE': 3, 'BINDING': 4, 'REGION': 5}
+        features.sort(key=lambda f: PRIORITY.get(f['type'], 9))
+        features = features[:20]
+
+        # Feature-linked PMIDs first, then general protein PMIDs
+        ft_pmids_all = []
+        for f in features:
+            ft_pmids_all.extend(f['pmids'])
+        seen = set()
+        combined_pmids = []
+        for p in ft_pmids_all + _re.findall(r'PubMed=(\d+)', txt):
+            if p not in seen:
+                seen.add(p)
+                combined_pmids.append(p)
+        pmids = combined_pmids[:10]
+        # ---------------------------------
+
+        result = {'name': name, 'gene': gene, 'organism': organism,
+                  'function': function, 'pmids': pmids, 'features': features}
+        _uniprot_cache[acc] = result
+        return result
+
+    def _fetch_pubmed_abstracts_by_pmid(pmids: list, max_results: int = 5) -> list:
+        """Fetch PubMed abstracts for specific PMIDs (already known from UniProt).
+        Returns same format as _search_pubmed: list of {pmid, title, abstract}."""
+        import urllib.request, urllib.parse, json, re as _re
+        if not pmids:
+            return []
+        try:
+            fetch_url = (
+                'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?'
+                + urllib.parse.urlencode({
+                    'db': 'pubmed',
+                    'id': ','.join(pmids[:max_results]),
+                    'retmode': 'xml', 'rettype': 'abstract'
+                })
+            )
+            with urllib.request.urlopen(fetch_url, timeout=7) as resp:
+                xml_data = resp.read().decode()
+            results = []
+            articles = _re.findall(r'<PubmedArticle>(.*?)</PubmedArticle>', xml_data, _re.DOTALL)
+            for i, art in enumerate(articles[:max_results]):
+                pmid_m   = _re.search(r'<PMID[^>]*>(\d+)</PMID>', art)
+                title_m  = _re.search(r'<ArticleTitle>(.*?)</ArticleTitle>', art, _re.DOTALL)
+                abst_m   = _re.search(r'<AbstractText[^>]*>(.*?)</AbstractText>', art, _re.DOTALL)
+                pmid_val  = pmid_m.group(1) if pmid_m else pmids[i]
+                title_val = _re.sub(r'<[^>]+>', '', title_m.group(1)) if title_m else 'No title'
+                abst_val  = _re.sub(r'<[^>]+>', '', abst_m.group(1)) if abst_m else 'No abstract'
+                results.append({'pmid': pmid_val,
+                                'title': title_val.strip(),
+                                'abstract': abst_val.strip()[:500]})
+            return results
+        except Exception:
+            return []
+
     # Helper to extract token usage from PandasAI response
     def _extract_token_usage(resp) -> int:
         """Try to extract token usage from response. Returns 0 if not available."""
@@ -3670,6 +3884,9 @@ def main():
         Output('chat-df-gallery', 'children'),
         Output('chat-df-gallery-container', 'style'),
         Output('explain-bio-btn', 'style'),
+        Output('explain-stage-store', 'data'),
+        Output('explain-progress-text', 'children'),
+        Output('explain-progress-text', 'style'),
         Input('chat', 'new_message'),
         State('chat', 'messages'),
         State('chat-session-id', 'data'),
@@ -3684,19 +3901,22 @@ def main():
         State('chat-mode', 'value'),
         State('chat-energy-threshold', 'value'),
         State('chat-snapshot-frame', 'value'),
-        State('chat-search-literature', 'value'),
         State('chat-stride-mode', 'value'),
         State('chat-stride-manual', 'value'),
         State('chat-pairs-store', 'data'),
         State('chat-energy-threshold-snapshot', 'value'),
+        State('chat-user-context', 'value'),
+        State({'type': 'chat-uniprot-chain', 'chain': ALL}, 'value'),
+        State({'type': 'chat-uniprot-chain', 'chain': ALL}, 'id'),
         prevent_initial_call=True
     )
     def _on_chat_msg(new_message, messages, sid, selected_model, selected_dfs, token_data,
                      residue_filter, chat_frame_min, chat_frame_max, charts_store, dfs_store,
-                     chat_mode, energy_threshold, snapshot_frame, search_literature,
-                     stride_mode_auto, stride_manual, pairs_store, energy_threshold_snapshot):
+                     chat_mode, energy_threshold, snapshot_frame,
+                     stride_mode_auto, stride_manual, pairs_store, energy_threshold_snapshot,
+                     user_context, uniprot_chain_values, uniprot_chain_ids):
         if not new_message:
-            return (no_update,) * 11
+            return (no_update,) * 14
 
         messages = list(messages or [])
         charts_store = list(charts_store or [])
@@ -3705,13 +3925,43 @@ def main():
         used = token_data.get('used', 0)
         limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
 
+        # Build chain → accession dict (only non-blank entries)
+        chain_to_uniprot = {
+            entry['chain']: val.strip().upper()
+            for entry, val in zip(uniprot_chain_ids or [], uniprot_chain_values or [])
+            if val and val.strip()
+        }
+
+        # --- Protein context resolution ---
+        _uniprot_ctx_by_chain = {}   # chain_id → context dict
+
+        for chain_id, acc in (chain_to_uniprot or {}).items():
+            ctx = _fetch_uniprot_context(acc)
+            if ctx:
+                _uniprot_ctx_by_chain[chain_id] = ctx
+
+        # Build system-prompt protein block
+        _protein_block = ''
+        if user_context and user_context.strip():
+            _protein_block += f'User-provided context: {user_context.strip()}\n'
+        for chain_id, ctx in _uniprot_ctx_by_chain.items():
+            _protein_block += (
+                f"Chain {chain_id}: {ctx['name']}"
+                + (f" (gene: {ctx['gene']})" if ctx['gene'] else '')
+                + (f", {ctx['organism']}" if ctx['organism'] else '')
+                + '.\n'
+            )
+            if ctx['function']:
+                _protein_block += f"  Function: {ctx['function']}\n"
+        # ---------------------------------
+
         EXPLAIN_SENTINEL = '__explain_biologically__'
         is_explain = (
             isinstance(new_message, dict) and
             new_message.get('content', '') == EXPLAIN_SENTINEL
         )
 
-        # --- Explain biologically branch ---
+        # --- Explain biologically branch — Stage 1 (fast, < 1 s) ---
         if is_explain:
             last_user = ''
             last_assistant = ''
@@ -3727,125 +3977,59 @@ def main():
                 if last_user and last_assistant:
                     break
             if not last_assistant:
-                return (no_update,) * 11
+                return (no_update,) * 14
+
             CHART_PLACEHOLDER = '📊 Chart generated!'
-            is_chart_response = last_assistant.startswith(CHART_PLACEHOLDER)
-            chart_uri = (charts_store or [None])[-1]
             DF_PLACEHOLDER = '📋 Table returned'
+            is_chart_response = last_assistant.startswith(CHART_PLACEHOLDER)
             is_df_response = last_assistant.startswith(DF_PLACEHOLDER)
-            df_entry = (dfs_store or [None])[-1]
-            try:
-                import litellm
-                chosen_model = _resolve_model_selection(selected_model)
-                m = (chosen_model or '').strip().lower()
-                is_claude = ('claude' in m) or m.startswith('anthropic/')
-                if is_claude:
-                    api_key = os.getenv('ANTHROPIC_API_KEY')
-                    if not chosen_model.startswith('anthropic/'):
-                        chosen_model = f'anthropic/{chosen_model}'
-                    litellm_kwargs = {'api_key': api_key}
-                else:
-                    api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
-                    litellm_kwargs = {'api_key': api_key}
-                system_prompt = (
-                    "You are an expert biophysicist and structural biologist specializing in protein-protein and protein-ligand interactions. "
-                    "The user is analyzing molecular dynamics simulation data using gRINN (get Residue Interaction Energies and Networks). "
-                    "Provide a concise, scientifically grounded biological interpretation of the data result shown. "
-                    "Discuss what the interaction energies (in kcal/mol) suggest about the protein's structure/function, "
-                    "mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces), "
-                    "and note any caveats. Be specific and cite units. Keep your response under 200 words."
-                )
-                if is_chart_response and chart_uri:
-                    b64_data = chart_uri.split(',', 1)[1] if ',' in chart_uri else chart_uri
-                    user_content = [
-                        {
-                            'type': 'text',
-                            'text': (
-                                f"Original question: {last_user}\n\n"
-                                "A chart was generated from molecular dynamics data. "
-                                "Please provide a biological interpretation of what it shows."
-                            )
-                        },
-                        {
-                            'type': 'image_url',
-                            'image_url': {'url': f'data:image/png;base64,{b64_data}'}
-                        }
-                    ]
-                elif is_chart_response:
-                    user_content = (
-                        f"Original question: {last_user}\n\n"
-                        "A chart was generated from molecular dynamics data, but the image is unavailable. "
-                        "Please provide a general biological interpretation of what such a chart might show."
-                    )
-                elif is_df_response and df_entry:
-                    df_text = pd.DataFrame(df_entry['data']).to_string(index=False, max_rows=50)
-                    user_content = (
-                        f"Original question: {last_user}\n\n"
-                        f"Data result (table):\n{df_text}\n\n"
-                        "Please provide a biological interpretation of this result."
+
+            # Determine result type and summary (no full rows, no image bytes here)
+            if is_chart_response:
+                result_type = 'chart'
+                chart_idx = len(charts_store) - 1 if charts_store else None
+                result_summary = 'Chart generated from molecular dynamics data.'
+            elif is_df_response:
+                result_type = 'dataframe'
+                chart_idx = None
+                df_entry = (dfs_store or [None])[-1]
+                if df_entry:
+                    cols = df_entry.get('columns', [])
+                    col_names = [c.get('name', '') if isinstance(c, dict) else str(c) for c in cols]
+                    n_rows = len(df_entry.get('data', []))
+                    top3 = df_entry.get('data', [])[:3]
+                    result_summary = (
+                        f"Table: {n_rows} rows × {len(col_names)} cols, "
+                        f"cols: {', '.join(col_names[:8])}. "
+                        f"First rows: {str(top3)[:200]}"
                     )
                 else:
-                    user_content = (
-                        f"Original question: {last_user}\n\n"
-                        f"Data result:\n{last_assistant}\n\n"
-                        "Please provide a biological interpretation of this result."
-                    )
-                # Fetch PubMed before LLM call so papers can be cited in the response
-                pubmed_results = _search_pubmed(
-                    f"{last_user} protein interaction energy MD simulation", max_results=3
-                )
-                if pubmed_results:
-                    lit_context = '\n\n**Relevant literature (please reference these papers in your answer where appropriate):**\n'
-                    for art in pubmed_results:
-                        lit_context += (
-                            f"\n- PMID {art['pmid']}: {art['title']}\n"
-                            f"  Abstract: {art['abstract'][:400]}"
-                        )
-                    if isinstance(user_content, list):
-                        user_content.append({'type': 'text', 'text': lit_context})
-                    else:
-                        user_content += lit_context
-                response = litellm.completion(
-                    model=chosen_model,
-                    messages=[
-                        {'role': 'system', 'content': system_prompt},
-                        {'role': 'user', 'content': user_content},
-                    ],
-                    max_tokens=400,
-                    timeout=120,
-                    **litellm_kwargs
-                )
-                explanation = response.choices[0].message.content
-                tokens_used = getattr(response.usage, 'total_tokens', 300) if hasattr(response, 'usage') else 300
-                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'**Biological interpretation:**\n\n{_downgrade_md_headers(explanation)}'}})
-                # Compact citation footer (titles + PMIDs only — abstracts were fed to the LLM above)
-                if pubmed_results:
-                    footer_lines = ['**📚 References:**']
-                    for art in pubmed_results:
-                        footer_lines.append(f"- PMID {art['pmid']}: {art['title']}")
-                    messages.append({'role': 'assistant', 'content': {
-                        'type': 'text', 'text': '\n'.join(footer_lines)
-                    }})
-                new_used = used + tokens_used
-                token_data['used'] = new_used
-                display, disp_style = _build_token_display(new_used, limit, soft_palette)
-                return (messages, token_data, display, disp_style,
-                        charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'})
-            except Exception as e:
-                err_str = str(e).lower()
-                if any(k in err_str for k in ('504', 'gateway timeout', 'timed out', 'timeout', 'read timeout')):
-                    explain_err = '⚠️ Request timed out — the AI service took too long to respond. Please try again in a moment.'
-                elif any(k in err_str for k in ('429', 'rate limit', 'rate_limit', 'too many requests')):
-                    explain_err = '⚠️ Rate limit reached. Please wait a moment before sending another message.'
-                elif any(k in err_str for k in ('503', 'service unavailable')):
-                    explain_err = '⚠️ AI service temporarily unavailable (503). Please try again shortly.'
-                elif any(k in err_str for k in ('connectionerror', 'connection refused', 'network')):
-                    explain_err = '⚠️ Something went wrong while contacting the AI service. This is likely a temporary issue — please try again in a moment.'
-                else:
-                    explain_err = f'⚠️ Explanation failed: {str(e)}'
-                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': explain_err}})
-                return (messages, token_data, no_update, no_update,
-                        charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'})
+                    result_summary = 'Table returned (no data available).'
+            else:
+                result_type = 'text'
+                chart_idx = None
+                result_summary = last_assistant[:500]
+
+            # Append user bubble only (no status bubble — progress shown via explain-progress-text div)
+            messages.append({'role': 'user', 'content': '\u2728 Explain biologically'})
+
+            stage_payload = {
+                'last_user': last_user,
+                'result_type': result_type,
+                'result_summary': result_summary,
+                'chart_idx': chart_idx,
+            }
+            progress_children = [
+                dbc.Spinner(size='sm', color='secondary',
+                            spinner_style={'width': '12px', 'height': '12px'}),
+                html.Span('\U0001f52c Searching literature and generating interpretation\u2026',
+                          style={'fontSize': '11px', 'color': '#6c757d'})
+            ]
+            progress_style = {'display': 'flex', 'alignItems': 'center', 'gap': '6px',
+                              'marginTop': '4px'}
+            return (messages, token_data, no_update, no_update,
+                    charts_store, no_update, no_update, dfs_store, no_update, no_update,
+                    {'display': 'none'}, stage_payload, progress_children, progress_style)
 
         try:
             # Normalize filter values
@@ -3864,7 +4048,8 @@ def main():
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '⚠️ Token budget exhausted for this session. Please refresh the page to start a new session.'}})
                 style = {'fontSize': '11px', 'color': '#dc3545', 'fontFamily': 'monospace'}
                 display = f"Tokens: {used:,} / {limit:,} (EXCEEDED)"
-                return messages, token_data, display, style, charts_store, no_update, no_update, dfs_store, no_update, no_update, {'display': 'none'}
+                return (messages, token_data, display, style, charts_store, no_update, no_update,
+                        dfs_store, no_update, no_update, {'display': 'none'}, None, [], {'display': 'none'})
 
             # normalize user message
             if isinstance(new_message, str):
@@ -3904,7 +4089,7 @@ def main():
                     err = (f"\u26a0\ufe0f Manual stride would send ~{total_values:,} values "
                            f"(limit: {MAX_CHAT_VALUES:,}). Increase stride or switch to Auto mode.")
                     new_messages = list(messages or []) + [{'role': 'assistant', 'content': err}]
-                    return new_messages, token_data, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+                    return new_messages, token_data, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
             # create/reuse session - include selected_dfs AND filter settings in session key
             chosen_model = _resolve_model_selection(selected_model)
@@ -3915,20 +4100,9 @@ def main():
             skey = f"{sid}|{pen_folder}|{dfs_sig}|{filter_sig}|{mode_sig}|{chosen_model}"
 
             tokens_used_this_query = 0
-            # Fetch PubMed before the agent call so abstracts can be included in the prompt
-            _pubmed_results_regular = []
-            if search_literature and 'pubmed' in (search_literature or []):
-                _pubmed_results_regular = _search_pubmed(
-                    f"{user_text} protein interaction energy MD simulation", max_results=3
-                )
-                if _pubmed_results_regular:
-                    lit_context = '\n\nRelevant literature for reference:\n'
-                    for art in _pubmed_results_regular:
-                        lit_context += (
-                            f"\n- PMID {art['pmid']}: {art['title']}\n"
-                            f"  Abstract: {art['abstract'][:400]}"
-                        )
-                    user_text = user_text + lit_context
+            # Inject protein context as prefix to user_text
+            if _protein_block:
+                user_text = f'[Protein context: {_protein_block.strip()}]\n\n{user_text}'
             ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                 selected_df_keys, model=chosen_model,
                 residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
@@ -4013,13 +4187,6 @@ def main():
                 charts_store.append(chart_fig)
             if df_result is not None:
                 dfs_store.append(df_result)
-
-            # Compact citation footer for PubMed results (abstracts were already fed to the LLM above)
-            if _pubmed_results_regular:
-                footer_lines = ['**📚 References:**']
-                for art in _pubmed_results_regular:
-                    footer_lines.append(f"- PMID {art['pmid']}: {art['title']}")
-                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '\n'.join(footer_lines)}})
 
             explain_btn_style = {'display': 'inline-block', 'marginTop': '4px', 'fontSize': '11px'}
         except Exception as e:
@@ -4124,7 +4291,269 @@ def main():
         display, style = _build_token_display(new_used, limit, soft_palette)
 
         return (messages, token_data, display, style, charts_store, gallery_buttons, gallery_style,
-                dfs_store, df_gallery_buttons, df_gallery_style, explain_btn_style)
+                dfs_store, df_gallery_buttons, df_gallery_style, explain_btn_style, None,
+                [], {'display': 'none'})
+
+    def _build_full_protein_block(uniprot_ctx_by_chain, user_context=None):
+        """Build a full protein context block with function + ALL FT annotations (uncapped)."""
+        block = ''
+        if user_context and user_context.strip():
+            block += f'User-provided context: {user_context.strip()}\n'
+        for chain_id, ctx in uniprot_ctx_by_chain.items():
+            block += (
+                f"Chain {chain_id}: {ctx['name']}"
+                + (f" (gene: {ctx['gene']})" if ctx['gene'] else '')
+                + (f", {ctx['organism']}" if ctx['organism'] else '')
+                + '.\n'
+            )
+            if ctx['function']:
+                block += f"  Function: {ctx['function']}\n"
+            for f in ctx.get('features', []):
+                pos = f['start'] if f['start'] == f['end'] else f"{f['start']}-{f['end']}"
+                pmid_str = f" (PMID:{','.join(f['pmids'][:2])})" if f['pmids'] else ''
+                note_str = f": {f['note']}" if f['note'] else ''
+                block += f"    Pos {pos} [{f['type']}]{note_str}{pmid_str}\n"
+        return block
+
+    @app.callback(
+        Output('chat', 'messages', allow_duplicate=True),
+        Output('chat-token-usage', 'data', allow_duplicate=True),
+        Output('token-usage-display', 'children', allow_duplicate=True),
+        Output('token-usage-display', 'style', allow_duplicate=True),
+        Output('explain-stage-store', 'data', allow_duplicate=True),
+        Output('explain-bio-btn', 'style', allow_duplicate=True),
+        Output('explain-progress-text', 'children', allow_duplicate=True),
+        Output('explain-progress-text', 'style', allow_duplicate=True),
+        Input('explain-stage-store', 'data'),
+        State('chat', 'messages'),
+        State('llm-model', 'value'),
+        State('chat-charts-store', 'data'),
+        State({'type': 'chat-uniprot-chain', 'chain': ALL}, 'value'),
+        State({'type': 'chat-uniprot-chain', 'chain': ALL}, 'id'),
+        State('chat-user-context', 'value'),
+        State('chat-token-usage', 'data'),
+        prevent_initial_call=True
+    )
+    def _on_explain_stage2(stage_payload, messages, selected_model, charts_store,
+                           uniprot_chain_values, uniprot_chain_ids, user_context, token_data):
+        if not stage_payload:
+            return (no_update,) * 8
+
+        messages = list(messages or [])
+        token_data = dict(token_data) if token_data else {'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}
+        used = token_data.get('used', 0)
+        limit = token_data.get('limit', PANDASAI_TOKEN_LIMIT)
+
+        # Step A — Re-resolve UniProt context (from cache, instant)
+        chain_to_uniprot = {
+            entry['chain']: val.strip().upper()
+            for entry, val in zip(uniprot_chain_ids or [], uniprot_chain_values or [])
+            if val and val.strip()
+        }
+        _uniprot_ctx_by_chain = {}
+        for chain_id, acc in chain_to_uniprot.items():
+            ctx = _fetch_uniprot_context(acc)
+            if ctx:
+                _uniprot_ctx_by_chain[chain_id] = ctx
+
+        # Step A2 — Collect UniProt-curated PMIDs and fetch their abstracts
+        uniprot_pmids = []
+        seen_uniprot = set()
+        for ctx in _uniprot_ctx_by_chain.values():
+            for pmid in ctx.get('pmids', []):
+                if pmid not in seen_uniprot:
+                    seen_uniprot.add(pmid)
+                    uniprot_pmids.append(pmid)
+        uniprot_papers = _fetch_pubmed_abstracts_by_pmid(uniprot_pmids, max_results=8) if uniprot_pmids else []
+
+        # Step B — Build full protein context block (function + ALL FT features, uncapped)
+        full_protein_block = _build_full_protein_block(_uniprot_ctx_by_chain, user_context)
+
+        last_user = stage_payload.get('last_user', '')
+        result_type = stage_payload.get('result_type', 'text')
+        result_summary = stage_payload.get('result_summary', '')
+        chart_idx = stage_payload.get('chart_idx')
+
+        try:
+            import litellm
+            chosen_model = _resolve_model_selection(selected_model)
+            m = (chosen_model or '').strip().lower()
+            is_claude = ('claude' in m) or m.startswith('anthropic/')
+            if is_claude:
+                api_key = os.getenv('ANTHROPIC_API_KEY')
+                if not chosen_model.startswith('anthropic/'):
+                    chosen_model = f'anthropic/{chosen_model}'
+                litellm_kwargs = {'api_key': api_key}
+            else:
+                api_key = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+                litellm_kwargs = {'api_key': api_key}
+
+            total_tokens_used = 0
+
+            # Step C — LLM call to generate targeted PubMed search keywords
+            # Only worth calling the LLM when we have protein context; without it the
+            # generated keywords are generic and pull in irrelevant papers.
+            import re as _re_kw
+            if full_protein_block:
+                kw_system = (
+                    "You are a scientific literature search assistant. Given a protein description and "
+                    "a research question about molecular dynamics simulation results, output 4–6 specific and "
+                    "targeted PubMed search terms (as a plain comma-separated list, no explanation). "
+                    "Pay special attention to any user-provided context (e.g. mutation, disease, condition). "
+                    "Focus on the protein name, relevant mutations/variants, binding sites, and the biological "
+                    "process implied by the question. Be as specific as possible."
+                )
+                kw_response = litellm.completion(
+                    model=chosen_model,
+                    messages=[
+                        {'role': 'system', 'content': kw_system},
+                        {'role': 'user', 'content': f"{full_protein_block}\n\nResearch question: {last_user}\nResult summary: {result_summary}"},
+                    ],
+                    max_tokens=120,
+                    timeout=30,
+                    **litellm_kwargs
+                )
+                kw_text = kw_response.choices[0].message.content or ''
+                total_tokens_used += getattr(kw_response.usage, 'total_tokens', 50) if hasattr(kw_response, 'usage') else 50
+                keywords = [k.strip() for k in _re_kw.split(r'[,\n]+', kw_text) if k.strip()][:6]
+                if not keywords:
+                    keywords = ['protein residue interaction energy molecular dynamics',
+                                'protein structure stability electrostatics']
+            else:
+                # No protein context — skip keyword LLM and use safe domain-specific fallback.
+                # A generic query will return random structural biology papers; better to search
+                # for broadly relevant MD/interaction energy literature.
+                keywords = [
+                    'residue interaction energy molecular dynamics simulation',
+                    'protein electrostatic interactions stability',
+                    'protein pairwise interaction network',
+                ]
+
+            # Step D — Papers: UniProt-curated first, then keyword-searched to fill cap
+            papers = list(uniprot_papers)
+            seen_pmids = {art['pmid'] for art in papers}
+            for kw in keywords[:3]:
+                if len(papers) >= 10:
+                    break
+                for r in _search_pubmed(kw, max_results=4):
+                    if r['pmid'] not in seen_pmids:
+                        seen_pmids.add(r['pmid'])
+                        papers.append(r)
+                    if len(papers) >= 10:
+                        break
+
+            # Step E — Build interpretation prompt
+            system_prompt = (
+                "You are an expert biophysicist and structural biologist specializing in protein-protein "
+                "and protein-ligand interactions. "
+                "The user is analyzing molecular dynamics simulation data using gRINN (get Residue Interaction "
+                "Energies and Networks). "
+                "Provide a concise, scientifically grounded biological interpretation of the data result shown. "
+                "Discuss what the interaction energies (in kcal/mol) suggest about the protein's structure/function, "
+                "mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces), "
+                "and note any caveats. Be specific and cite units. "
+                "Reference specific UniProt annotations (mutations, active sites, binding regions) where relevant. "
+                "Cite papers by PMID where appropriate. Keep response under 450 words."
+            )
+            if full_protein_block:
+                system_prompt += f'\n\nProtein being analyzed:\n{full_protein_block}'
+
+            # Build user content block based on result type
+            if result_type == 'chart':
+                chart_uri = (charts_store or [])[chart_idx] if chart_idx is not None and charts_store and chart_idx < len(charts_store) else None
+                if chart_uri:
+                    b64_data = chart_uri.split(',', 1)[1] if ',' in chart_uri else chart_uri
+                    user_content = [
+                        {
+                            'type': 'text',
+                            'text': (
+                                f"Original question: {last_user}\n\n"
+                                "A chart was generated from molecular dynamics data. "
+                                "Please provide a biological interpretation of what it shows."
+                            )
+                        },
+                        {
+                            'type': 'image_url',
+                            'image_url': {'url': f'data:image/png;base64,{b64_data}'}
+                        }
+                    ]
+                else:
+                    user_content = (
+                        f"Original question: {last_user}\n\n"
+                        "A chart was generated from molecular dynamics data, but the image is unavailable. "
+                        "Please provide a general biological interpretation of what such a chart might show."
+                    )
+            elif result_type == 'dataframe':
+                user_content = (
+                    f"Original question: {last_user}\n\n"
+                    f"Data result summary: {result_summary}\n\n"
+                    "Please provide a biological interpretation of this result."
+                )
+            else:
+                user_content = (
+                    f"Original question: {last_user}\n\n"
+                    f"Data result:\n{result_summary}\n\n"
+                    "Please provide a biological interpretation of this result."
+                )
+
+            # Append literature context
+            if papers:
+                lit_context = '\n\nRelevant literature (please reference these papers in your answer where appropriate):\n'
+                for art in papers:
+                    lit_context += (
+                        f"\n- PMID {art['pmid']}: {art['title']}\n"
+                        f"  Abstract: {art['abstract'][:400]}"
+                    )
+                if isinstance(user_content, list):
+                    user_content.append({'type': 'text', 'text': lit_context})
+                else:
+                    user_content += lit_context
+
+            # Step F — Final LLM call
+            response = litellm.completion(
+                model=chosen_model,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_content},
+                ],
+                max_tokens=900,
+                timeout=120,
+                **litellm_kwargs
+            )
+            explanation = response.choices[0].message.content
+            total_tokens_used += getattr(response.usage, 'total_tokens', 300) if hasattr(response, 'usage') else 300
+
+            # Step G — Append interpretation + references as a single message
+            interp_text = explanation or ''
+            if not interp_text.strip():
+                interp_text = '(No interpretation was generated.)'
+            combined_text = f'**Biological interpretation:**\n\n{_downgrade_md_headers(interp_text)}'
+            if papers:
+                footer_lines = ['\n\n---\n**\U0001f4da References:**']
+                for art in papers:
+                    footer_lines.append(f"- PMID {art['pmid']}: {art['title']}")
+                combined_text += '\n'.join(footer_lines)
+            messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': combined_text}})
+
+            new_used = used + total_tokens_used
+            token_data['used'] = new_used
+            display, disp_style = _build_token_display(new_used, limit, soft_palette)
+            return messages, token_data, display, disp_style, None, {'display': 'none'}, [], {'display': 'none'}
+
+        except Exception as e:
+            err_str = str(e).lower()
+            if any(k in err_str for k in ('504', 'gateway timeout', 'timed out', 'timeout', 'read timeout')):
+                explain_err = '⚠️ Request timed out — the AI service took too long to respond. Please try again in a moment.'
+            elif any(k in err_str for k in ('429', 'rate limit', 'rate_limit', 'too many requests')):
+                explain_err = '⚠️ Rate limit reached. Please wait a moment before sending another message.'
+            elif any(k in err_str for k in ('503', 'service unavailable')):
+                explain_err = '⚠️ AI service temporarily unavailable (503). Please try again shortly.'
+            elif any(k in err_str for k in ('connectionerror', 'connection refused', 'network')):
+                explain_err = '⚠️ Something went wrong while contacting the AI service. This is likely a temporary issue — please try again in a moment.'
+            else:
+                explain_err = f'⚠️ Explanation failed: {str(e)}'
+            messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': explain_err}})
+            return messages, token_data, no_update, no_update, None, {'display': 'none'}, [], {'display': 'none'}
 
     # Callback to open chart modal when a chart button is clicked
     @app.callback(
