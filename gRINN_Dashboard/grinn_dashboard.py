@@ -3731,6 +3731,9 @@ def main():
             CHART_PLACEHOLDER = '📊 Chart generated!'
             is_chart_response = last_assistant.startswith(CHART_PLACEHOLDER)
             chart_uri = (charts_store or [None])[-1]
+            DF_PLACEHOLDER = '📋 Table returned'
+            is_df_response = last_assistant.startswith(DF_PLACEHOLDER)
+            df_entry = (dfs_store or [None])[-1]
             try:
                 import litellm
                 chosen_model = _resolve_model_selection(selected_model)
@@ -3774,12 +3777,34 @@ def main():
                         "A chart was generated from molecular dynamics data, but the image is unavailable. "
                         "Please provide a general biological interpretation of what such a chart might show."
                     )
+                elif is_df_response and df_entry:
+                    df_text = pd.DataFrame(df_entry['data']).to_string(index=False, max_rows=50)
+                    user_content = (
+                        f"Original question: {last_user}\n\n"
+                        f"Data result (table):\n{df_text}\n\n"
+                        "Please provide a biological interpretation of this result."
+                    )
                 else:
                     user_content = (
                         f"Original question: {last_user}\n\n"
                         f"Data result:\n{last_assistant}\n\n"
                         "Please provide a biological interpretation of this result."
                     )
+                # Fetch PubMed before LLM call so papers can be cited in the response
+                pubmed_results = _search_pubmed(
+                    f"{last_user} protein interaction energy MD simulation", max_results=3
+                )
+                if pubmed_results:
+                    lit_context = '\n\n**Relevant literature (please reference these papers in your answer where appropriate):**\n'
+                    for art in pubmed_results:
+                        lit_context += (
+                            f"\n- PMID {art['pmid']}: {art['title']}\n"
+                            f"  Abstract: {art['abstract'][:400]}"
+                        )
+                    if isinstance(user_content, list):
+                        user_content.append({'type': 'text', 'text': lit_context})
+                    else:
+                        user_content += lit_context
                 response = litellm.completion(
                     model=chosen_model,
                     messages=[
@@ -3793,6 +3818,14 @@ def main():
                 explanation = response.choices[0].message.content
                 tokens_used = getattr(response.usage, 'total_tokens', 300) if hasattr(response, 'usage') else 300
                 messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': f'**Biological interpretation:**\n\n{_downgrade_md_headers(explanation)}'}})
+                # Compact citation footer (titles + PMIDs only — abstracts were fed to the LLM above)
+                if pubmed_results:
+                    footer_lines = ['**📚 References:**']
+                    for art in pubmed_results:
+                        footer_lines.append(f"- PMID {art['pmid']}: {art['title']}")
+                    messages.append({'role': 'assistant', 'content': {
+                        'type': 'text', 'text': '\n'.join(footer_lines)
+                    }})
                 new_used = used + tokens_used
                 token_data['used'] = new_used
                 display, disp_style = _build_token_display(new_used, limit, soft_palette)
@@ -3882,6 +3915,20 @@ def main():
             skey = f"{sid}|{pen_folder}|{dfs_sig}|{filter_sig}|{mode_sig}|{chosen_model}"
 
             tokens_used_this_query = 0
+            # Fetch PubMed before the agent call so abstracts can be included in the prompt
+            _pubmed_results_regular = []
+            if search_literature and 'pubmed' in (search_literature or []):
+                _pubmed_results_regular = _search_pubmed(
+                    f"{user_text} protein interaction energy MD simulation", max_results=3
+                )
+                if _pubmed_results_regular:
+                    lit_context = '\n\nRelevant literature for reference:\n'
+                    for art in _pubmed_results_regular:
+                        lit_context += (
+                            f"\n- PMID {art['pmid']}: {art['title']}\n"
+                            f"  Abstract: {art['abstract'][:400]}"
+                        )
+                    user_text = user_text + lit_context
             ctxobj = registry.get_or_create(skey, lambda: _build_session_context_for_dfs(
                 selected_df_keys, model=chosen_model,
                 residue_filter=residue_filter, frame_min_val=fmin, frame_max_val=fmax,
@@ -3967,18 +4014,12 @@ def main():
             if df_result is not None:
                 dfs_store.append(df_result)
 
-            # PubMed literature search (if enabled)
-            if search_literature and 'pubmed' in (search_literature or []):
-                try:
-                    pubmed_results = _search_pubmed(f"{user_text} protein interaction energy MD simulation", max_results=3)
-                    if pubmed_results:
-                        lit_lines = ['**\U0001f4da Related literature:**\n']
-                        for art in pubmed_results:
-                            lit_lines.append(f"- **PMID {art['pmid']}**: {art['title']}\n  _{art['abstract'][:300]}..._")
-                        lit_text = '\n'.join(lit_lines)
-                        messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': lit_text}})
-                except Exception:
-                    pass  # Silently ignore PubMed errors
+            # Compact citation footer for PubMed results (abstracts were already fed to the LLM above)
+            if _pubmed_results_regular:
+                footer_lines = ['**📚 References:**']
+                for art in _pubmed_results_regular:
+                    footer_lines.append(f"- PMID {art['pmid']}: {art['title']}")
+                messages.append({'role': 'assistant', 'content': {'type': 'text', 'text': '\n'.join(footer_lines)}})
 
             explain_btn_style = {'display': 'inline-block', 'marginTop': '4px', 'fontSize': '11px'}
         except Exception as e:
