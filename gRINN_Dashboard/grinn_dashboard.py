@@ -1875,9 +1875,6 @@ def main():
         # Middle Panel: 3D Viewer
         dbc.Col([
             dbc.Card([
-                dbc.CardHeader([
-                    html.H3("🧬 3D Viewer", className="text-center mb-0", style={'color': soft_palette['primary']})
-                ]),
                 dbc.CardBody([
                     # Tabbed selector for 3D views
                     dcc.Tabs(id='viewer-tabs', value='tab-structure-viewer', style={'fontSize': '12px', 'height': '32px'}, children=[
