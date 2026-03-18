@@ -1760,7 +1760,7 @@ def main():
                                                     value=first_res_list[0] if first_res_list else None,
                                                     placeholder="Select source residue",
                                                     searchable=True,
-                                                    style={'width': '100%'}
+                                                    style={'width': '100%', 'fontSize': '12px'}
                                                 )
                                             ]),
                                             html.Div(style={'flex': '1'}, children=[
@@ -1777,7 +1777,7 @@ def main():
                                                     value=first_res_list[min(10, len(first_res_list)-1)] if len(first_res_list) > 1 else (first_res_list[0] if first_res_list else None),
                                                     placeholder="Select target residue",
                                                     searchable=True,
-                                                    style={'width': '100%'}
+                                                    style={'width': '100%', 'fontSize': '12px'}
                                                 )
                                             ]),
                                             html.Div(children=[
@@ -2258,6 +2258,7 @@ def main():
                                     user_bubble_style={
                                         'fontSize': '12px'
                                     },
+                                    input_text_style={'fontSize': '12px'},
                                 ),
                                 id='chat-component-wrap',
                                 style={'flex': '1 1 0', 'minHeight': 0, 'overflow': 'hidden', 'display': 'flex', 'flexDirection': 'column'}
@@ -3098,8 +3099,47 @@ def main():
             'shape': [nrows, ncols],
         }
 
+    def _parse_pipe_table_block(lines: list):
+        """Parse a list of pipe-table lines into a DataFrame."""
+        try:
+            def split_row(line):
+                return [c.strip() for c in line.strip('|').split('|')]
+            headers = split_row(lines[0])
+            # lines[1] is the separator (---|---), skip it
+            rows = [split_row(l) for l in lines[2:] if l.strip('| -')]
+            if not rows:
+                return None
+            n = len(headers)
+            rows = [r[:n] + [''] * (n - len(r)) for r in rows]
+            return pd.DataFrame(rows, columns=headers)
+        except Exception:
+            return None
+
+    def _parse_markdown_tables_from_text(text: str) -> list:
+        """Extract markdown pipe tables from a text string and return as DataFrames."""
+        import re
+        tables = []
+        lines = text.splitlines()
+        block, in_block = [], False
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('|') and stripped.endswith('|'):
+                block.append(stripped)
+                in_block = True
+            else:
+                if in_block and len(block) >= 3:
+                    df = _parse_pipe_table_block(block)
+                    if df is not None and not df.empty:
+                        tables.append(df)
+                block, in_block = [], False
+        if in_block and len(block) >= 3:
+            df = _parse_pipe_table_block(block)
+            if df is not None and not df.empty:
+                tables.append(df)
+        return tables
+
     def _normalize_response(resp):
-        """Normalize PandasAI response. Returns (message_dict, chart_base64_or_None, df_entry_or_None)."""
+        """Normalize PandasAI response. Returns (message_dict, chart_base64_or_None, list[df_entry])."""
         rtype = getattr(resp, 'type', None)
         if rtype == 'chart':
             # Extract base64 data URI directly from PandasAI response
@@ -3112,9 +3152,9 @@ def main():
                 return (
                     {'role': 'assistant', 'content': {'type': 'text', 'text': '📊 Chart generated! Click the button below to view.'}},
                     data_uri,
-                    None
+                    []
                 )
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': '(Failed to render chart)'}}, None, None)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': '(Failed to render chart)'}}, None, [])
         if rtype == 'dataframe':
             val = getattr(resp, 'value', None)
             df = _coerce_tabular(val)
@@ -3122,19 +3162,22 @@ def main():
                 nrows, ncols = df.shape
                 entry = _df_to_store_entry(df)
                 placeholder = f'📋 Table returned ({nrows} rows \u00d7 {ncols} cols). Click the button below to view and download the full data.'
-                return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, entry)
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': str(val)}}, None, None)
+                return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, [entry])
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': str(val)}}, None, [])
         if rtype == 'error':
             err = getattr(resp, 'error', None)
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {_strip_ansi(err or resp)}'}}, None, None)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': f'Error: {_strip_ansi(err or resp)}'}}, None, [])
         val = getattr(resp, 'value', None)
         df = _coerce_tabular(val)
         if df is not None and not df.empty:
             nrows, ncols = df.shape
             entry = _df_to_store_entry(df)
             placeholder = f'📋 Table returned ({nrows} rows \u00d7 {ncols} cols). Click the button below to view and download the full data.'
-            return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, entry)
-        return ({'role': 'assistant', 'content': {'type': 'text', 'text': _downgrade_md_headers(_strip_ansi(val if val is not None else resp))}}, None, None)
+            return ({'role': 'assistant', 'content': {'type': 'text', 'text': placeholder}}, None, [entry])
+        # Fallthrough: text response — detect embedded markdown tables
+        text = _downgrade_md_headers(_strip_ansi(str(val) if val is not None else resp))
+        df_entries = [_df_to_store_entry(df) for df in _parse_markdown_tables_from_text(text)]
+        return ({'role': 'assistant', 'content': {'type': 'text', 'text': text}}, None, df_entries)
 
     # --- Chatbot callbacks ---
     @app.callback(
@@ -4208,13 +4251,13 @@ def main():
                     tokens_used_this_query += _extract_token_usage(resp)
                 else:
                     raise
-            assistant_msg, chart_fig, df_result = _normalize_response(resp)
+            assistant_msg, chart_fig, df_results = _normalize_response(resp)
             messages.append(assistant_msg)
             # If a chart was generated, store it and update the message
             if chart_fig is not None:
                 chart_idx = len(charts_store)
                 charts_store.append(chart_fig)
-            if df_result is not None:
+            for df_result in df_results:
                 dfs_store.append(df_result)
 
             explain_btn_style = {'display': 'inline-block', 'marginTop': '4px', 'fontSize': '11px'}
