@@ -4006,12 +4006,32 @@ def main():
                     cols = df_entry.get('columns', [])
                     col_names = [c.get('name', '') if isinstance(c, dict) else str(c) for c in cols]
                     n_rows = len(df_entry.get('data', []))
-                    top3 = df_entry.get('data', [])[:3]
-                    result_summary = (
-                        f"Table: {n_rows} rows × {len(col_names)} cols, "
-                        f"cols: {', '.join(col_names[:8])}. "
-                        f"First rows: {str(top3)[:200]}"
-                    )
+                    all_rows = df_entry.get('data', [])
+                    # Extract any column that looks like a residue identifier
+                    residue_col = None
+                    for cname in col_names:
+                        if cname.lower() in ('residue', 'pair', 'res1', 'res2', 'res'):
+                            residue_col = cname
+                            break
+                    if residue_col is None and col_names:
+                        import re as _re2
+                        first_vals = [str(r.get(col_names[0], '')) for r in all_rows[:3]]
+                        if any(_re2.match(r'[A-Z]{2,3}\d+', v) for v in first_vals):
+                            residue_col = col_names[0]
+                    if residue_col:
+                        residue_list = [str(r.get(residue_col, '')) for r in all_rows]
+                        result_summary = (
+                            f"Table: {n_rows} rows × {len(col_names)} cols, "
+                            f"cols: {', '.join(col_names[:8])}. "
+                            f"All {residue_col} values (in order): {', '.join(residue_list)}. "
+                            f"Full data (first 15 rows): {str(all_rows[:15])[:600]}"
+                        )
+                    else:
+                        result_summary = (
+                            f"Table: {n_rows} rows × {len(col_names)} cols, "
+                            f"cols: {', '.join(col_names[:8])}. "
+                            f"First rows: {str(all_rows[:3])[:400]}"
+                        )
                 else:
                     result_summary = 'Table returned (no data available).'
             else:
@@ -4458,9 +4478,10 @@ def main():
                 "The user is analyzing molecular dynamics simulation data using gRINN (get Residue Interaction "
                 "Energies and Networks). "
                 "Provide a concise, scientifically grounded biological interpretation of the data result shown. "
-                "Discuss what the interaction energies (in kcal/mol) suggest about the protein's structure/function, "
-                "mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces), "
-                "and note any caveats. Be specific and cite units. "
+                "Discuss what the data (interaction energies, network centrality metrics, or other quantities shown) "
+                "suggests about the protein's structure/function. "
+                "Mention relevant biological implications (e.g., stability, allosteric communication, binding interfaces, "
+                "catalytic residues, network hubs). Note any caveats. Be specific about the quantities shown. "
                 "Reference specific UniProt annotations (mutations, active sites, binding regions) where relevant. "
                 "Cite papers by PMID where appropriate. Keep response under 450 words."
             )
