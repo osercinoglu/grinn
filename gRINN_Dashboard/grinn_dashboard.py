@@ -2551,6 +2551,9 @@ def main():
         # Apply frame filter
         # For IE DataFrames, frame data is in columns (wide format)
         # For Metrics DataFrames, frame is a column
+        # Energy-type label derived from df_key for IE DataFrames (used in summary column naming and threshold filter)
+        energy_label = df_key.replace('IE_', '').lower() if df_key.startswith('IE_') else 'ie'
+
         if is_ie:
             # Wide format: columns are frame numbers after res1, res2
             non_frame_cols = ['res1', 'res2', 'Pair', 'Unnamed: 0', 'res1_index', 'res2_index',
@@ -2583,6 +2586,7 @@ def main():
                         result = result[keep_cols]
                 elif mode == 'summary':
                     # Compute mean/std/min/max across frame columns in range
+                    # energy_label is set above (e.g. 'total', 'electrostatic', 'vdw')
                     range_frame_cols = [str(fn) for fn in frame_nums_in_range if str(fn) in result.columns]
                     if range_frame_cols:
                         numeric_data = result[range_frame_cols].apply(pd.to_numeric, errors='coerce')
@@ -2591,10 +2595,10 @@ def main():
                         for col in ['res1', 'res2', 'Pair']:
                             if col in result.columns:
                                 summary_df[col] = result[col].values
-                        summary_df['mean_ie'] = numeric_data.mean(axis=1).values
-                        summary_df['std_ie'] = numeric_data.std(axis=1).values
-                        summary_df['min_ie'] = numeric_data.min(axis=1).values
-                        summary_df['max_ie'] = numeric_data.max(axis=1).values
+                        summary_df[f'mean_{energy_label}'] = numeric_data.mean(axis=1).values
+                        summary_df[f'std_{energy_label}'] = numeric_data.std(axis=1).values
+                        summary_df[f'min_{energy_label}'] = numeric_data.min(axis=1).values
+                        summary_df[f'max_{energy_label}'] = numeric_data.max(axis=1).values
                         result = summary_df
                     else:
                         # No frame cols in range — return identifier cols with NaN stats
@@ -2602,7 +2606,7 @@ def main():
                         for col in ['res1', 'res2', 'Pair']:
                             if col in result.columns:
                                 summary_df[col] = result[col].values
-                        for stat_col in ['mean_ie', 'std_ie', 'min_ie', 'max_ie']:
+                        for stat_col in [f'mean_{energy_label}', f'std_{energy_label}', f'min_{energy_label}', f'max_{energy_label}']:
                             summary_df[stat_col] = float('nan')
                         result = summary_df
                 else:
@@ -2619,12 +2623,14 @@ def main():
             # Apply energy threshold filter for IE DataFrames
             if min_abs_energy > 0.0 and len(result) > 0:
                 try:
-                    if mode == 'summary' and 'mean_ie' in result.columns:
-                        mask = result['mean_ie'].abs() >= min_abs_energy
+                    mean_col = f'mean_{energy_label}' if is_ie else 'mean_ie'
+                    if mode == 'summary' and mean_col in result.columns:
+                        mask = result[mean_col].abs() >= min_abs_energy
                         result = result[mask]
                     else:
                         # For timeseries/snapshot: compute row-wise mean across frame columns
-                        frame_cols_present = [c for c in result.columns if c not in non_frame_cols and c not in ['res1', 'res2', 'Pair', 'mean_ie', 'std_ie', 'min_ie', 'max_ie']]
+                        stat_cols = {f'mean_{energy_label}', f'std_{energy_label}', f'min_{energy_label}', f'max_{energy_label}', 'mean_ie', 'std_ie', 'min_ie', 'max_ie'}
+                        frame_cols_present = [c for c in result.columns if c not in non_frame_cols and c not in ['res1', 'res2', 'Pair'] and c not in stat_cols]
                         if frame_cols_present:
                             row_means = result[frame_cols_present].apply(pd.to_numeric, errors='coerce').mean(axis=1)
                             mask = row_means.abs() >= min_abs_energy
@@ -2855,7 +2861,10 @@ def main():
             'Typical biologically significant IE values are stronger than -1 to -2 kcal/mol. '
             'IE columns include: IE_Total (total interaction energy), IE_VdW (van der Waals component), IE_Elec (electrostatic component). '
             'VdW interactions reflect steric/hydrophobic contacts; Electrostatic interactions reflect charge-charge and hydrogen bond effects. '
-            'For IE DataFrames in summary mode: mean_ie is the time-averaged IE, std_ie reflects fluctuations, min_ie/max_ie show extremes. '
+            'For IE DataFrames in summary mode: columns are named after the energy type — mean_total/std_total/min_total/max_total for IE_Total, '
+            'mean_electrostatic/std_electrostatic/min_electrostatic/max_electrostatic for IE_Electrostatic, '
+            'mean_vdw/std_vdw/min_vdw/max_vdw for IE_VdW. '
+            'These time-averaged values allow direct comparison and arithmetic (e.g., vdw = mean_total - mean_electrostatic). '
             'For Metrics DataFrames: these contain Protein Energy Network (PEN) node metrics including betweenness_centrality (how often a residue is on shortest paths), '
             'closeness_centrality (how close a residue is to all others), and degree (number of significant interaction partners). '
             'High betweenness/closeness centrality residues are often functionally important (e.g., allosteric hubs). '
