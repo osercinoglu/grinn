@@ -960,6 +960,30 @@ def main():
         # Re-raise to let Flask handle the response
         raise e
 
+    # --- Chatbot welcome message ------------------------------------------------
+    _CHATBOT_TUTORIAL_URL = "https://grinn.bio-cloud.site/tutorial"
+
+    _CHATBOT_WELCOME = {
+        "role": "assistant",
+        "content": {
+            "type": "text",
+            "text": (
+                "👋 **Welcome to the gRINN Chatbot!**\n\n"
+                "Before you begin, please read these sections of the "
+                "[Tutorial](" + _CHATBOT_TUTORIAL_URL + "):\n\n"
+                "- ⚠️ [**Data Privacy Warning**]("
+                + _CHATBOT_TUTORIAL_URL + "#a2-data-privacy-warning"
+                + ") — your simulation data is transmitted to external LLM APIs\n"
+                "- 📋 [**Capabilities & Limitations**]("
+                + _CHATBOT_TUTORIAL_URL + "#a3-capabilities-and-limitations"
+                + ") — what this chatbot can and cannot do\n\n"
+                "To get started, expand ⚙️ **Settings** above to configure your data, "
+                "then ask me anything about your interaction energies!"
+            ),
+        },
+    }
+    # ---------------------------------------------------------------------------
+
     # Soft, harmonious color palette with low contrast and close color relationships
     soft_palette = {
         'primary': '#7C9885',          # Soft sage green
@@ -988,6 +1012,7 @@ def main():
     chatbot_expanded_store = dcc.Store(id='chatbot-expanded', data=False, storage_type='session')
     cleanup_store = dcc.Store(id='chat-cleanup', storage_type='memory')
     pmid_link_dummy = dcc.Store(id='_pmid-link-dummy', storage_type='memory')
+    welcome_link_dummy = dcc.Store(id='_welcome-link-dummy', storage_type='memory')
 
     def _maybe_load_env_file() -> None:
         """Best-effort load of KEY=VALUE pairs from a local env file.
@@ -1274,6 +1299,7 @@ def main():
             chatbot_expanded_store,
             cleanup_store,
             pmid_link_dummy,
+            welcome_link_dummy,
             dcc.Interval(id='chat-cleanup-tick', interval=60_000, n_intervals=0),
         ]),
         html.Div([
@@ -1874,10 +1900,13 @@ def main():
         ], width=8, id='left-panel'),
         # Middle Panel: 3D Viewer
         dbc.Col([
-            dbc.Card([
+            dbc.Card(style={'border': f'3px solid {soft_palette["border"]}', 'borderRadius': '10px'}, children=[
                 dbc.CardBody([
                     # Tabbed selector for 3D views
-                    dcc.Tabs(id='viewer-tabs', value='tab-structure-viewer', style={'fontSize': '12px', 'height': '32px'}, children=[
+                    dcc.Tabs(id='viewer-tabs', value='tab-structure-viewer',
+                         style={'fontFamily': 'Roboto, sans-serif', 'fontWeight': '500', 'height': '32px', 'fontSize': '12px'},
+                         colors={'border': soft_palette['border'], 'primary': soft_palette['primary'], 'background': soft_palette['surface']},
+                         children=[
                         # 3D Structure Viewer Tab
                         dcc.Tab(label='🧬 Structure Viewer', value='tab-structure-viewer', children=[
                             dbc.Card([
@@ -2213,7 +2242,7 @@ def main():
                                     ], className='chat-mode-box'),
                                 ]),
                                 id='chat-settings-collapse',
-                                is_open=True
+                                is_open=False
                             ),
                             # Store for token usage tracking per session
                             dcc.Store(id='chat-token-usage', data={'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}, storage_type='session'),
@@ -2238,7 +2267,7 @@ def main():
                             html.Div(
                                 ChatComponent(
                                     id='chat',
-                                    messages=[],
+                                    messages=[_CHATBOT_WELCOME],
                                     assistant_bubble_style={
                                         'backgroundColor': soft_palette['surface'],
                                         'color': soft_palette['text'],
@@ -3639,6 +3668,26 @@ def main():
         Output('_pmid-link-dummy', 'data'),
         Input('chat', 'messages'),
         prevent_initial_call=True,
+    )
+
+    app.clientside_callback(
+        """
+        function(messages) {
+            if (!messages || messages.length === 0) return window.dash_clientside.no_update;
+            setTimeout(function() {
+                var container = document.getElementById('chat-component-wrap');
+                if (!container) return;
+                container.querySelectorAll('a').forEach(function(a) {
+                    a.setAttribute('target', '_blank');
+                    a.setAttribute('rel', 'noopener noreferrer');
+                });
+            }, 500);
+            return window.dash_clientside.no_update;
+        }
+        """,
+        Output('_welcome-link-dummy', 'data'),
+        Input('chat', 'messages'),
+        prevent_initial_call=False,
     )
 
     # Callback to populate chat-pairs-store
