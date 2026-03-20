@@ -972,10 +972,10 @@ def main():
                 "Before you begin, please read these sections of the "
                 "[Tutorial](" + _CHATBOT_TUTORIAL_URL + "):\n\n"
                 "- ⚠️ [**Data Privacy Warning**]("
-                + _CHATBOT_TUTORIAL_URL + "#a2-data-privacy-warning"
+                + _CHATBOT_TUTORIAL_URL + "#a.2-data-privacy-warning"
                 + ") — your simulation data is transmitted to external LLM APIs\n"
                 "- 📋 [**Capabilities & Limitations**]("
-                + _CHATBOT_TUTORIAL_URL + "#a3-capabilities-and-limitations"
+                + _CHATBOT_TUTORIAL_URL + "#a.3-capabilities-and-limitations"
                 + ") — what this chatbot can and cannot do\n\n"
                 "To get started, expand ⚙️ **Settings** above to configure your data, "
                 "then ask me anything about your interaction energies!"
@@ -2251,6 +2251,8 @@ def main():
                             dcc.Store(id='explain-stage-store', storage_type='memory', data=None),
                             # Watchdog interval — ticks every 3 s to detect hung callbacks
                             dcc.Interval(id='chat-watchdog', interval=3000, disabled=False),
+                            # One-shot interval that fires 500 ms after mount to deliver welcome message
+                            dcc.Interval(id='chat-init-interval', interval=500, n_intervals=0, max_intervals=1),
                             # Error banner shown when a request has been pending for too long
                             html.Div([
                                 html.Span('⚠️ The request is taking too long — this is likely a network issue (e.g. 504 Gateway Timeout). '
@@ -2267,7 +2269,7 @@ def main():
                             html.Div(
                                 ChatComponent(
                                     id='chat',
-                                    messages=[_CHATBOT_WELCOME],
+                                    messages=[],
                                     assistant_bubble_style={
                                         'backgroundColor': soft_palette['surface'],
                                         'color': soft_palette['text'],
@@ -3209,12 +3211,18 @@ def main():
     @app.callback(
         Output('chat-session-id', 'data'),
         Input('url', 'pathname'),
-        State('chat-session-id', 'data')
+        State('chat-session-id', 'data'),
     )
     def _ensure_chat_session_id(_pathname, sid):
-        if sid:
-            return sid
-        return str(uuid.uuid4())
+        return sid if sid else str(uuid.uuid4())
+
+    @app.callback(
+        Output('chat', 'new_message', allow_duplicate=True),
+        Input('chat-init-interval', 'n_intervals'),
+        prevent_initial_call=True,
+    )
+    def _trigger_welcome_sentinel(_n):
+        return {'role': 'user', 'content': '__GRINN_WELCOME__', '_ts': 0}
 
     @app.callback(
         Output('chat-panel', 'style'),
@@ -4016,7 +4024,15 @@ def main():
         if not new_message:
             return (no_update,) * 14
 
-        messages = list(messages or [])
+        # Welcome sentinel — return welcome message without adding any user bubble
+        if isinstance(new_message, dict) and new_message.get('content') == '__GRINN_WELCOME__':
+            # Trailing empty user message triggers React's REPLACE path (not APPEND),
+            # making this idempotent: N firings still show exactly 1 welcome bubble.
+            # Empty content is invisible: the component's render guard returns null for it.
+            return ([_CHATBOT_WELCOME, {'role': 'user', 'content': ''}],) + (no_update,) * 13
+
+        # Strip invisible placeholder messages (e.g. welcome delivery padding)
+        messages = [m for m in (messages or []) if m.get('content')]
         charts_store = list(charts_store or [])
         dfs_store = dfs_store or []
         token_data = dict(token_data) if token_data else {'used': 0, 'limit': PANDASAI_TOKEN_LIMIT}
