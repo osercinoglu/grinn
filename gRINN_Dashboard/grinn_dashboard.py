@@ -3885,10 +3885,24 @@ def main():
                     'note': note[:200],
                     'pmids': ft_pmids,
                 })
+        # Per-type caps: keep a positionally-spread sample for high-density types
+        # (VARIANT/MUTAGEN can have hundreds of entries for well-studied proteins)
+        # while passing all entries for sparse functional types (ACT_SITE, BINDING, REGION).
+        PER_TYPE_CAP = {'MUTAGEN': 15, 'VARIANT': 20, 'MOD_RES': 15,
+                        'ACT_SITE': None, 'BINDING': None, 'REGION': None}
+        GLOBAL_CAP = 80
+        _type_counts: dict = {}
+        _capped: list = []
+        for _f in features:
+            _cap = PER_TYPE_CAP.get(_f['type'])
+            _cnt = _type_counts.get(_f['type'], 0)
+            if _cap is None or _cnt < _cap:
+                _capped.append(_f)
+                _type_counts[_f['type']] = _cnt + 1
         PRIORITY = {'MUTAGEN': 0, 'VARIANT': 1, 'MOD_RES': 2,
                     'ACT_SITE': 3, 'BINDING': 4, 'REGION': 5}
-        features.sort(key=lambda f: PRIORITY.get(f['type'], 9))
-        features = features[:20]
+        _capped.sort(key=lambda f: PRIORITY.get(f['type'], 9))
+        features = _capped[:GLOBAL_CAP]
 
         # Feature-linked PMIDs first, then general protein PMIDs
         ft_pmids_all = []
