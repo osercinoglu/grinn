@@ -68,6 +68,178 @@ pgid = os.getpgid(os.getpid())
 _DEFAULT_INTERACTION_SELECTION = "not water and not resname SOL and not ion"
 
 
+# ---------------------------------------------------------------------------
+# R1.g — auto-box helpers (pure Python; no `gmx editconf`).
+#
+# Ensemble-mode pipelines run pdb2gmx on user-supplied multi-model PDBs (NMR
+# ensembles, docked poses, …) which typically lack a CRYST1 record. Without a
+# simulation box the per-chunk `gmx grompp` step fails fatally on every IE
+# chunk ("Empty diagonal for a 3-dimensional periodic box"). We inject a
+# cubic CRYST1 + translate atoms so the protein fits inside, in pure Python,
+# to GUARANTEE chain-ID preservation (column 22 passes through verbatim).
+# Using `gmx editconf` is rejected here because of documented chain-ID
+# artefacts on certain PDB↔GRO conversions (see detect_and_assign_chain_ids
+# at line ~1655 for the existing project-side warning about this).
+# ---------------------------------------------------------------------------
+
+def _has_valid_box(pdb_path):
+    """Return True if the PDB already carries a non-zero CRYST1 a/b/c."""
+    try:
+        with open(pdb_path) as fh:
+            for line in fh:
+                if line.startswith('CRYST1'):
+                    try:
+                        a = float(line[6:15])
+                        b = float(line[15:24])
+                        c = float(line[24:33])
+                    except ValueError:
+                        return False
+                    return a > 0 and b > 0 and c > 0
+    except OSError:
+        pass
+    return False
+
+
+def _inject_cubic_box_into_pdb(pdb_path, margin_angstroms=12.0):
+    """Read a PDB, compute a cubic simulation box that contains all atoms with
+    `margin_angstroms` clearance on every side, translate the atoms so the
+    box origin is at (0, 0, 0), and rewrite the file with a fresh CRYST1
+    line.
+
+    The original line order is preserved — including MODEL/TER/ENDMDL/END
+    records and their relative position to ATOM records. CRYST1 is injected
+    immediately before the first coordinate-section record (MODEL or
+    ATOM/HETATM, whichever comes first), which is the canonical PDB
+    position. Any pre-existing CRYST1 lines are dropped.
+
+    Atom record fields outside columns 31-54 (the X/Y/Z fields) — including
+    chain ID at column 22 and all element/charge/B-factor/occupancy fields —
+    pass through CHARACTER-FOR-CHARACTER unchanged. Chain IDs are preserved
+    by construction; no GROMACS dependency is introduced.
+    """
+    # First pass: read everything in, collect atom coords for bbox.
+    with open(pdb_path) as fh:
+        all_lines = fh.readlines()
+
+    coords = []
+    for line in all_lines:
+        if line.startswith(('ATOM  ', 'HETATM')):
+            try:
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"Malformed coordinates in {pdb_path}: {line!r}"
+                ) from exc
+            coords.append((x, y, z))
+
+    if not coords:
+        raise RuntimeError(f"No ATOM/HETATM records found in {pdb_path}")
+
+    coords_arr = np.array(coords)
+    bbox_min = coords_arr.min(axis=0)
+    bbox_max = coords_arr.max(axis=0)
+    box_side = float((bbox_max - bbox_min).max() + 2 * margin_angstroms)
+    # Translate so bbox lower corner sits at (margin, margin, margin) inside
+    # a box that goes from (0, 0, 0) to (box_side, box_side, box_side).
+    translation = margin_angstroms - bbox_min
+
+    cryst1 = (
+        f"CRYST1{box_side:9.3f}{box_side:9.3f}{box_side:9.3f}"
+        f"{90.0:7.2f}{90.0:7.2f}{90.0:7.2f} P 1           1\n"
+    )
+
+    # Coordinate-section starters: CRYST1 belongs immediately before whichever
+    # of these appears first.
+    coord_starters = ('MODEL ', 'ATOM  ', 'HETATM')
+
+    cryst1_inserted = False
+    output_lines = []
+    for line in all_lines:
+        if line.startswith('CRYST1'):
+            continue  # drop any existing box; we're replacing
+        if line.startswith(coord_starters) and not cryst1_inserted:
+            output_lines.append(cryst1)
+            cryst1_inserted = True
+        if line.startswith(('ATOM  ', 'HETATM')):
+            x = float(line[30:38]) + translation[0]
+            y = float(line[38:46]) + translation[1]
+            z = float(line[46:54]) + translation[2]
+            output_lines.append(line[:30] + f"{x:8.3f}{y:8.3f}{z:8.3f}" + line[54:])
+        else:
+            output_lines.append(line)
+
+    if not cryst1_inserted:
+        # Defensive: file had atoms but no recognized coord-section starter.
+        # Append CRYST1 at the very top so GROMACS still finds a box.
+        output_lines.insert(0, cryst1)
+
+    with open(pdb_path, 'w') as fh:
+        fh.writelines(output_lines)
+
+
+# ---------------------------------------------------------------------------
+# R1.g — per-chunk subprocess error surfacing.
+#
+# Today, when `gmx grompp` or `gmx mdrun` fails for an interaction-energy
+# chunk, the GROMACS Fatal-error block lands in
+# `output/gromacs_interaction{N}.log` but never reaches `calc.log` or the
+# container's stdout, so the web monitor page shows "job failed" with no
+# meaningful detail. We wrap the per-chunk calls and re-raise a custom
+# exception carrying an excerpted log summary; the parent's `future.result()`
+# consumer logs it via the calc.log/stdout-attached logger and aborts.
+# ---------------------------------------------------------------------------
+
+class ChunkFailedError(Exception):
+    """Raised when a per-chunk grompp/mdrun call returns non-zero.
+
+    Carries the chunk index, an excerpted summary of the GROMACS Fatal-error
+    block (or last few interesting log lines if no Fatal marker found), and
+    the path to the full per-chunk log on disk for downstream extraction.
+
+    Pickle-safety: all three constructor arguments are stored in
+    ``self.args`` so that ``concurrent.futures.ProcessPoolExecutor`` can
+    transport the exception across the worker → parent boundary intact
+    (default Exception unpickling does ``__class__(*args)``).
+    """
+
+    def __init__(self, chunk_index, summary, log_path):
+        super().__init__(chunk_index, summary, log_path)
+        self.chunk_index = chunk_index
+        self.summary = summary
+        self.log_path = log_path
+
+    def __str__(self):
+        return (
+            f"Chunk {self.chunk_index} failed during interaction-energy stage; "
+            f"see {self.log_path}"
+        )
+
+
+def _extract_gmx_fatal(log_path):
+    """Pull the GROMACS 'Fatal error' block from a per-chunk log.
+
+    Returns up to ~25 lines starting at the most recent 'Fatal error' marker.
+    Falls back to the last 20 non-empty lines if no marker is found. Always
+    returns a string (never None) so callers can pass it through to logger.
+    """
+    try:
+        with open(log_path) as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return f"(could not read {log_path})"
+
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip().startswith('Fatal error'):
+            return '\n'.join(lines[i:i + 25])
+
+    interesting = [ln for ln in lines if ln.strip()]
+    if interesting:
+        return '\n'.join(interesting[-20:])
+    return f"(no readable content in {log_path})"
+
+
 def _normalize_selection(sel) -> str:
     return " ".join(str(sel).strip().split())
 
@@ -755,6 +927,27 @@ def recreate_topology_file(structure_file, out_folder, force_field, water_model,
                     logger.info("Topology file successfully recreated")
                     logger.info(f"  Generated topology: {output_top}")
                     logger.info(f"  Processed structure: {output_pdb}")
+
+                # R1.g — Inject a simulation box if the pdb2gmx output has no
+                # CRYST1 (typical for NMR ensembles uploaded in ensemble mode).
+                # Self-gating: skipped when the file already carries a valid
+                # box, so trajectory-mode user-supplied structures from real
+                # MD runs fall through unchanged.
+                if not _has_valid_box(output_pdb):
+                    try:
+                        _inject_cubic_box_into_pdb(output_pdb, margin_angstroms=12.0)
+                        if logger:
+                            logger.info(
+                                "Auto-box: pdb2gmx output lacked CRYST1; injected cubic "
+                                "box (12 Å margin) so downstream grompp can run."
+                            )
+                    except Exception as box_err:
+                        if logger:
+                            logger.error(f"AUTO_BOX_FAILED: {box_err}")
+                        raise
+                elif logger:
+                    logger.info("Auto-box: pdb2gmx output already has a valid CRYST1; skipping injection.")
+
                 return True
             else:
                 if logger:
@@ -3025,12 +3218,21 @@ def process_chunk(i, chunk, outFolder, top_file, pdb_file, xtc_file):
     tprFile = mdpFile.rstrip('.mdp') + '.tpr'
     edrFile = mdpFile.rstrip('.mdp') + '.edr'
 
+    gromacs_log = os.path.join(outFolder, f"gromacs_interaction{i}.log")
     gromacs.environment.flags['capture_output'] = "file"
-    gromacs.environment.flags['capture_output_filename'] = os.path.join(outFolder, f"gromacs_interaction{i}.log")
+    gromacs.environment.flags['capture_output_filename'] = gromacs_log
 
-    # Use the topology file
-    gromacs.grompp(f=mdpFile, n=os.path.join(outFolder, 'interact.ndx'), p=top_file, c=pdb_file, o=tprFile, maxwarn=20)
-    gromacs.mdrun(s=tprFile, c=pdb_file, e=edrFile, g=os.path.join(outFolder, f'interact{i}.log'), nt=1, rerun=xtc_file)
+    # R1.g — wrap per-chunk grompp/mdrun so a non-zero exit raises a
+    # ChunkFailedError carrying the GROMACS Fatal-error excerpt. The exception
+    # propagates out via future.result() in the parent, where it's logged to
+    # calc.log/stdout and the workflow aborts cleanly.
+    try:
+        # Use the topology file
+        gromacs.grompp(f=mdpFile, n=os.path.join(outFolder, 'interact.ndx'), p=top_file, c=pdb_file, o=tprFile, maxwarn=20)
+        gromacs.mdrun(s=tprFile, c=pdb_file, e=edrFile, g=os.path.join(outFolder, f'interact{i}.log'), nt=1, rerun=xtc_file)
+    except Exception as exc:
+        summary = _extract_gmx_fatal(gromacs_log)
+        raise ChunkFailedError(i, summary, gromacs_log) from exc
 
     return edrFile, chunk
 
@@ -3177,7 +3379,19 @@ def calculate_interaction_energies(outFolder, initialFilter, numCoresIE, logger)
                 
                 j = 0
                 for future in concurrent.futures.as_completed(futures):
-                    edrFile, chunk = future.result()
+                    try:
+                        edrFile, chunk = future.result()
+                    except ChunkFailedError as cfe:
+                        # R1.g — surface the GROMACS Fatal-error block to
+                        # calc.log and the container's stdout so the web tool
+                        # can extract a meaningful error message instead of
+                        # the bare "job failed" the user sees today.
+                        logger.error("Per-chunk grompp/mdrun failed: chunk %d", cfe.chunk_index)
+                        logger.error("Per-chunk log: %s", cfe.log_path)
+                        for line in cfe.summary.splitlines():
+                            logger.error(line)
+                        logger.error("Workflow aborted at the interaction-energy stage.")
+                        raise SystemExit(1) from cfe
                     edrFiles.append(edrFile)
                     pairsFilteredChunksProcessed.append(chunk)
                     logger.info('Completed energy calculation for chunk %d' % j)
@@ -3823,8 +4037,11 @@ def test_grinn_inputs(structure_file, out_folder, ff_folder=None, init_pair_filt
             warnings.append(f"  Found {n_models} models in PDB file")
             
             if n_models < 2:
-                warnings.append("  WARNING: PDB contains only 1 model")
-                warnings.append("  Consider using trajectory mode instead")
+                errors.append(
+                    "ERROR: Ensemble mode requires a multi-model PDB file (at least 2 MODEL records). "
+                    f"The provided file contains only {n_models} model(s)."
+                )
+                errors.append("  Please upload a multi-model PDB, or switch to Trajectory mode.")
         except Exception as e:
             errors.append(f"ERROR: Could not load PDB as trajectory: {str(e)}")
             errors.append("  Ensure PDB file contains MODEL/ENDMDL entries for ensemble mode")
@@ -4640,7 +4857,36 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             # Save the first frame as reference structure
             trajectory[0].save_pdb(ensemble_pdb)
             logger.info(f'Saved reference structure: {ensemble_pdb}')
-            
+
+            # R1.g — NMR ensembles lack CRYST1, so MDTraj loads them with no
+            # unit cell. save_xtc would then write zero box vectors per frame,
+            # and mdrun -rerun rejects each frame with "too small box
+            # dimensions". Set a generous cubic box on every frame here so
+            # the trajectory passes mdrun's box-vs-cutoff sanity check. The
+            # 1.5 nm margin (vs the 1.2 nm we use on the PDB side) absorbs
+            # the small bbox growth pdb2gmx causes when it adds hydrogens
+            # later.
+            if (trajectory.unitcell_lengths is None
+                    or np.all(np.asarray(trajectory.unitcell_lengths) == 0)):
+                coords_nm = trajectory.xyz  # (n_frames, n_atoms, 3), nm
+                bbox_min = coords_nm.min(axis=(0, 1))
+                bbox_max = coords_nm.max(axis=(0, 1))
+                box_nm = max(
+                    float((bbox_max - bbox_min).max() + 2 * 1.5),  # protein + 1.5 nm
+                    5.0,                                            # floor: 5 nm cubic
+                )
+                trajectory.unitcell_lengths = np.tile(
+                    [box_nm, box_nm, box_nm], (trajectory.n_frames, 1)
+                )
+                trajectory.unitcell_angles = np.tile(
+                    [90.0, 90.0, 90.0], (trajectory.n_frames, 1)
+                )
+                logger.info(
+                    f'Auto-box: NMR ensemble had no unit cell; '
+                    f'set cubic {box_nm:.3f} nm box on every trajectory frame '
+                    f'for mdrun -rerun compatibility.'
+                )
+
             # Save all frames as XTC trajectory
             trajectory.save_xtc(ensemble_xtc)
             logger.info(f'Created XTC trajectory with {n_models} frames: {ensemble_xtc}')
