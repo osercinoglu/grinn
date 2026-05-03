@@ -1910,7 +1910,34 @@ def detect_and_assign_chain_ids(pdb_file, topology_file=None, logger=None, origi
                                 break
                     if chains_likely_corrupted:
                         break
-        
+
+            # Heuristic 3: residue numbers reset within a single chain ID.
+            # Catches GRO->PDB conversions (mdtraj.Trajectory.save_pdb,
+            # editconf, pdb2gmx without -chain) that stamp one chain ID on
+            # what topology says are multiple molecules. ProDy collapses
+            # duplicate (chain, resnum) tuples into a single residue and
+            # silently drops chains/ligands from downstream pair output.
+            # Conservative form: only fire when a small chain set (<=3)
+            # coincides with non-monotonic resnums; multi-chain crystallographic
+            # PDBs that intentionally restart numbering keep their chain IDs.
+            if (not chains_missing
+                and not chains_likely_corrupted
+                and len(unique_chains) <= 3):
+                chids_arr = system.getChids()
+                resnums_arr = system.getResnums()
+                last_resnum_per_chain = {}
+                for c, r in zip(chids_arr, resnums_arr):
+                    if c in last_resnum_per_chain and r < last_resnum_per_chain[c]:
+                        chains_likely_corrupted = True
+                        if logger:
+                            logger.warning(
+                                f"Detected residue-number reset within chain '{c}' "
+                                f"(resnum dropped from {last_resnum_per_chain[c]} to {r}). "
+                                f"Chain IDs are missing or merged - re-deriving from topology."
+                            )
+                        break
+                    last_resnum_per_chain[c] = max(last_resnum_per_chain.get(c, r), r)
+
         if not chains_missing and not chains_likely_corrupted:
             if logger:
                 logger.info(f"Valid chain IDs detected: {list(unique_chains)}")
@@ -2555,47 +2582,41 @@ def assign_chains_by_atom_order(system, topology_info, logger=None):
             if current_atom_idx < total_atoms:
                 logger.warning(f"{total_atoms - current_atom_idx} atoms were not assigned (beyond topology definition)")
         
-        # Convert atom assignments to residue assignments
-        residue_to_chain = {}
-        all_resindices = np.unique(all_atoms.getResindices())
-        unassigned_residues = []
-        
-        for res_idx in all_resindices:
-            res_atoms = system.select(f'resindex {res_idx}')
-            if res_atoms is not None and len(res_atoms) > 0:
-                first_atom_idx = res_atoms.getIndices()[0]
-                if first_atom_idx in atom_to_chain:
-                    residue_to_chain[res_idx] = atom_to_chain[first_atom_idx]
-                else:
-                    # Atom not assigned (beyond topology definition) - assign to 'X'
-                    residue_to_chain[res_idx] = 'X'
-                    res_name = res_atoms.getResnames()[0]
-                    unassigned_residues.append((res_idx, res_name))
-        
-        # Log unassigned residues (summarized)
-        if unassigned_residues and logger:
-            # Group by residue name
-            by_resname = {}
-            for res_idx, res_name in unassigned_residues:
-                if res_name not in by_resname:
-                    by_resname[res_name] = []
-                by_resname[res_name].append(res_idx)
-            
-            logger.warning(f"{len(unassigned_residues)} residues not covered by topology - assigned to chain X:")
-            for res_name, indices in by_resname.items():
-                if len(indices) <= 5:
-                    logger.warning(f"  {res_name}: residue indices {indices}")
-                else:
-                    logger.warning(f"  {res_name}: {len(indices)} residues (indices {indices[0]}-{indices[-1]})")
-        
-        # Log chain distribution
+        # Fill in 'X' for any atoms beyond the topology's coverage so that
+        # apply_chain_assignments has a complete per-atom map.
+        unassigned_atom_count = 0
+        for atom_idx in range(total_atoms):
+            if atom_idx not in atom_to_chain:
+                atom_to_chain[atom_idx] = 'X'
+                unassigned_atom_count += 1
+
+        # Log unassigned atoms (summarized by residue) — important when topology
+        # under-covers the structure.
+        if unassigned_atom_count and logger:
+            unassigned_resnames = set()
+            for atom_idx in range(total_atoms):
+                if atom_to_chain.get(atom_idx) == 'X':
+                    res_sel = system.select(f'index {atom_idx}')
+                    if res_sel is not None and len(res_sel) > 0:
+                        unassigned_resnames.add(res_sel.getResnames()[0])
+            logger.warning(
+                f"{unassigned_atom_count} atoms not covered by topology - assigned to chain X. "
+                f"Residues involved: {sorted(unassigned_resnames)}"
+            )
+
+        # Log chain distribution (per-atom counts; residue-level distribution
+        # would be ambiguous when a single ProDy resindex spans atoms in
+        # different chains, which is exactly the homodimer-with-merged-chain-id
+        # pathology we're fixing here).
         if logger:
             chain_counts = {}
-            for chain in residue_to_chain.values():
+            for chain in atom_to_chain.values():
                 chain_counts[chain] = chain_counts.get(chain, 0) + 1
-            logger.info(f"Chain distribution: {dict(sorted(chain_counts.items()))}")
-        
-        return residue_to_chain
+            logger.info(f"Chain distribution (atoms): {dict(sorted(chain_counts.items()))}")
+
+        # Return the atom-level mapping directly. apply_chain_assignments
+        # detects per-atom maps and writes them without collapsing.
+        return atom_to_chain
         
     except Exception as e:
         if logger:
@@ -2980,15 +3001,28 @@ def apply_chain_assignments(system, chain_assignments, pdb_file, logger=None):
         
         # Create new chain ID array
         new_chain_ids = system.getChids().copy()
-        
-        # Apply assignments
-        for res_idx, chain_id in chain_assignments.items():
-            res_sel = system.select(f'resindex {res_idx}')
-            if res_sel:
-                atom_indices = res_sel.getIndices()
-                for atom_idx in atom_indices:
+
+        # Detect mapping kind. atom-level maps have one entry per atom
+        # (returned by assign_chains_by_atom_order to preserve dimer chains
+        # whose ProDy resindex collapsed before reassignment); residue-level
+        # maps come from the residue-name-matching fallback.
+        n_atoms = system.numAtoms()
+        is_atom_level = len(chain_assignments) >= max(n_atoms // 2, 1)
+
+        if is_atom_level:
+            for atom_idx, chain_id in chain_assignments.items():
+                if 0 <= atom_idx < n_atoms:
                     new_chain_ids[atom_idx] = chain_id
-        
+        else:
+            # Residue-level: select by resindex (fine when residues are NOT
+            # collapsed across chains, i.e. for the fallback path).
+            for res_idx, chain_id in chain_assignments.items():
+                res_sel = system.select(f'resindex {res_idx}')
+                if res_sel:
+                    atom_indices = res_sel.getIndices()
+                    for atom_idx in atom_indices:
+                        new_chain_ids[atom_idx] = chain_id
+
         # Set new chain IDs
         system.setChids(new_chain_ids)
         
@@ -3089,7 +3123,9 @@ def filterInitialPairsSingleCore(args):
 
     return filterList
 
-def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterCutoff, numCores, logger):
+def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterCutoff,
+                               numCores, logger,
+                               pair_filter_mode='static', traj_file=None):
     """
     Perform initial filtering of residue pairs based on distance.
 
@@ -3098,11 +3134,17 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
     - initPairFilterCutoff (float): The distance cutoff for initial filtering.
     - numCores (int): The number of CPU cores to use for parallel processing.
     - logger (logging.Logger): The logger object for logging messages.
+    - pair_filter_mode (str): 'static' (default) checks only the reference PDB
+      frame; 'dynamic' scans every frame of `traj_file` and keeps any pair
+      whose residue COMs come within the cutoff at SOME point. Use 'dynamic'
+      for binding/unbinding / conformational-change trajectories where a
+      ligand or loop visits and leaves the region of interest.
+    - traj_file (str): Trajectory path (.xtc/.trr); required for dynamic mode.
 
     Returns:
     - initialFilter (list): A list of residue pairs after initial filtering.
     """
-    logger.info("Performing initial filtering...")
+    logger.info("Performing initial filtering... (pair_filter_mode=%s)" % pair_filter_mode)
 
     # Get the path to the PDB file (system.pdb) from outFolder
     pdb_file = os.path.join(outFolder, "system_dry.pdb")
@@ -3162,11 +3204,30 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
             pickle.dump(initialFilter, f)
         return initialFilter
 
+    # Dynamic mode: scan every frame of the trajectory and keep any pair whose
+    # residue COMs come within the cutoff at SOME point. Bypasses the static
+    # single-frame multiprocessing path entirely.
+    if pair_filter_mode == 'dynamic':
+        if not traj_file or not os.path.exists(traj_file):
+            raise ValueError(
+                "Dynamic pair filter requires a trajectory file (--traj). "
+                "Switch to --pair_filter_mode static if running on a single structure."
+            )
+        initialFilter = _dynamic_pair_filter(
+            outFolder, pairSet, initPairFilterCutoff, traj_file, logger
+        )
+        logger.info('Initial filtering... Done.')
+        logger.info('Number of interaction pairs selected after initial filtering step: %i' % len(initialFilter))
+        initialFilterPickle = os.path.join(os.path.abspath(outFolder), "initialFilter.pkl")
+        with open(initialFilterPickle, 'wb') as f:
+            pickle.dump(initialFilter, f)
+        return initialFilter
+
     # Split the pair set list into chunks according to number of cores
     # Reduce numCores if necessary.
     if len(pairSet) < numCores:
         numCores = len(pairSet)
-    
+
     pairChunks = np.array_split(list(pairSet), numCores)
 
     # Start a concurrent futures pool, and perform initial filtering.
@@ -3194,6 +3255,70 @@ def perform_initial_filtering(outFolder, source_sel, target_sel, initPairFilterC
         pickle.dump(initialFilter, f)
 
     return initialFilter
+
+
+def _dynamic_pair_filter(outFolder, pairSet, initPairFilterCutoff, traj_file, logger):
+    """Per-frame pair filter — keeps pairs whose residue COMs come within the
+    cutoff at any frame of the trajectory.
+
+    Used by `perform_initial_filtering` when `pair_filter_mode == 'dynamic'`.
+    Loads the trajectory once with mdtraj, pre-computes per-residue COMs as
+    a (n_frames, n_residues, 3) array, then vectorizes the min-over-frames
+    distance check per pair.
+
+    The static filter at line ~3145 culls a pair if frame 0's COM-COM distance
+    exceeds the cutoff. That is wrong for binding/unbinding trajectories where
+    a ligand or loop visits and leaves the region of interest — it culls
+    exactly the pairs the user wants to study. This helper checks every frame
+    and keeps any pair that is ever within the cutoff.
+    """
+    import mdtraj as md
+    pdb_path = os.path.join(outFolder, "system_dry.pdb")
+    if not os.path.exists(pdb_path):
+        raise FileNotFoundError(
+            f"Dynamic pair filter expected reference structure at {pdb_path}"
+        )
+
+    t = md.load(traj_file, top=pdb_path)
+    n_frames = t.n_frames
+    n_residues = t.topology.n_residues
+    logger.info(
+        "Dynamic pair filter: scanning %d frames × %d residues against "
+        "cutoff %.2f A" % (n_frames, n_residues, initPairFilterCutoff)
+    )
+
+    # Pre-compute per-residue COM in nm: (n_frames, n_residues, 3).
+    # Using unweighted mean of atom positions; matches ProDy `calcCenter`
+    # default behaviour used by the static path.
+    coms = np.empty((n_frames, n_residues, 3), dtype=np.float32)
+    for ri, res in enumerate(t.topology.residues):
+        atom_idx = [a.index for a in res.atoms]
+        if not atom_idx:
+            coms[:, ri, :] = np.nan
+            continue
+        coms[:, ri, :] = t.xyz[:, atom_idx, :].mean(axis=1)
+    # Convert to angstroms (mdtraj coords are in nm; cutoff is in angstroms).
+    coms *= 10.0
+    cutoff2 = float(initPairFilterCutoff) * float(initPairFilterCutoff)
+
+    kept = []
+    for pair in pairSet:
+        i, j = int(pair[0]), int(pair[1])
+        # Skip pairs whose residue indices fall outside the structure
+        # (defensive — should not happen if upstream selections are correct).
+        if i >= n_residues or j >= n_residues:
+            continue
+        dvec = coms[:, i, :] - coms[:, j, :]
+        d2 = np.einsum("fi,fi->f", dvec, dvec)
+        if np.nanmin(d2) <= cutoff2:
+            kept.append([i, j])
+
+    logger.info(
+        "Dynamic pair filter: %d/%d pairs survived (min distance ≤ cutoff "
+        "in at least one of %d frames)" % (len(kept), len(pairSet), n_frames)
+    )
+    return kept
+
 
 # A method to get a string containing chain or seg ID, residue name and residue number
 # given a ProDy parsed PDB Atom Group and the residue index
@@ -4618,13 +4743,14 @@ def test_gromacs_functionality(structure_file, top=None, traj=None, ff_folder=No
     return errors
 
 
-def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False, 
-                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all", 
-                       nt=1, skip=1, noconsole_handler=False, pen_cutoffs=[1.0], 
+def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_cutoff, nofixpdb=False, top=False,
+                       traj=False, nointeraction=False, gpu=False, solvate=False, npt=False, source_sel="all", target_sel="all",
+                       nt=1, skip=1, noconsole_handler=False, pen_cutoffs=[1.0],
                        pen_include_covalents=[True, False], test_only=False, force_field='amber99sb-ildn', water_model='tip3p',
                        request_pen=True,
                        pen_write_paths=False,
-                       recreate_topology=False, ensemble_mode=False, max_frames=None):
+                       recreate_topology=False, ensemble_mode=False, max_frames=None,
+                       pair_filter_mode='static'):
     
     # If test_only flag is set, just validate inputs and exit
     if test_only:
@@ -5152,7 +5278,11 @@ def run_grinn_workflow(structure_file, out_folder, ff_folder, init_pair_filter_c
             if missing_resnames:
                 logger.warning(f'Will exclude pairs involving: {sorted(missing_resnames)}')
             
-            initialFilter = perform_initial_filtering(out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger)
+            initialFilter = perform_initial_filtering(
+                out_folder, source_sel, target_sel, init_pair_filter_cutoff, 4, logger,
+                pair_filter_mode=pair_filter_mode,
+                traj_file=traj,
+            )
             
             # Filter out pairs involving residues not in topology
             if missing_resnames and len(initialFilter) > 0:
@@ -5273,6 +5403,17 @@ Input Modes:
     parser.add_argument("out_folder", type=str, help="Output folder")
     parser.add_argument("--nofixpdb", action="store_true", help="Skip PDB fixing with pdbfixer")
     parser.add_argument("--initpairfiltercutoff", type=float, default=10, help="Initial pair filter cutoff (default is 10)")
+    parser.add_argument(
+        "--pair_filter_mode",
+        type=str, choices=["static", "dynamic"], default="static",
+        help="Initial pair-filter mode. 'static' (default): single-frame "
+             "(reference PDB) COM-COM cutoff check. 'dynamic': scan every "
+             "frame of the trajectory and keep any pair whose residue COMs "
+             "come within the cutoff at SOME point. Use 'dynamic' for "
+             "binding/unbinding or conformational-transition trajectories "
+             "where a residue or ligand visits and leaves the region of "
+             "interest (frame-0 culling would otherwise drop these pairs)."
+    )
     parser.add_argument("--nointeraction", action="store_true", help="Do not calculate interaction energies")
     parser.add_argument("--gpu", action="store_true", help="Use GPU for non-bonded interactions in GROMACS commands")
     parser.add_argument("--solvate", action="store_true", help="Run solvation")
@@ -5544,7 +5685,8 @@ def main():
         pen_write_paths=pen_write_paths,
         recreate_topology=args.recreate_topology,
         ensemble_mode=args.ensemble_mode,
-        max_frames=args.max_frames
+        max_frames=args.max_frames,
+        pair_filter_mode=args.pair_filter_mode
     )
 
 if __name__ == "__main__":
