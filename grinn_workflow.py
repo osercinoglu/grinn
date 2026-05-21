@@ -1255,6 +1255,11 @@ def _iter_frame_columns(df: pd.DataFrame, pair_col: str) -> list:
             break
     return list(df.columns[frame_start:frame_end])
 
+# Strongest possible PEN edge weight. Normalized attractive magnitudes are
+# clipped to this value so that the corresponding distance (1 - weight) stays
+# strictly positive for Dijkstra. Covalent (backbone) edges are pinned to it.
+PEN_MAX_EDGE_WEIGHT = 0.99
+
 def getRibeiroOrtizNetwork(
     structure_file,
     df_intEn,
@@ -1319,6 +1324,19 @@ def getRibeiroOrtizNetwork(
     # Map global resindex -> local 0..N-1 position in this residue subset
     resindex_to_pos = {int(res_indices[i]): i for i in range(num_residues)}
 
+    # A pair of consecutive residue-array positions (i, i+1) is a real covalent
+    # (peptide-bond) neighbour only when it stays within the same chain and
+    # segment AND the residue numbers are consecutive. The resnum check rejects
+    # chain breaks / missing-residue gaps, where the array positions are
+    # adjacent but the residues are not actually bonded. Frame-invariant, so
+    # computed once here rather than inside the per-frame loop.
+    def _is_covalent_neighbour(i):
+        return (
+            chains[i] == chains[i + 1]
+            and segindices[i] == segindices[i + 1]
+            and resnums[i + 1] == resnums[i] + 1
+        )
+
     nx_list = []
     for m in range(startFrame, num_frames):
         frame_col = frame_cols[m]
@@ -1350,22 +1368,32 @@ def getRibeiroOrtizNetwork(
         resIntEnMatNegFavor = np.where(resIntEnMat < 0, np.abs(resIntEnMat), 0)
         max_abs = float(np.max(np.abs(resIntEnMatNegFavor)))
         X = resIntEnMatNegFavor / max_abs if max_abs != 0 else resIntEnMatNegFavor
-        X = np.clip(X, 0, 0.99)
+        X = np.clip(X, 0, PEN_MAX_EDGE_WEIGHT)
 
-        # Add covalent edges with chain/segment-validated adjacency
+        # Add covalent (backbone) edges. These represent the physical peptide
+        # bond, so they carry the strongest possible weight in the network
+        # (PEN_MAX_EDGE_WEIGHT -> minimum distance), independent of their
+        # non-bonded interaction energy.
         if includeCovalents:
             for i in range(num_residues - 1):
-                if (chains[i] == chains[i + 1]) and (segindices[i] == segindices[i + 1]):
+                if _is_covalent_neighbour(i):
                     u = residue_ids[i]
                     v = residue_ids[i + 1]
                     if not G.has_edge(u, v):
-                        G.add_edge(u, v, weight=float(X[i, i + 1]), distance=1.0 - float(X[i, i + 1]))
+                        G.add_edge(
+                            u, v,
+                            weight=PEN_MAX_EDGE_WEIGHT,
+                            distance=1.0 - PEN_MAX_EDGE_WEIGHT,
+                        )
 
-        # Add non-covalent edges (and optionally skip covalent-adjacent when includeCovalents=False)
+        # Add non-covalent edges. When includeCovalents is False, skip a pair
+        # only if it is an actual covalent neighbour — adjacent array positions
+        # that span a chain boundary or a sequence gap are genuine non-covalent
+        # contacts and must still be considered.
         cutoff = float(abs(intEnCutoff))
         for i in range(num_residues):
             for j in range(i + 1, num_residues):
-                if (not includeCovalents) and abs(i - j) == 1:
+                if (not includeCovalents) and (j == i + 1) and _is_covalent_neighbour(i):
                     continue
                 u = residue_ids[i]
                 v = residue_ids[j]
@@ -1396,8 +1424,15 @@ def _compute_metrics(G: nx.Graph) -> dict:
         btw = {n: 0.0 for n in G.nodes()}
         clo = {n: 0.0 for n in G.nodes()}
     else:
-        btw = nx.betweenness_centrality(G)
-        clo = nx.closeness_centrality(G)
+        # Use the energy-derived 'distance' edge attribute as the shortest-path
+        # cost so betweenness/closeness reflect the Ribeiro-Ortiz weighting
+        # (strong attractive interactions -> short distance). Omitting these
+        # arguments would silently fall back to unweighted hop counts and
+        # discard the edge weights entirely. Note both parameters take the
+        # 'distance' attribute (a path cost), NOT the 'weight' attribute
+        # (an interaction strength) — passing 'weight' would invert the metric.
+        btw = nx.betweenness_centrality(G, weight='distance')
+        clo = nx.closeness_centrality(G, distance='distance')
     return {'degree': deg, 'betweenness': btw, 'closeness': clo}
 
 
